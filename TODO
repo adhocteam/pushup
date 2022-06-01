@@ -1,0 +1,40 @@
+TODO - Pushup minimal working version
+
+Today: June 1, 2022
+
+Approach: identify the smallest milestones
+
+  - [ ] A simple "hello world" page component
+        Then:
+        - [ ] Function calls
+        - [ ] Other kinds of expressions
+  - [ ] Draft syntax/format of component pages
+        + for now, just steal .razor syntax from Blazor
+  - [ ] Lex/parse the .pushup format (using golang.org/x/net/html)
+  - [ ] Rough working version of the compiler that takes in a project
+        directory, generates Go code, and builds the full site binary
+        - [x] decide between "routes" and "pages" (or "components")
+              + "pages" for now
+  - [ ] Figure out a draft project directory layout
+  - [ ] Generate directory and file scaffolding
+  - [ ] Mapping from page filenames to route path parts (steal from Remix here)
+  - [ ] Struct introspection for form submission validation and SQL generation
+  - [ ] Stub out the enhanced hypermedia with htmx (but eventually plan
+        to replace it with something native to this project since htmx is
+        such a simple library to begin with).
+  - [ ] Make a .pushup syntax highlighter plugin for vim
+
+Later:
+
+  - [ ] Form submissions
+        - [ ] validation / errors
+  - [ ] default (but overridable) 500 and 404 pages
+  - [ ] handsome welcome page from scaffolding
+  - [ ] Tailwind (or something for CSS)
+  - [ ] public dir / static assets
+
+Decision points
+
+  - [ ] Delimiter in .pushup files
+        - [ ] @ - same as Blazor
+  - [ ] @-expressions: upper or lower case?

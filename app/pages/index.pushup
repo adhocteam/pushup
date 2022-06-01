@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<title>@title</title>
+<h1>@title</h1>
+<p>Hello, @name!</p>
+
+@code {
+    var title = "Welcome to Pushup"
+    var name = "Ad Hoc"
+}

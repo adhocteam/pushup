@@ -1,0 +1,94 @@
+Pushup - a modern web framework for the Go programming language
+
+Let's make Go the best full stack web language. Let's recapture the best
+of past web development eras, like PHP's ease of deployment, updated with
+today's tech and user expectations, like great client-side interactivity,
+avoiding the things that haven't been so good, like complexity and bloat,
+combined with everything that makes Go great, like performance and fast builds.
+
+Key features
+------------
+
+  * Components - individual files that combine templated HTML and Go code that
+    compile down to Go packages
+  * File-based routing by default (ala mod_php, overridable with directives)
+  * WebSockets & SSE integration
+  * Enhanced hypermedia (think htmx)
+  * SQLite by default (plus Litestream??)
+  * sqlc-like data access layer
+  * Blend the distinction between server and client code
+  * WASM (run (some) Go code in the browser)
+
+Table stakes functionality
+--------------------------
+
+  * Form submission & struct validation
+  * a11y - good defaults
+  * i18n/l10n - hooks for easy translation
+  * HTML escaping
+  * Web security protection - CSRF, XSS
+  * Healthchecks
+  * Metrics and monitoring hooks
+
+Also includes nice-to-haves
+---------------------------
+
+  * Hot-reloading dev environment
+  * Great debugging and visualization tools
+
+Trends
+------
+
+A number of things are driving this.
+
+  * Return to server-side web dev
+  * Rejection of too much JavaScript, especially build complexity
+  * Frustration with SPAs, especially bloat and UI complexity
+  * Client interactivity expections
+  * Mobile app competition to the web
+  * Maturation of SQLite as a lightweight server-side alternative RDBMS
+
+Precedent
+---------
+
+A few projects come to mind, providing inspiration, ideas and implementations
+to lift from.
+
+  * Phoenix (Elixir)
+  * Blazor (C# .NET)
+  * Hyperfiddle/Photon (Clojure)
+  * Remix (JavaScript)
+
+Similar Go projects
+-------------------
+
+  * Vugu - Vugu looks good and seems to work based on my kicking the tires if
+    you want the experience of writing Go code as components for frontend
+    browser behavior. But it seems fairly limited to that SPA-like style of
+    interaction. Pushup wants to move things to the server.
+
+How?
+----
+
+  * HATEOAS - htmx-style HTML-over-the-wire, server-side state centralization
+  * Mapping HTML attributes to Go parameters, HTML child elements to ???
+  * Components compiled down to Go structs in separate package, wired together
+    at the top-level for routing and HTTP serving
+
+To anticipate some questions:
+-----------------------------
+
+  * What about `html/template`? It's a great template package, but for what I
+    want to achieve, which are server-side components, I think the simplest
+    and best thing is to use Go code for the dynamic bits and inline it with
+    HTML. While I'm building this out and exploring the design, I think it's
+    best if I can focus on the things I can control and not be distracted
+    by making a different package fit what I'm trying to do. (It's entirely
+    possible though that I abandon this approach and make a wrapper over
+    `html/template` with a pre-processing step, I'm reserving the right
+    to change my mind.) I'm inspired by what C# is doing in Blazor and the
+    .razor file format/syntax here. The key is to have a compilation step that
+    produces Go code from a project directory layout.
+  * What about `net/http`? This will all be built on `net/http` ultimately
+    for the runtime, but my thought is that components will compile down to
+    methods on a type that implements the ServeHTTP interface.
