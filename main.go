@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -16,20 +17,23 @@ import (
 func main() {
 	flag.Parse()
 
-	if flag.NArg() < 1 {
-		log.Fatalf("need path to app directory")
+	appDir := "app"
+	if flag.NArg() == 1 {
+		appDir = flag.Arg(0)
+	}
+	pagesDir := filepath.Join(appDir, "pages")
+	if !dirExists(pagesDir) {
+		log.Fatalf("invalid Pushup project directory structure: couldn't find `pages` subdir")
 	}
 
-	appDir := flag.Arg(0)
-
-	entries, err := os.ReadDir(appDir)
+	entries, err := os.ReadDir(pagesDir)
 	if err != nil {
 		log.Fatalf("reading app directory: %v", err)
 	}
 
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
-			path := filepath.Join(appDir, entry.Name())
+			path := filepath.Join(pagesDir, entry.Name())
 			log.Printf("found pushup file: %s", path)
 			err := compilePushup(path)
 			if err != nil {
@@ -37,6 +41,18 @@ func main() {
 			}
 		}
 	}
+}
+
+func dirExists(path string) bool {
+	fi, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false
+		} else {
+			panic(err)
+		}
+	}
+	return fi.IsDir()
 }
 
 func compilePushup(path string) error {
