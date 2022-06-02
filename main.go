@@ -1,18 +1,23 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
+	"go/format"
 	"io"
 	"io/fs"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"golang.org/x/net/html"
 )
+
+var outDir = "./build"
 
 func main() {
 	flag.Parse()
@@ -41,6 +46,53 @@ func main() {
 			}
 		}
 	}
+
+	if err := buildAndRun(outDir); err != nil {
+		log.Fatalf("building and running generated Go code: %v", err)
+	}
+}
+
+func buildAndRun(dir string) error {
+	mainExeDir := filepath.Join(dir, "cmd", "myproject")
+	if err := os.MkdirAll(mainExeDir, 0755); err != nil {
+		return fmt.Errorf("making directory for command: %w", err)
+	}
+
+	mainProgram := `package main
+
+import (
+	"net/http"
+	"log"
+
+	"github.com/AdHocRandD/pushup/build"
+)
+
+func main() {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		route := &build.PushupIndex1{}
+		w.Header().Set("Content-Type", "text/html")
+		if err := route.Render(w); err != nil {
+			log.Printf("rendering route: %v", err)
+			http.Error(w, http.StatusText(500), 500)
+			return
+		}
+	})
+	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+`
+
+	if err := os.WriteFile(filepath.Join(mainExeDir, "main.go"), []byte(mainProgram), 0644); err != nil {
+		return fmt.Errorf("writing main.go file: %w", err)
+	}
+
+	cmd := exec.Command("go", "run", "./build/cmd/myproject")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "output:\n%s\n", output)
+		return fmt.Errorf("running project main executable: %w", err)
+	}
+
+	return nil
 }
 
 func dirExists(path string) bool {
@@ -57,7 +109,9 @@ func dirExists(path string) bool {
 
 func compilePushup(path string) error {
 	// FIXME(paulsmith): specify output directory
-	outDir := "./build"
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		return fmt.Errorf("creating output directory %s: %w", outDir, err)
+	}
 
 	contents, err := os.ReadFile(path)
 	if err != nil {
@@ -97,6 +151,13 @@ type exprVar struct {
 
 func (e exprVar) Pos() span { return e.pos }
 
+type exprCode struct {
+	code string
+	pos  span
+}
+
+func (e exprCode) Pos() span { return e.pos }
+
 func parsePushup(source string) (parseResult, error) {
 	r := strings.NewReader(source)
 	t := html.NewTokenizer(r)
@@ -124,7 +185,15 @@ func parsePushup(source string) (parseResult, error) {
 					kw := directive[1:]
 					switch kw {
 					case "code":
-						// TODO(paulsmith): insert literal Go code into a function/top-level package/method
+						code, end, err := scanCode(text[s.start:], s)
+						if err != nil {
+							return parseResult{}, fmt.Errorf("scanning code: %w", err)
+						}
+						exprs = append(exprs, exprCode{
+							code: code,
+							pos:  span{start: s.start, end: end},
+						})
+						idx = end + s.start
 					default:
 						panic("unimplemented keyword " + kw)
 					}
@@ -134,8 +203,8 @@ func parsePushup(source string) (parseResult, error) {
 						pos:  s,
 						name: directive[1:],
 					})
+					idx = s.end
 				}
-				idx = s.end
 			}
 			if idx <= len(text)-1 {
 				exprs = append(exprs, exprString{
@@ -158,12 +227,14 @@ func parsePushup(source string) (parseResult, error) {
 			fmt.Fprintf(os.Stderr, "%q\n", v.str)
 		case exprVar:
 			fmt.Fprintf(os.Stderr, "@%s\n", v.name)
+		case exprCode:
+			fmt.Fprintf(os.Stderr, "@code {\n%s\n}\n", v.code)
 		default:
 			panic("unimplemented expr type")
 		}
 	}
 
-	return parseResult{}, nil
+	return parseResult{exprs: exprs}, nil
 }
 
 type span struct {
@@ -204,8 +275,122 @@ func isKeyword(text string) bool {
 }
 
 type parseResult struct {
+	exprs []expr
 }
 
 func genCode(p parseResult, outputPath string) error {
+	var b bytes.Buffer
+
+	packageName := "build"
+
+	fmt.Fprintf(&b, "// this file is mechnically generated, do not edit!\n")
+	fmt.Fprintf(&b, "package %s\n", packageName)
+
+	imports := []string{"io"}
+
+	fmt.Fprintf(&b, "import (\n")
+	for _, import_ := range imports {
+		fmt.Fprintf(&b, "\t\"%s\"\n", import_)
+	}
+	fmt.Fprintf(&b, ")\n")
+
+	typeName := "PushupIndex1"
+
+	type field struct {
+		name string
+		typ  string
+	}
+
+	fields := []field{}
+
+	fmt.Fprintf(&b, "type %s struct {\n", typeName)
+	for _, field := range fields {
+		fmt.Fprintf(&b, "\t%s %s\n", field.name, field.typ)
+	}
+	fmt.Fprintf(&b, "}\n")
+
+	fmt.Fprintf(&b, "func (t *%s) Render(w io.Writer) error {\n", typeName)
+
+	// first pass over expressions to insert literal Go code at top of the method
+	for _, expr := range p.exprs {
+		if e, ok := expr.(exprCode); ok {
+			fmt.Fprintf(&b, "%s\n", e.code)
+		}
+	}
+
+	// second pass over all other no-code expressions
+	for _, expr := range p.exprs {
+		switch v := expr.(type) {
+		case exprString:
+			fmt.Fprintf(&b, "\t{\n\t_, err := w.Write([]byte(`%s`))\n", v.str)
+			fmt.Fprintf(&b, "\tif err != nil { return err }\n")
+			fmt.Fprintf(&b, "\t}\n")
+		case exprVar:
+			fmt.Fprintf(&b, "\t{\n\t_, err := w.Write([]byte(%s))\n", v.name)
+			fmt.Fprintf(&b, "\tif err != nil { return err }\n")
+			fmt.Fprintf(&b, "\t}\n")
+		case exprCode:
+			// no-op
+		default:
+			panic(fmt.Sprintf("unimplemented expression type %T %v", expr, v))
+		}
+	}
+	fmt.Fprintf(&b, "return nil\n")
+	fmt.Fprintf(&b, "}\n")
+
+	//fmt.Printf("\x1b[36m%s\x1b[0m", b.String())
+
+	formatted, err := format.Source(b.Bytes())
+	if err != nil {
+		return fmt.Errorf("gofmt the generated code: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, formatted, 0644); err != nil {
+		return fmt.Errorf("writing out formatted generated code to file: %w", err)
+	}
+
 	return nil
+}
+
+func isWhitespace(ch byte) bool {
+	return ch == ' ' || ch == '\n' || ch == '\t'
+}
+
+func scanCode(text string, s span) (string, int, error) {
+	// assert we are sitting on @code at function entry
+	if text[:len("@code")] != "@code" {
+		panic("assertion error, wanted '@code', got " + text[:len("@code")])
+	}
+	var start int
+	idx := 0
+	idx += len("@code")
+	for isWhitespace(text[idx]) {
+		idx++
+	}
+	if text[idx] != '{' {
+		return "", 0, fmt.Errorf("expected '{', got '%c'", text[idx])
+	}
+	idx++
+	start = idx
+	for isWhitespace(text[idx]) {
+		idx++
+	}
+	depth := 1
+	for {
+		if depth == 0 || idx >= len(text) {
+			break
+		}
+		ch := text[idx]
+		if ch == '{' {
+			depth++
+		} else if ch == '}' {
+			depth--
+		}
+		idx++
+	}
+	end := idx - 1
+	for idx < len(text) && isWhitespace(text[idx]) {
+		idx++
+	}
+	return text[start:end], idx, nil
 }

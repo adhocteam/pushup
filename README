@@ -66,6 +66,8 @@ Similar Go projects
     you want the experience of writing Go code as components for frontend
     browser behavior. But it seems fairly limited to that SPA-like style of
     interaction. Pushup wants to move things to the server.
+  * Vecty
+  * [gox](https://github.com/8byt/gox)
 
 How?
 ----
