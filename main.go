@@ -150,9 +150,19 @@ func parsePushup(source string) (parseResult, error) {
 			})
 		}
 	}
+
 	for _, expr := range exprs {
-		fmt.Fprintf(os.Stderr, "%T %v\n", expr, expr)
+		fmt.Fprintf(os.Stderr, "%T ", expr)
+		switch v := expr.(type) {
+		case exprString:
+			fmt.Fprintf(os.Stderr, "%q\n", v.str)
+		case exprVar:
+			fmt.Fprintf(os.Stderr, "@%s\n", v.name)
+		default:
+			panic("unimplemented expr type")
+		}
 	}
+
 	return parseResult{}, nil
 }
 
