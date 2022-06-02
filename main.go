@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -49,7 +48,7 @@ func compilePushup(path string) error {
 		return fmt.Errorf("reading pushup file: %w", err)
 	}
 
-	parsedPage, err := parsePushup(contents)
+	parsedPage, err := parsePushup(string(contents))
 	if err != nil {
 		return fmt.Errorf("parsing pushup file: %w", err)
 	}
@@ -82,9 +81,9 @@ type exprVar struct {
 
 func (e exprVar) Pos() span { return e.pos }
 
-func parsePushup(source []byte) (parseResult, error) {
-	br := bytes.NewReader(source)
-	t := html.NewTokenizer(br)
+func parsePushup(source string) (parseResult, error) {
+	r := strings.NewReader(source)
+	t := html.NewTokenizer(r)
 	var exprs []expr
 	for {
 		tt := t.Next()
@@ -92,32 +91,32 @@ func parsePushup(source []byte) (parseResult, error) {
 			break
 		}
 		if tt == html.TextToken {
-			text := t.Text()
+			text := string(t.Text())
 			spans := scanForDirectives(text)
 			idx := 0
 			for _, s := range spans {
 				if s.start > idx {
 					exprs = append(exprs, exprString{
 						pos: span{start: idx, end: s.start},
-						str: string(text[idx:s.start]),
+						str: text[idx:s.start],
 					})
 				}
 				directive := text[s.start:s.end]
 				// log.Printf("@ directive span: %v: %q", s, directive)
 				switch {
 				case isKeyword(directive[1:]):
-					kw := string(directive[1:])
+					kw := directive[1:]
 					switch kw {
 					case "code":
 						// TODO(paulsmith): insert literal Go code into a function/top-level package/method
 					default:
-						panic("unimplemented keyword " + string(kw))
+						panic("unimplemented keyword " + kw)
 					}
 				default:
 					// variable substitution (technically, expression evaluation)
 					exprs = append(exprs, exprVar{
 						pos:  s,
-						name: string(directive[1:]),
+						name: directive[1:],
 					})
 				}
 				idx = s.end
@@ -125,7 +124,7 @@ func parsePushup(source []byte) (parseResult, error) {
 			if idx <= len(text)-1 {
 				exprs = append(exprs, exprString{
 					pos: span{start: idx, end: len(text)},
-					str: string(text[idx:]),
+					str: text[idx:],
 				})
 			}
 		} else {
@@ -146,7 +145,7 @@ type span struct {
 	end   int
 }
 
-func scanForDirectives(text []byte) []span {
+func scanForDirectives(text string) []span {
 	var spans []span
 	idx := 0
 	for {
@@ -174,8 +173,8 @@ func isAlphaNumeric(ch byte) bool {
 	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 }
 
-func isKeyword(text []byte) bool {
-	return bytes.Equal(text, []byte("code"))
+func isKeyword(text string) bool {
+	return text == "code"
 }
 
 type parseResult struct {
