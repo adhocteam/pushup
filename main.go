@@ -69,6 +69,7 @@ func main() {
 	} else {
 		args = []string{"-port", *port}
 	}
+	// FIXME(paulsmith): separate build from run and move it in to compile step
 	if err := buildAndRun(outDir, args); err != nil {
 		log.Fatalf("building and running generated Go code: %v", err)
 	}
@@ -102,7 +103,7 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		route := &build.PushupIndex1{}
 		w.Header().Set("Content-Type", "text/html")
-		if err := route.Render(w); err != nil {
+		if err := route.Render(w, r); err != nil {
 			log.Printf("rendering route: %v", err)
 			http.Error(w, http.StatusText(500), 500)
 			return
@@ -330,10 +331,10 @@ func genCode(p parseResult, outputPath string) error {
 
 	packageName := "build"
 
-	fmt.Fprintf(&b, "// this file is mechnically generated, do not edit!\n")
+	fmt.Fprintf(&b, "// this file is mechanically generated, do not edit!\n")
 	fmt.Fprintf(&b, "package %s\n", packageName)
 
-	imports := []string{"io"}
+	imports := []string{"io", "net/http"}
 
 	fmt.Fprintf(&b, "import (\n")
 	for _, import_ := range imports {
@@ -356,7 +357,7 @@ func genCode(p parseResult, outputPath string) error {
 	}
 	fmt.Fprintf(&b, "}\n")
 
-	fmt.Fprintf(&b, "func (t *%s) Render(w io.Writer) error {\n", typeName)
+	fmt.Fprintf(&b, "func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
 
 	// first pass over expressions to insert literal Go code at top of the method
 	for _, expr := range p.exprs {
