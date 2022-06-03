@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<title>@title</title>
+<h1>@title</h1>
+<p>Pushup is an old-school but modern web framework for Go.</p>
+<p>You came from: @remoteAddr</p>
+
+@code {
+    title := "About Pushup"
+    remoteAddr := req.RemoteAddr
+}

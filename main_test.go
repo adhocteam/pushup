@@ -28,9 +28,13 @@ func TestPushup(t *testing.T) {
 	for _, entry := range entries {
 		if strings.HasSuffix(entry.Name(), ".pushup") {
 			t.Run(entry.Name(), func(t *testing.T) {
-				nameWithoutExt, _ := splitExt(entry.Name())
+				basename, _ := splitExt(entry.Name())
+				requestPath := "/" + basename
+				if basename == "index" {
+					requestPath = "/"
+				}
 				pushupFile := filepath.Join(samplesDir, entry.Name())
-				outFile := filepath.Join(samplesDir, nameWithoutExt+".out")
+				outFile := filepath.Join(samplesDir, basename+".out")
 				if _, err := os.Stat(outFile); err != nil {
 					if errors.Is(err, fs.ErrNotExist) {
 						t.Fatalf("no matching output file %s", outFile)
@@ -105,6 +109,7 @@ func TestPushup(t *testing.T) {
 					})
 
 					if err := cmd.Run(); err != nil {
+						// FIXME(paulsmith): capture stderr and output to terminal on error
 						return err
 					}
 
@@ -120,7 +125,7 @@ func TestPushup(t *testing.T) {
 						err := ctx.Err()
 						return err
 					}
-					cmd := exec.CommandContext(ctx, "curl", "--unix-socket", socketPath, "-s", "http://dummy/")
+					cmd := exec.CommandContext(ctx, "curl", "--unix-socket", socketPath, "-s", "http://dummy"+requestPath)
 					got, err := cmd.CombinedOutput()
 					if err != nil {
 						return err

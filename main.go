@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -63,6 +64,8 @@ func main() {
 		}
 	}
 
+	addSupport(outDir)
+
 	var args []string
 	if *unixSocket != "" {
 		args = []string{"-unix-socket", *unixSocket}
@@ -75,6 +78,63 @@ func main() {
 	}
 }
 
+func addSupport(dir string) {
+	supportFile := `
+package build
+
+import (
+	"io"
+	"net/http"
+	"errors"
+	"regexp"
+)
+
+// FIXME(paulsmith): I think of this as a route but this conflicts with a route in the serve mux
+// sense, so calling "component" for now
+type component interface {
+	// FIXME(paulsmith): return a pushup.Response object instead and don't take a writer
+	Render(io.Writer, *http.Request) error
+}
+// FIXME(paulsmith): add a wrapper type for easily going between a component and a http.Handler
+
+type routeList []route
+
+var routes routeList
+
+func (r *routeList) add(pattern string, c component) {
+	*r = append(*r, newRoute(pattern, c))
+}
+
+type route struct {
+	regex *regexp.Regexp
+	component component
+}
+
+func newRoute(pattern string, c component) route {
+	return route{regexp.MustCompile("^" + pattern + "$"), c}
+}
+
+var NotFound = errors.New("page not found")
+
+func Render(w http.ResponseWriter, r *http.Request) error {
+	for _, route := range routes {
+		matches := route.regex.FindStringSubmatch(r.URL.Path)
+		if len(matches) > 0 {
+			// TODO(paulsmith): implement matches
+			if err := route.component.Render(w, r); err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+	return NotFound
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "pushup_support.go"), []byte(supportFile), 0644); err != nil {
+		panic(err)
+	}
+}
+
 func buildAndRun(dir string, passthruArgs []string) error {
 	mainExeDir := filepath.Join(dir, "cmd", "myproject")
 	if err := os.MkdirAll(mainExeDir, 0755); err != nil {
@@ -84,6 +144,7 @@ func buildAndRun(dir string, passthruArgs []string) error {
 	mainProgram := `package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -94,19 +155,25 @@ import (
 	"github.com/AdHocRandD/pushup/build"
 )
 
+var logger *log.Logger
+
 func main() {
+	logger = log.New(os.Stderr, "[\x1b[36mPUSHUP\x1b[0m] ", 0)
+
 	port := flag.String("port", "8080", "port to listen on with TCP IPv4")
 	unixSocket := flag.String("unix-socket", "", "path to listen on with Unix socket")
 	// FIXME(paulsmith): can't have both port and unixSocket non-empty
 	flag.Parse()
 
-	// TODO(paulsmith): move this to a support package
 	http.Handle("/", requestLogMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		route := &build.PushupIndex1{}
 		w.Header().Set("Content-Type", "text/html")
-		if err := route.Render(w, r); err != nil {
-			log.Printf("rendering route: %v", err)
-			http.Error(w, http.StatusText(500), 500)
+		if err := build.Render(w, r); err != nil {
+			logger.Printf("rendering route: %v", err)
+			if errors.Is(err, build.NotFound) {
+				http.NotFound(w, r)
+			} else {
+				http.Error(w, http.StatusText(500), 500)
+			}
 			return
 		}
 	})))
@@ -121,17 +188,16 @@ func main() {
 		ln, err = net.Listen("tcp4", addr) // TODO(paulsmith): may want to support IPv6
 	}
 	if err != nil {
-		log.Fatalf("getting a listener: %v", err)
+		logger.Fatalf("getting a listener: %v", err)
 	}
 
 	fmt.Fprintf(os.Stdout, "\x1b[32m↑↑ Pushup ready and listening on %s ↑↑\x1b[0m\n", ln.Addr().String())
 	if err := http.Serve(ln, nil); err != nil {
-		log.Fatalf("serving HTTP: %v", err)
+		logger.Fatalf("serving HTTP: %v", err)
 	}
 }
 
 func requestLogMiddleware(h http.Handler) http.Handler {
-	logger := log.New(os.Stderr, "[\x1b[36mPUSHUP\x1b[0m] ", 0)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logger.Printf("%s %s", r.Method, r.URL.Path)
 		h.ServeHTTP(w, r)
@@ -183,9 +249,10 @@ func compilePushup(path string) error {
 	}
 
 	filename := filepath.Base(path)
-	nameWithoutExt := strings.TrimSuffix(filename, ".pushup")
+	basename := strings.TrimSuffix(filename, ".pushup")
 
-	if err := genCode(parsedPage, filepath.Join(outDir, nameWithoutExt+".go")); err != nil {
+	// FIXME(paulsmith): pass in output/build dir path instead of being a package global
+	if err := genCode(parsedPage, basename, filepath.Join(outDir, basename+".go")); err != nil {
 		return fmt.Errorf("generating Go code from parse result: %w", err)
 	}
 
@@ -337,9 +404,10 @@ type parseResult struct {
 	exprs []expr
 }
 
-func genCode(p parseResult, outputPath string) error {
+func genCode(p parseResult, basename string, outputPath string) error {
 	var b bytes.Buffer
 
+	// FIXME(paulsmith): need way to specify this as user
 	packageName := "build"
 
 	fmt.Fprintf(&b, "// this file is mechanically generated, do not edit!\n")
@@ -353,7 +421,7 @@ func genCode(p parseResult, outputPath string) error {
 	}
 	fmt.Fprintf(&b, ")\n")
 
-	typeName := "PushupIndex1"
+	typeName := genStructName(basename)
 
 	type field struct {
 		name string
@@ -366,6 +434,20 @@ func genCode(p parseResult, outputPath string) error {
 	for _, field := range fields {
 		fmt.Fprintf(&b, "\t%s %s\n", field.name, field.typ)
 	}
+	fmt.Fprintf(&b, "}\n")
+
+	// FIXME(paulsmith): handle nested routes (multiple slashes)
+	route := "/" + basename
+	if basename == "index" {
+		route = "/"
+	}
+
+	fmt.Fprintf(&b, "func (t *%s) register() {\n", typeName)
+	fmt.Fprintf(&b, "\troutes.add(\"%s\", t)\n", route)
+	fmt.Fprintf(&b, "}\n")
+
+	fmt.Fprintf(&b, "func init() {\n")
+	fmt.Fprintf(&b, "\t(&%s{}).register()\n", typeName)
 	fmt.Fprintf(&b, "}\n")
 
 	fmt.Fprintf(&b, "func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
@@ -409,6 +491,17 @@ func genCode(p parseResult, outputPath string) error {
 	}
 
 	return nil
+}
+
+var structNameIdx int = 0
+
+func genStructName(basename string) string {
+	structNameIdx++
+	// FIXME(paulsmith): need to be more rigorous in mapping safely from
+	// filenames to legal Go type names
+	basename = strings.ReplaceAll(strings.ReplaceAll(basename, ".", ""), "-", "_")
+	name := "Pushup__" + basename + "__" + strconv.Itoa(structNameIdx)
+	return name
 }
 
 func isWhitespace(ch byte) bool {
