@@ -51,7 +51,7 @@ func main() {
 		for _, entry := range entries {
 			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
 				path := filepath.Join(pagesDir, entry.Name())
-				log.Printf("found pushup file: %s", path)
+				// log.Printf("found pushup file: %s", path)
 				pushupFiles = append(pushupFiles, path)
 			}
 		}
@@ -346,19 +346,21 @@ func parsePushup(source string) (parseResult, error) {
 		}
 	}
 
-	for _, expr := range exprs {
-		fmt.Fprintf(os.Stderr, "%T ", expr)
-		switch v := expr.(type) {
-		case exprString:
-			fmt.Fprintf(os.Stderr, "%q\n", v.str)
-		case exprVar:
-			fmt.Fprintf(os.Stderr, "@%s\n", v.name)
-		case exprCode:
-			fmt.Fprintf(os.Stderr, "@code {\n%s\n}\n", v.code)
-		default:
-			panic("unimplemented expr type")
+	/*
+		for _, expr := range exprs {
+			fmt.Fprintf(os.Stderr, "%T ", expr)
+			switch v := expr.(type) {
+			case exprString:
+				fmt.Fprintf(os.Stderr, "%q\n", v.str)
+			case exprVar:
+				fmt.Fprintf(os.Stderr, "@%s\n", v.name)
+			case exprCode:
+				fmt.Fprintf(os.Stderr, "@code {\n%s\n}\n", v.code)
+			default:
+				panic("unimplemented expr type")
+			}
 		}
-	}
+	*/
 
 	return parseResult{exprs: exprs}, nil
 }

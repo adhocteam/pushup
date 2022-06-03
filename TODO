@@ -4,37 +4,65 @@ Today: June 1, 2022
 
 Approach: identify the smallest milestones
 
-  - [ ] A simple "hello world" page component
+  - [x] A simple "hello world" page component
         Then:
         - [ ] Function calls
         - [ ] Other kinds of expressions
-  - [ ] Draft syntax/format of component pages
+  - [x] Draft syntax/format of component pages
         + for now, just steal .razor syntax from Blazor
-  - [ ] Lex/parse the .pushup format (using golang.org/x/net/html)
-  - [ ] Rough working version of the compiler that takes in a project
+  - [x] Lex/parse the .pushup format (using golang.org/x/net/html)
+  - [x] Rough working version of the compiler that takes in a project
         directory, generates Go code, and builds the full site binary
         - [x] decide between "routes" and "pages" (or "components")
               + "pages" for now
-  - [ ] Figure out a draft project directory layout
-  - [ ] Generate directory and file scaffolding
-  - [ ] Mapping from page filenames to route path parts (steal from Remix here)
-  - [ ] Struct introspection for form submission validation and SQL generation
+  - [x] Figure out a draft project directory layout
+  - [x] Pass request object to Render()
+  - [x] Tests - e2e
+  - [x] Request logging middleware
+  - [x] Mapping from page filenames to route path parts
+        - [ ] Use $placeholder in the filename for dynamic routes (steal from Remix here)
+  - [ ] Layouts & partials
   - [ ] Stub out the enhanced hypermedia with htmx (but eventually plan
         to replace it with something native to this project since htmx is
         such a simple library to begin with).
-  - [ ] Make a .pushup syntax highlighter plugin for vim
+  - [ ] Keep track of global position in pushup file during parsing because the
+        html package tokenizer doesn't do that for us
 
 Later:
 
+  - [ ] Struct introspection for form submission validation and SQL generation
+  - [ ] Generate directory and file scaffolding
   - [ ] Form submissions
         - [ ] validation / errors
   - [ ] default (but overridable) 500 and 404 pages
   - [ ] handsome welcome page from scaffolding
   - [ ] Tailwind (or something for CSS)
   - [ ] public dir / static assets
+  - [ ] Tests - generated package (using net/http/httptest)
+  - [ ] Make a .pushup syntax highlighter plugin for vim
+  - [ ] Rewrite HTML tokens to do things like add a11y aria- attributes
+  - [ ] Link Go packages together programmatically (vs textually/generating more source code)
+  - [ ] Add compiler directives to generated code for debugging the original lines of source //line index.pushup:10
+  - [ ] fly.io integration??
+  - [ ] Pages are 'hx-boost' by default
+  - [ ] Sub-page components
+  - [ ] Coalesce sequences of multiple string expressions
+  - [ ] Pushup "prelude" - collection of useful stuff that Pushup provides and is bundled in each compilation
+  - [ ] Have a way either for route to explicitly say what methods it allows or get them implicitly from code
 
 Decision points
 
   - [ ] Delimiter in .pushup files
         - [ ] @ - same as Blazor
   - [ ] @-expressions: upper or lower case?
+  - [ ] JSX style syntax instead?
+  - [ ] .pup vs .pushup file extension?
+  - [ ] How to handle imports in @code { } blocks
+  - [ ] How to do redirects
+
+Implement some apps!
+
+ - [ ] A todo list
+ - [ ] A pizza ordering app
+ - [ ] A blog
+ - [ ] A household builder

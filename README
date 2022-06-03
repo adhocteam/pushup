@@ -1,4 +1,7 @@
+Let's party like it's 1999 and make a new web framework.
+
 Pushup - a modern web framework for the Go programming language
+===============================================================
 
 Let's make Go the best full stack web language. Let's recapture the best
 of past web development eras, like PHP's ease of deployment, updated with
@@ -6,12 +9,15 @@ today's tech and user expectations, like great client-side interactivity,
 avoiding the things that haven't been so good, like complexity and bloat,
 combined with everything that makes Go great, like performance and fast builds.
 
-Key features
-------------
+It's a server-side web app framework first and foremost, let's just get that
+clear from the get-go.
+
+Modern key features
+-------------------
 
   * Components - individual files that combine templated HTML and Go code that
     compile down to Go packages
-  * File-based routing by default (ala mod_php, overridable with directives)
+  * File-based routing by default
   * WebSockets & SSE integration
   * Enhanced hypermedia (think htmx)
   * SQLite by default (plus Litestream??)
@@ -94,3 +100,8 @@ To anticipate some questions:
   * What about `net/http`? This will all be built on `net/http` ultimately
     for the runtime, but my thought is that components will compile down to
     methods on a type that implements the ServeHTTP interface.
+
+Inspirations
+------------
+
+  * [Ben Hoyt's article on routing in Go](https://benhoyt.com/writings/go-routing/)
