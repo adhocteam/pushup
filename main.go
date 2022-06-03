@@ -20,39 +20,61 @@ import (
 var outDir = "./build"
 
 func main() {
+	singleFlag := flag.String("single", "", "path to a single Pushup file")
+	port := flag.String("port", "8080", "port to listen on with TCP IPv4")
+	unixSocket := flag.String("unix-socket", "", "path to listen on with Unix socket")
+
 	flag.Parse()
 
-	appDir := "app"
-	if flag.NArg() == 1 {
-		appDir = flag.Arg(0)
-	}
-	pagesDir := filepath.Join(appDir, "pages")
-	if !dirExists(pagesDir) {
-		log.Fatalf("invalid Pushup project directory structure: couldn't find `pages` subdir")
-	}
+	var pushupFiles []string
 
-	entries, err := os.ReadDir(pagesDir)
-	if err != nil {
-		log.Fatalf("reading app directory: %v", err)
-	}
+	os.RemoveAll(outDir)
 
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
-			path := filepath.Join(pagesDir, entry.Name())
-			log.Printf("found pushup file: %s", path)
-			err := compilePushup(path)
-			if err != nil {
-				log.Fatalf("compiling pushup file %s: %v", entry.Name(), err)
+	if *singleFlag != "" {
+		pushupFiles = []string{*singleFlag}
+	} else {
+		appDir := "app"
+		if flag.NArg() == 1 {
+			appDir = flag.Arg(0)
+		}
+		pagesDir := filepath.Join(appDir, "pages")
+		if !dirExists(pagesDir) {
+			log.Fatalf("invalid Pushup project directory structure: couldn't find `pages` subdir")
+		}
+
+		entries, err := os.ReadDir(pagesDir)
+		if err != nil {
+			log.Fatalf("reading app directory: %v", err)
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
+				path := filepath.Join(pagesDir, entry.Name())
+				log.Printf("found pushup file: %s", path)
+				pushupFiles = append(pushupFiles, path)
 			}
 		}
 	}
 
-	if err := buildAndRun(outDir); err != nil {
+	for _, path := range pushupFiles {
+		err := compilePushup(path)
+		if err != nil {
+			log.Fatalf("compiling pushup file %s: %v", path, err)
+		}
+	}
+
+	var args []string
+	if *unixSocket != "" {
+		args = []string{"-unix-socket", *unixSocket}
+	} else {
+		args = []string{"-port", *port}
+	}
+	if err := buildAndRun(outDir, args); err != nil {
 		log.Fatalf("building and running generated Go code: %v", err)
 	}
 }
 
-func buildAndRun(dir string) error {
+func buildAndRun(dir string, passthruArgs []string) error {
 	mainExeDir := filepath.Join(dir, "cmd", "myproject")
 	if err := os.MkdirAll(mainExeDir, 0755); err != nil {
 		return fmt.Errorf("making directory for command: %w", err)
@@ -61,13 +83,22 @@ func buildAndRun(dir string) error {
 	mainProgram := `package main
 
 import (
-	"net/http"
+	"flag"
+	"fmt"
 	"log"
+	"net"
+	"net/http"
+	"os"
 
 	"github.com/AdHocRandD/pushup/build"
 )
 
 func main() {
+	port := flag.String("port", "8080", "port to listen on with TCP IPv4")
+	unixSocket := flag.String("unix-socket", "", "path to listen on with Unix socket")
+	// FIXME(paulsmith): can't have both port and unixSocket non-empty
+	flag.Parse()
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		route := &build.PushupIndex1{}
 		w.Header().Set("Content-Type", "text/html")
@@ -77,7 +108,22 @@ func main() {
 			return
 		}
 	})
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	var ln net.Listener
+	var err error
+	if *unixSocket != "" {
+		ln, err = net.Listen("unix", *unixSocket)
+	} else {
+		host := "0.0.0.0"
+		addr := host + ":" + *port
+		ln, err = net.Listen("tcp4", addr) // TODO(paulsmith): may want to support IPv6
+	}
+	if err != nil {
+		log.Fatalf("getting a listener: %v", err)
+	}
+	fmt.Fprintf(os.Stdout, "\x1b[32m↑↑ Pushup ready and listening on %s ↑↑\x1b[0m\n", ln.Addr().String())
+	if err := http.Serve(ln, nil); err != nil {
+		log.Fatalf("serving HTTP: %v", err)
+	}
 }
 `
 
@@ -85,10 +131,11 @@ func main() {
 		return fmt.Errorf("writing main.go file: %w", err)
 	}
 
-	cmd := exec.Command("go", "run", "./build/cmd/myproject")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "output:\n%s\n", output)
+	args := append([]string{"run", "./build/cmd/myproject"}, passthruArgs...)
+	cmd := exec.Command("go", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("running project main executable: %w", err)
 	}
 
