@@ -100,7 +100,8 @@ func main() {
 	// FIXME(paulsmith): can't have both port and unixSocket non-empty
 	flag.Parse()
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	// TODO(paulsmith): move this to a support package
+	http.Handle("/", requestLogMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		route := &build.PushupIndex1{}
 		w.Header().Set("Content-Type", "text/html")
 		if err := route.Render(w, r); err != nil {
@@ -108,7 +109,8 @@ func main() {
 			http.Error(w, http.StatusText(500), 500)
 			return
 		}
-	})
+	})))
+
 	var ln net.Listener
 	var err error
 	if *unixSocket != "" {
@@ -121,10 +123,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("getting a listener: %v", err)
 	}
+
 	fmt.Fprintf(os.Stdout, "\x1b[32m↑↑ Pushup ready and listening on %s ↑↑\x1b[0m\n", ln.Addr().String())
 	if err := http.Serve(ln, nil); err != nil {
 		log.Fatalf("serving HTTP: %v", err)
 	}
+}
+
+func requestLogMiddleware(h http.Handler) http.Handler {
+	logger := log.New(os.Stderr, "[\x1b[36mPUSHUP\x1b[0m] ", 0)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger.Printf("%s %s", r.Method, r.URL.Path)
+		h.ServeHTTP(w, r)
+	})
 }
 `
 
