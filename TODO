@@ -21,7 +21,9 @@ Approach: identify the smallest milestones
   - [x] Request logging middleware
   - [x] Mapping from page filenames to route path parts
         - [ ] Use $placeholder in the filename for dynamic routes (steal from Remix here)
-  - [ ] Layouts & partials
+  - [x] Layouts
+        - [ ] Refactor layout codegen such that it calls nested/constituent components
+  - [ ] Partials
   - [ ] Stub out the enhanced hypermedia with htmx (but eventually plan
         to replace it with something native to this project since htmx is
         such a simple library to begin with).

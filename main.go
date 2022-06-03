@@ -31,14 +31,24 @@ func main() {
 
 	os.RemoveAll(outDir)
 
+	appDir := "app"
+	if flag.NArg() == 1 {
+		appDir = flag.Arg(0)
+	}
+	pagesDir := filepath.Join(appDir, "pages")
+
+	var defaultLayout parseResult
+
 	if *singleFlag != "" {
 		pushupFiles = []string{*singleFlag}
 	} else {
-		appDir := "app"
-		if flag.NArg() == 1 {
-			appDir = flag.Arg(0)
+		var err error
+		layoutsDir := filepath.Join(appDir, "layouts")
+		defaultLayout, err = compileLayout(filepath.Join(layoutsDir, "default.pushup"))
+		if err != nil {
+			log.Fatalf("compiling default pushup layout: %v", err)
 		}
-		pagesDir := filepath.Join(appDir, "pages")
+
 		if !dirExists(pagesDir) {
 			log.Fatalf("invalid Pushup project directory structure: couldn't find `pages` subdir")
 		}
@@ -58,7 +68,7 @@ func main() {
 	}
 
 	for _, path := range pushupFiles {
-		err := compilePushup(path)
+		err := compilePushup(defaultLayout, path)
 		if err != nil {
 			log.Fatalf("compiling pushup file %s: %v", path, err)
 		}
@@ -232,7 +242,21 @@ func dirExists(path string) bool {
 	return fi.IsDir()
 }
 
-func compilePushup(path string) error {
+func compileLayout(path string) (parseResult, error) {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return parseResult{}, fmt.Errorf("reading pushup layout file: %w", err)
+	}
+
+	parsedLayout, err := parsePushup(string(contents))
+	if err != nil {
+		return parseResult{}, fmt.Errorf("parsing pushup layout file: %w", err)
+	}
+
+	return parsedLayout, nil
+}
+
+func compilePushup(layout parseResult, path string) error {
 	// FIXME(paulsmith): specify output directory
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		return fmt.Errorf("creating output directory %s: %w", outDir, err)
@@ -252,7 +276,7 @@ func compilePushup(path string) error {
 	basename := strings.TrimSuffix(filename, ".pushup")
 
 	// FIXME(paulsmith): pass in output/build dir path instead of being a package global
-	if err := genCode(parsedPage, basename, filepath.Join(outDir, basename+".go")); err != nil {
+	if err := genCode(layout, parsedPage, basename, filepath.Join(outDir, basename+".go")); err != nil {
 		return fmt.Errorf("generating Go code from parse result: %w", err)
 	}
 
@@ -362,7 +386,9 @@ func parsePushup(source string) (parseResult, error) {
 		}
 	*/
 
-	return parseResult{exprs: exprs}, nil
+	// FIXME(paulsmith): don't hardcode layouts
+	result := parseResult{layout: "default.pushup", exprs: exprs}
+	return result, nil
 }
 
 type span struct {
@@ -403,10 +429,11 @@ func isKeyword(text string) bool {
 }
 
 type parseResult struct {
-	exprs []expr
+	layout string
+	exprs  []expr
 }
 
-func genCode(p parseResult, basename string, outputPath string) error {
+func genCode(layout parseResult, p parseResult, basename string, outputPath string) error {
 	var b bytes.Buffer
 
 	// FIXME(paulsmith): need way to specify this as user
@@ -446,14 +473,15 @@ func genCode(p parseResult, basename string, outputPath string) error {
 
 	fmt.Fprintf(&b, "func (t *%s) register() {\n", typeName)
 	fmt.Fprintf(&b, "\troutes.add(\"%s\", t)\n", route)
-	fmt.Fprintf(&b, "}\n")
+	fmt.Fprintf(&b, "}\n\n")
 
 	fmt.Fprintf(&b, "func init() {\n")
 	fmt.Fprintf(&b, "\t(&%s{}).register()\n", typeName)
-	fmt.Fprintf(&b, "}\n")
+	fmt.Fprintf(&b, "}\n\n")
 
 	fmt.Fprintf(&b, "func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
 
+	// FIXME(paulsmith): what to do about layout @code Go code?
 	// first pass over expressions to insert literal Go code at top of the method
 	for _, expr := range p.exprs {
 		if e, ok := expr.(exprCode); ok {
@@ -461,27 +489,40 @@ func genCode(p parseResult, basename string, outputPath string) error {
 		}
 	}
 
-	// second pass over all other no-code expressions
-	for _, expr := range p.exprs {
-		switch v := expr.(type) {
-		case exprString:
-			fmt.Fprintf(&b, "\t{\n\t_, err := w.Write([]byte(`%s`))\n", v.str)
-			fmt.Fprintf(&b, "\tif err != nil { return err }\n")
-			fmt.Fprintf(&b, "\t}\n")
-		case exprVar:
-			fmt.Fprintf(&b, "\t{\n\t_, err := w.Write([]byte(%s))\n", v.name)
-			fmt.Fprintf(&b, "\tif err != nil { return err }\n")
-			fmt.Fprintf(&b, "\t}\n")
-		case exprCode:
-			// no-op
-		default:
-			panic(fmt.Sprintf("unimplemented expression type %T %v", expr, v))
+	genCodeForExprs := func(exprs []expr, isLayout bool) []expr {
+		for i, expr := range exprs {
+			switch v := expr.(type) {
+			case exprString:
+				fmt.Fprintf(&b, "\t{\n\t_, err := w.Write([]byte(`%s`))\n", v.str)
+				fmt.Fprintf(&b, "\tif err != nil { return err }\n")
+				fmt.Fprintf(&b, "\t}\n")
+			case exprVar:
+				if isLayout && v.name == "contents" {
+					return exprs[i+1:]
+				} else {
+					fmt.Fprintf(&b, "\t{\n\t_, err := w.Write([]byte(%s))\n", v.name)
+					fmt.Fprintf(&b, "\tif err != nil { return err }\n")
+					fmt.Fprintf(&b, "\t}\n")
+				}
+			case exprCode:
+				// no-op
+			default:
+				panic(fmt.Sprintf("unimplemented expression type %T %v", expr, v))
+			}
 		}
+		return nil
 	}
+
+	// for the actual rendered HTML, first generate code for the layout up until the @contents
+	// variable is reached, then do this page's, then finish the layout after.
+	remainingLayoutExprs := genCodeForExprs(layout.exprs, true)
+	_ = genCodeForExprs(p.exprs, false)
+	_ = genCodeForExprs(remainingLayoutExprs, true)
+
 	fmt.Fprintf(&b, "return nil\n")
 	fmt.Fprintf(&b, "}\n")
 
-	//fmt.Printf("\x1b[36m%s\x1b[0m", b.String())
+	// fmt.Printf("\x1b[36m%s\x1b[0m", b.String())
 
 	formatted, err := format.Source(b.Bytes())
 	if err != nil {

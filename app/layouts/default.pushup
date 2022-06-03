@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Pushup app</title>
+        <style>
+            html { background: #eee; }
+            body { background: #fff; margin: 0 auto; max-width: 900px; padding: 40px; }
+        </style>
+        <script src="..."></script>
+    </head>
+    <body>
+        <nav>
+            <ul>
+                <li>
+                    <a href="/">Home</a>
+                </li>
+            </ul>
+        </nav>
+        <header>
+            <h1>Welcome to Pushup</h1>
+        </header>
+        <main>
+            @contents
+        </main>
+        <footer>
+            <p>Copyright 2022 Ad Hoc</p>
+        </footer>
+    </body>
+</html>
