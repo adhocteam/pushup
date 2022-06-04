@@ -125,6 +125,7 @@ func TestPushup(t *testing.T) {
 						err := ctx.Err()
 						return err
 					}
+					// FIXME(paulsmith): replace curl with net/http.Client
 					cmd := exec.CommandContext(ctx, "curl", "--unix-socket", socketPath, "-s", "http://dummy"+requestPath)
 					got, err := cmd.CombinedOutput()
 					if err != nil {

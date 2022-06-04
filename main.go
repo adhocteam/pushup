@@ -170,6 +170,7 @@ import (
 var logger *log.Logger
 
 func main() {
+	// FIXME(paulsmith): detect if connected to terminal for VT100 escapes
 	logger = log.New(os.Stderr, "[\x1b[36mPUSHUP\x1b[0m] ", 0)
 
 	port := flag.String("port", "8080", "port to listen on with TCP IPv4")
@@ -471,22 +472,45 @@ type parseResult struct {
 	exprs  []expr
 }
 
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (w *errWriter) Write(p []byte) (int, error) {
+	if w.err != nil {
+		return 0, w.err
+	}
+	var n int
+	n, w.err = w.w.Write(p)
+	return n, w.err
+}
+
+func newErrWriter(w io.Writer) *errWriter {
+	return &errWriter{w: w, err: nil}
+}
+
 func genCode(layout parseResult, p parseResult, basename string, outputPath string) error {
 	var b bytes.Buffer
+	w := newErrWriter(&b)
+
+	printf := func(format string, a ...any) {
+		fmt.Fprintf(w, format, a...)
+	}
 
 	// FIXME(paulsmith): need way to specify this as user
 	packageName := "build"
 
-	fmt.Fprintf(&b, "// this file is mechanically generated, do not edit!\n")
-	fmt.Fprintf(&b, "package %s\n", packageName)
+	printf("// this file is mechanically generated, do not edit!\n")
+	printf("package %s\n", packageName)
 
 	imports := []string{"io", "net/http"}
 
-	fmt.Fprintf(&b, "import (\n")
+	printf("import (\n")
 	for _, import_ := range imports {
-		fmt.Fprintf(&b, "\t\"%s\"\n", import_)
+		printf("\t\"%s\"\n", import_)
 	}
-	fmt.Fprintf(&b, ")\n")
+	printf(")\n")
 
 	typeName := genStructName(basename)
 
@@ -497,11 +521,11 @@ func genCode(layout parseResult, p parseResult, basename string, outputPath stri
 
 	fields := []field{}
 
-	fmt.Fprintf(&b, "type %s struct {\n", typeName)
+	printf("type %s struct {\n", typeName)
 	for _, field := range fields {
-		fmt.Fprintf(&b, "\t%s %s\n", field.name, field.typ)
+		printf("\t%s %s\n", field.name, field.typ)
 	}
-	fmt.Fprintf(&b, "}\n")
+	printf("}\n")
 
 	// FIXME(paulsmith): handle nested routes (multiple slashes)
 	route := "/" + basename
@@ -509,21 +533,21 @@ func genCode(layout parseResult, p parseResult, basename string, outputPath stri
 		route = "/"
 	}
 
-	fmt.Fprintf(&b, "func (t *%s) register() {\n", typeName)
-	fmt.Fprintf(&b, "\troutes.add(\"%s\", t)\n", route)
-	fmt.Fprintf(&b, "}\n\n")
+	printf("func (t *%s) register() {\n", typeName)
+	printf("\troutes.add(\"%s\", t)\n", route)
+	printf("}\n\n")
 
-	fmt.Fprintf(&b, "func init() {\n")
-	fmt.Fprintf(&b, "\t(&%s{}).register()\n", typeName)
-	fmt.Fprintf(&b, "}\n\n")
+	printf("func init() {\n")
+	printf("\t(&%s{}).register()\n", typeName)
+	printf("}\n\n")
 
-	fmt.Fprintf(&b, "func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
+	printf("func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
 
 	// FIXME(paulsmith): what to do about layout @code Go code?
 	// first pass over expressions to insert literal Go code at top of the method
 	for _, expr := range p.exprs {
 		if e, ok := expr.(exprCode); ok {
-			fmt.Fprintf(&b, "%s\n", e.code)
+			printf("%s\n", e.code)
 		}
 	}
 
@@ -531,16 +555,16 @@ func genCode(layout parseResult, p parseResult, basename string, outputPath stri
 		for i, expr := range exprs {
 			switch v := expr.(type) {
 			case exprString:
-				fmt.Fprintf(&b, "\t{\n\t_, err := w.Write([]byte(`%s`))\n", v.str)
-				fmt.Fprintf(&b, "\tif err != nil { return err }\n")
-				fmt.Fprintf(&b, "\t}\n")
+				printf("\t{\n\t_, err := w.Write([]byte(`%s`))\n", v.str)
+				printf("\tif err != nil { return err }\n")
+				printf("\t}\n")
 			case exprVar:
 				if isLayout && v.name == "contents" {
 					return exprs[i+1:]
 				} else {
-					fmt.Fprintf(&b, "\t{\n\t_, err := w.Write([]byte(%s))\n", v.name)
-					fmt.Fprintf(&b, "\tif err != nil { return err }\n")
-					fmt.Fprintf(&b, "\t}\n")
+					printf("\t{\n\t_, err := w.Write([]byte(%s))\n", v.name)
+					printf("\tif err != nil { return err }\n")
+					printf("\t}\n")
 				}
 			case exprCode:
 				// no-op
@@ -557,8 +581,12 @@ func genCode(layout parseResult, p parseResult, basename string, outputPath stri
 	_ = genCodeForExprs(p.exprs, false)
 	_ = genCodeForExprs(remainingLayoutExprs, true)
 
-	fmt.Fprintf(&b, "return nil\n")
-	fmt.Fprintf(&b, "}\n")
+	printf("return nil\n")
+	printf("}\n")
+
+	if w.err != nil {
+		return fmt.Errorf("problem writing to the codegen buffer: %w", w.err)
+	}
 
 	// fmt.Printf("\x1b[36m%s\x1b[0m", b.String())
 
