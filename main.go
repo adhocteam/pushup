@@ -161,6 +161,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"github.com/AdHocRandD/pushup/build"
@@ -176,7 +177,8 @@ func main() {
 	// FIXME(paulsmith): can't have both port and unixSocket non-empty
 	flag.Parse()
 
-	http.Handle("/", requestLogMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// TODO(paulsmith): allow these middlewares to be configurable on/off
+	http.Handle("/", panicRecoveryMiddleware(requestLogMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		if err := build.Render(w, r); err != nil {
 			logger.Printf("rendering route: %v", err)
@@ -187,7 +189,7 @@ func main() {
 			}
 			return
 		}
-	})))
+	}))))
 
 	var ln net.Listener
 	var err error
@@ -208,7 +210,18 @@ func main() {
 	}
 }
 
-// TODO(paulsmith): add panic recovery middleware
+func panicRecoveryMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("recovered from panic in an HTTP hander: %v", r)
+				debug.PrintStack()
+				http.Error(w, http.StatusText(500), 500)
+			}
+		}()
+		h.ServeHTTP(w, r)
+	})
+}
 
 type loggingResponseWriter struct {
 	http.ResponseWriter
