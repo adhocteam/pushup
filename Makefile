@@ -1,4 +1,4 @@
-test:
+test tests:
 	go test -v ./...
 
 fixme todo:

@@ -161,6 +161,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/AdHocRandD/pushup/build"
 )
@@ -207,10 +208,34 @@ func main() {
 	}
 }
 
+// TODO(paulsmith): add panic recovery middleware
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	code int
+	wrote bool
+}
+
+func newLoggingResponseWriter(w http.ResponseWriter) *loggingResponseWriter {
+	return &loggingResponseWriter{w, 200, false}
+}
+
+func (w *loggingResponseWriter) WriteHeader(statusCode int) {
+	if w.wrote {
+		return
+	}
+	w.wrote = true
+	w.code = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+	return
+}
+
 func requestLogMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Printf("%s %s", r.Method, r.URL.Path)
-		h.ServeHTTP(w, r)
+		t0 := time.Now()
+		lwr := newLoggingResponseWriter(w)
+		h.ServeHTTP(lwr, r)
+		logger.Printf("%s %s %d %s", r.Method, r.URL.String(), lwr.code, time.Since(t0))
 	})
 }
 `
