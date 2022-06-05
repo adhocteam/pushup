@@ -2,4 +2,4 @@ test tests:
 	go test -v ./...
 
 fixme todo:
-	grep -E '(TODO|FIXME)' *.go
+	@grep -h -E '(TODO|FIXME)' *.go | sed -E -e 's/.*\/\/ (TODO|FIXME)\(paulsmith\): //'
