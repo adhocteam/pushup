@@ -95,7 +95,6 @@ func TestPushup(t *testing.T) {
 								}
 							}
 						}
-						panic("shouldn't get here")
 					})
 
 					g.Go(func() error {
