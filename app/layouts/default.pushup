@@ -3,8 +3,28 @@
     <head>
         <title>Pushup app</title>
         <style>
-            html { background: #eee; }
-            body { background: #fff; margin: 0 auto; max-width: 900px; padding: 40px; }
+            html {
+                background: #eee;
+            }
+            body {
+                font-family: Georgia, serif;
+                background: #fff;
+                margin: 0 auto;
+                max-width: 900px;
+                padding: 40px;
+            }
+            header > h1 {
+                font-size: 32px;
+            }
+            main > h1 {
+                font-size: 24px;
+            }
+            footer {
+                margin-top: 1rem;
+                border-top: 1px solid #ccc;
+                padding-top: 1rem;
+                font-size: 12px;
+            }
         </style>
         <script src="..."></script>
     </head>
@@ -17,13 +37,13 @@
             </ul>
         </nav>
         <header>
-            <h1>Welcome to Pushup</h1>
+            <h1>Pushup demo</h1>
         </header>
         <main>
             @contents
         </main>
         <footer>
-            <p>Copyright 2022 Ad Hoc</p>
+            <p>&copy;2022 Ad Hoc</p>
         </footer>
     </body>
 </html>
