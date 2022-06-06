@@ -64,11 +64,20 @@ func TestPushup(t *testing.T) {
 				defer os.RemoveAll(tmpdir)
 				socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+".sock")
 
+				var errb bytes.Buffer
+
 				g.Go(func() error {
 					cmd := exec.Command("go", "run", "main.go", "-single", pushupFile, "-unix-socket", socketPath)
 					cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-					out, err := cmd.StdoutPipe()
+
+					stdout, err := cmd.StdoutPipe()
 					if err != nil {
+						return err
+					}
+
+					cmd.Stderr = &errb
+
+					if err := cmd.Start(); err != nil {
 						return err
 					}
 
@@ -81,7 +90,7 @@ func TestPushup(t *testing.T) {
 							return err
 						default:
 							for {
-								n, err := out.Read(buf[:])
+								n, err := stdout.Read(buf[:])
 								if n > 0 {
 									if bytes.Contains(buf[:], needle) {
 										ready <- true
@@ -109,8 +118,7 @@ func TestPushup(t *testing.T) {
 						}
 					})
 
-					if err := cmd.Run(); err != nil {
-						// FIXME(paulsmith): capture stderr and output to terminal on error
+					if err := cmd.Wait(); err != nil {
 						return err
 					}
 
@@ -161,6 +169,7 @@ func TestPushup(t *testing.T) {
 					if _, ok := err.(*exec.ExitError); ok && allgood {
 						// no-op
 					} else {
+						t.Logf("stderr:\n%s\n", errb.String())
 						t.Fatalf("error: %T %v", err, err)
 					}
 				}

@@ -326,12 +326,20 @@ type expr interface {
 	Pos() span
 }
 
-type exprString struct {
+type literalType int
+
+const (
+	literalHTML literalType = iota
+	literalRawString
+)
+
+type exprLiteral struct {
 	str string
+	typ literalType
 	pos span
 }
 
-func (e exprString) Pos() span { return e.pos }
+func (e exprLiteral) Pos() span { return e.pos }
 
 type exprVar struct {
 	name string
@@ -362,9 +370,10 @@ func parsePushup(source string) (parseResult, error) {
 			idx := 0
 			for _, s := range spans {
 				if s.start > idx {
-					exprs = append(exprs, exprString{
-						pos: span{start: idx, end: s.start},
+					exprs = append(exprs, exprLiteral{
 						str: text[idx:s.start],
+						typ: literalRawString,
+						pos: span{start: idx, end: s.start},
 					})
 				}
 				directive := text[s.start:s.end]
@@ -396,15 +405,17 @@ func parsePushup(source string) (parseResult, error) {
 				}
 			}
 			if idx <= len(text)-1 {
-				exprs = append(exprs, exprString{
-					pos: span{start: idx, end: len(text)},
+				exprs = append(exprs, exprLiteral{
 					str: text[idx:],
+					typ: literalRawString,
+					pos: span{start: idx, end: len(text)},
 				})
 			}
 		} else {
-			exprs = append(exprs, exprString{
-				pos: span{},
+			exprs = append(exprs, exprLiteral{
 				str: t.Token().String(),
+				typ: literalHTML,
+				pos: span{},
 			})
 		}
 	}
@@ -491,26 +502,28 @@ func newErrWriter(w io.Writer) *errWriter {
 }
 
 func genCode(layout parseResult, p parseResult, basename string, outputPath string) error {
-	var b bytes.Buffer
-	w := newErrWriter(&b)
+	var (
+		headerb  bytes.Buffer
+		importsb bytes.Buffer
+		bodyb    bytes.Buffer
+	)
 
-	printf := func(format string, a ...any) {
+	bodyw := newErrWriter(&bodyb)
+
+	fprintf := func(w io.Writer, format string, a ...any) {
 		fmt.Fprintf(w, format, a...)
 	}
 
 	// FIXME(paulsmith): need way to specify this as user
 	packageName := "build"
 
-	printf("// this file is mechanically generated, do not edit!\n")
-	printf("package %s\n", packageName)
+	fprintf(&headerb, "// this file is mechanically generated, do not edit!\n")
+	fprintf(&headerb, "package %s\n", packageName)
 
-	imports := []string{"io", "net/http"}
-
-	printf("import (\n")
-	for _, import_ := range imports {
-		printf("\t\"%s\"\n", import_)
+	imports := map[string]bool{"io": false, "net/http": false, "html/template": false}
+	used := func(name string) {
+		imports[name] = true
 	}
-	printf(")\n")
 
 	typeName := genStructName(basename)
 
@@ -521,11 +534,11 @@ func genCode(layout parseResult, p parseResult, basename string, outputPath stri
 
 	fields := []field{}
 
-	printf("type %s struct {\n", typeName)
+	fprintf(bodyw, "type %s struct {\n", typeName)
 	for _, field := range fields {
-		printf("\t%s %s\n", field.name, field.typ)
+		fprintf(bodyw, "\t%s %s\n", field.name, field.typ)
 	}
-	printf("}\n")
+	fprintf(bodyw, "}\n")
 
 	// FIXME(paulsmith): handle nested routes (multiple slashes)
 	route := "/" + basename
@@ -533,38 +546,46 @@ func genCode(layout parseResult, p parseResult, basename string, outputPath stri
 		route = "/"
 	}
 
-	printf("func (t *%s) register() {\n", typeName)
-	printf("\troutes.add(\"%s\", t)\n", route)
-	printf("}\n\n")
+	fprintf(bodyw, "func (t *%s) register() {\n", typeName)
+	fprintf(bodyw, "\troutes.add(\"%s\", t)\n", route)
+	fprintf(bodyw, "}\n\n")
 
-	printf("func init() {\n")
-	printf("\t(&%s{}).register()\n", typeName)
-	printf("}\n\n")
+	fprintf(bodyw, "func init() {\n")
+	fprintf(bodyw, "\t(&%s{}).register()\n", typeName)
+	fprintf(bodyw, "}\n\n")
 
-	printf("func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
+	used("io")
+	used("net/http")
+	fprintf(bodyw, "func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
 
 	// FIXME(paulsmith): what to do about layout @code Go code?
 	// first pass over expressions to insert literal Go code at top of the method
 	for _, expr := range p.exprs {
 		if e, ok := expr.(exprCode); ok {
-			printf("%s\n", e.code)
+			fprintf(bodyw, "%s\n", e.code)
 		}
 	}
 
 	genCodeForExprs := func(exprs []expr, isLayout bool) []expr {
 		for i, expr := range exprs {
 			switch v := expr.(type) {
-			case exprString:
-				printf("\t{\n\t_, err := w.Write([]byte(`%s`))\n", v.str)
-				printf("\tif err != nil { return err }\n")
-				printf("\t}\n")
+			case exprLiteral:
+				switch v.typ {
+				case literalHTML:
+					fprintf(bodyw, "\t\tw.Write([]byte(`%s`))\n", v.str)
+				case literalRawString:
+					used("html/template")
+					fprintf(bodyw, "\t\ttemplate.HTMLEscape(w, []byte(`%s`))\n", v.str)
+				default:
+					panic("unimplemented literal type")
+				}
 			case exprVar:
 				if isLayout && v.name == "contents" {
 					return exprs[i+1:]
 				} else {
-					printf("\t{\n\t_, err := w.Write([]byte(%s))\n", v.name)
-					printf("\tif err != nil { return err }\n")
-					printf("\t}\n")
+					used("html/template")
+					// TODO(paulsmith): enforce Stringer() interface on these types
+					fprintf(bodyw, "\t\ttemplate.HTMLEscape(w, []byte(%s))\n", v.name)
 				}
 			case exprCode:
 				// no-op
@@ -581,16 +602,30 @@ func genCode(layout parseResult, p parseResult, basename string, outputPath stri
 	_ = genCodeForExprs(p.exprs, false)
 	_ = genCodeForExprs(remainingLayoutExprs, true)
 
-	printf("return nil\n")
-	printf("}\n")
+	fprintf(bodyw, "\treturn nil\n")
+	fprintf(bodyw, "}\n")
 
-	if w.err != nil {
-		return fmt.Errorf("problem writing to the codegen buffer: %w", w.err)
+	if bodyw.err != nil {
+		return fmt.Errorf("problem writing to the codegen buffer: %w", bodyw.err)
 	}
 
-	// fmt.Printf("\x1b[36m%s\x1b[0m", b.String())
+	importsb.WriteString("\nimport (\n")
+	for import_, ok := range imports {
+		if ok {
+			line := fmt.Sprintf("\t\"%s\"\n", import_)
+			importsb.WriteString(line)
+		}
+	}
+	importsb.WriteString(")\n\n")
 
-	formatted, err := format.Source(b.Bytes())
+	var combinedb bytes.Buffer
+	combinedb.ReadFrom(&headerb)
+	combinedb.ReadFrom(&importsb)
+	combinedb.ReadFrom(&bodyb)
+
+	//fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", combinedb.String())
+
+	formatted, err := format.Source(combinedb.Bytes())
 	if err != nil {
 		return fmt.Errorf("gofmt the generated code: %w", err)
 	}
