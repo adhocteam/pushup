@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"golang.org/x/net/html"
 )
@@ -572,10 +573,9 @@ func genCode(layout parseResult, p parseResult, basename string, outputPath stri
 			case exprLiteral:
 				switch v.typ {
 				case literalHTML:
-					fprintf(bodyw, "\t\tw.Write([]byte(`%s`))\n", v.str)
+					fprintf(bodyw, "\t\tio.WriteString(w, %s)\n", strconv.Quote(v.str))
 				case literalRawString:
-					used("html/template")
-					fprintf(bodyw, "\t\ttemplate.HTMLEscape(w, []byte(`%s`))\n", v.str)
+					fprintf(bodyw, "\t\tio.WriteString(w, %s)\n", strconv.Quote(template.HTMLEscapeString(v.str)))
 				default:
 					panic("unimplemented literal type")
 				}
