@@ -26,7 +26,7 @@
                 font-size: 12px;
             }
         </style>
-        <script src="..."></script>
+        <script src="https://unpkg.com/htmx.org@1.7.0"></script>
     </head>
     <body>
         <nav>
@@ -39,7 +39,7 @@
         <header>
             <h1>Pushup demo</h1>
         </header>
-        <main>
+        <main hx-boost="true">
             @contents
         </main>
         <footer>
