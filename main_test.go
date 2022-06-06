@@ -127,7 +127,6 @@ func TestPushup(t *testing.T) {
 						err := ctx.Err()
 						return err
 					}
-					// FIXME(paulsmith): replace curl with net/http.Client
 					client := &http.Client{
 						Transport: &http.Transport{
 							Dial: func(proto, addr string) (net.Conn, error) {
