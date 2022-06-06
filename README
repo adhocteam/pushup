@@ -1,9 +1,9 @@
-Let's party like it's 1999 and make a new web framework.
+Let's party like it's 1999 and make a new server-side-first web framework.
 
 Pushup - a modern web framework for the Go programming language
 ===============================================================
 
-Let's make Go the best full stack web language. Let's recapture the best
+Let's make Go the best full-stack web language. Let's recapture the best
 of past web development eras, like PHP's ease of deployment, updated with
 today's tech and user expectations, like great client-side interactivity,
 avoiding the things that haven't been so good, like complexity and bloat,
