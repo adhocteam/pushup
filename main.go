@@ -180,7 +180,7 @@ func main() {
 
 	// TODO(paulsmith): allow these middlewares to be configurable on/off
 	http.Handle("/", panicRecoveryMiddleware(requestLogMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := build.Render(w, r); err != nil {
 			logger.Printf("rendering route: %v", err)
 			if errors.Is(err, build.NotFound) {

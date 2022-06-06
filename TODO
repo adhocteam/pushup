@@ -51,6 +51,9 @@ Later:
   - [ ] Coalesce sequences of multiple string expressions
   - [ ] Pushup "prelude" - collection of useful stuff that Pushup provides and is bundled in each compilation
   - [ ] Have a way either for route to explicitly say what methods it allows or get them implicitly from code
+  - [ ] Dual-generate server-side and client-side routes (client-site being WASM (look at TinyGo for possible size reduction in WASM payload)
+  - [ ] Add healthcheck
+  - [ ] Add admin webserver on separate port
 
 Decision points
 
