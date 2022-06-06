@@ -7,6 +7,8 @@ import (
 	"io"
 	"io/fs"
 	"io/ioutil"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -126,10 +128,21 @@ func TestPushup(t *testing.T) {
 						return err
 					}
 					// FIXME(paulsmith): replace curl with net/http.Client
-					cmd := exec.CommandContext(ctx, "curl", "--unix-socket", socketPath, "-s", "http://dummy"+requestPath)
-					got, err := cmd.CombinedOutput()
+					client := &http.Client{
+						Transport: &http.Transport{
+							Dial: func(proto, addr string) (net.Conn, error) {
+								return net.Dial("unix", socketPath)
+							},
+						},
+					}
+					resp, err := client.Get("http://dummy" + requestPath)
 					if err != nil {
-						return err
+						return nil
+					}
+					defer resp.Body.Close()
+					got, err := io.ReadAll(resp.Body)
+					if err != nil {
+						return nil
 					}
 					done <- true
 					if !bytes.Equal(want, got) {
