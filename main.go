@@ -358,66 +358,110 @@ func (e exprCode) Pos() span { return e.pos }
 
 func parsePushup(source string) (parseResult, error) {
 	r := strings.NewReader(source)
-	t := html.NewTokenizer(r)
+	z := html.NewTokenizer(r)
+
+	const (
+		stateStart int = iota
+		stateInCode
+	)
+	state := stateStart
+	var accum string
+	var start int
+	var pos int
+
 	var exprs []expr
+
+	emitCode := func(text string) {
+		text = strings.TrimSpace(text)
+		text = html.UnescapeString(text) // TODO(paulsmith): check this doesn't break Go code
+		text = strings.TrimPrefix(text, "@code {")
+		text = strings.TrimSuffix(text, "}")
+		exprs = append(exprs, exprCode{
+			code: text,
+			pos:  span{start: start, end: pos},
+		})
+	}
+
+loop:
 	for {
-		tt := t.Next()
-		if err := t.Err(); errors.Is(err, io.EOF) {
-			break
+		tt := z.Next()
+		t := z.Token()
+		raw := z.Raw()
+		pos += len(raw)
+
+		if tt == html.ErrorToken {
+			err := z.Err()
+			if err == io.EOF {
+				break loop
+			}
+			return parseResult{}, err
 		}
-		if tt == html.TextToken {
-			text := string(t.Text())
-			spans := scanForDirectives(text)
-			idx := 0
-			for _, s := range spans {
-				if s.start > idx {
-					exprs = append(exprs, exprLiteral{
-						str: text[idx:s.start],
-						typ: literalRawString,
-						pos: span{start: idx, end: s.start},
-					})
-				}
-				directive := text[s.start:s.end]
-				// log.Printf("@ directive span: %v: %q", s, directive)
-				switch {
-				case isKeyword(directive[1:]):
-					kw := directive[1:]
-					switch kw {
-					case "code":
-						code, end, err := scanCode(text[s.start:], s)
-						if err != nil {
-							return parseResult{}, fmt.Errorf("scanning code: %w", err)
-						}
-						exprs = append(exprs, exprCode{
-							code: code,
-							pos:  span{start: s.start, end: end},
-						})
-						idx = end + s.start
-					default:
-						panic("unimplemented keyword " + kw)
+
+		switch state {
+		case stateStart:
+			if tt == html.TextToken {
+				if idx := strings.Index(t.Data, "@code {"); idx != -1 {
+					if codeBlockClosed(t.Data) {
+						emitCode(t.Data)
+						start = pos
+					} else {
+						state = stateInCode
+						accum = t.Data
 					}
-				default:
-					// variable substitution (technically, expression evaluation)
-					exprs = append(exprs, exprVar{
-						pos:  s,
-						name: directive[1:],
-					})
-					idx = s.end
+				} else {
+					spans := scanForDirectives(t.Data)
+					idx := 0
+					for _, s := range spans {
+						if s.start > idx {
+							exprs = append(exprs, exprLiteral{
+								str: t.Data[idx:s.start],
+								typ: literalRawString,
+								pos: span{start: start + idx, end: start + s.start},
+							})
+						}
+						directive := t.Data[s.start:s.end]
+						// log.Printf("@ directive span: %v: %q", s, directive)
+						switch {
+						case isKeyword(directive[1:]):
+							kw := directive[1:]
+							switch kw {
+							default:
+								panic("unimplemented keyword " + kw)
+							}
+						default:
+							// variable substitution (technically, expression evaluation)
+							exprs = append(exprs, exprVar{
+								pos:  span{start: start + s.start, end: start + s.end},
+								name: directive[1:],
+							})
+							idx = s.end
+						}
+					}
+					if idx <= len(t.Data)-1 {
+						exprs = append(exprs, exprLiteral{
+							str: t.Data[idx:],
+							typ: literalRawString,
+							pos: span{start: start + idx, end: start + len(t.Data)},
+						})
+					}
+					start = pos
 				}
-			}
-			if idx <= len(text)-1 {
+			} else {
 				exprs = append(exprs, exprLiteral{
-					str: text[idx:],
-					typ: literalRawString,
-					pos: span{start: idx, end: len(text)},
+					str: string(raw),
+					typ: literalHTML,
+					pos: span{start: start, end: pos},
 				})
+				start = pos
 			}
-		} else {
-			exprs = append(exprs, exprLiteral{
-				str: t.Token().String(),
-				typ: literalHTML,
-				pos: span{},
-			})
+		case stateInCode:
+			accum += string(raw)
+			if codeBlockClosed(accum) {
+				emitCode(accum)
+				state = stateStart
+				accum = ""
+				start = pos
+			}
 		}
 	}
 
@@ -425,7 +469,7 @@ func parsePushup(source string) (parseResult, error) {
 		for _, expr := range exprs {
 			fmt.Fprintf(os.Stderr, "%T ", expr)
 			switch v := expr.(type) {
-			case exprString:
+			case exprLiteral:
 				fmt.Fprintf(os.Stderr, "%q\n", v.str)
 			case exprVar:
 				fmt.Fprintf(os.Stderr, "@%s\n", v.name)
@@ -440,6 +484,10 @@ func parsePushup(source string) (parseResult, error) {
 	// FIXME(paulsmith): don't hardcode layouts
 	result := parseResult{layout: "default.pushup", exprs: exprs}
 	return result, nil
+}
+
+func codeBlockClosed(text string) bool {
+	return strings.Count(text, "{") == strings.Count(text, "}")
 }
 
 type span struct {
@@ -476,7 +524,7 @@ func isAlphaNumeric(ch byte) bool {
 }
 
 func isKeyword(text string) bool {
-	return text == "code"
+	return false
 }
 
 type parseResult struct {
