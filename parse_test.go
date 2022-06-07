@@ -17,7 +17,6 @@ func TestParse(t *testing.T) {
 }
 `,
 			parseResult{
-				layout: "default.pushup",
 				exprs: []expr{
 					exprLiteral{str: "<p>", typ: literalHTML, pos: span{start: 0, end: 3}},
 					exprLiteral{str: "Hello, ", typ: literalRawString, pos: span{start: 3, end: 10}},
@@ -36,7 +35,6 @@ func TestParse(t *testing.T) {
 <div id="end">More</div>
 `,
 			parseResult{
-				layout: "default.pushup",
 				exprs: []expr{
 					exprLiteral{str: "<p class=\"greeting\">", typ: 0, pos: span{start: 0, end: 20}},
 					exprLiteral{str: "I ", typ: 1, pos: span{start: 20, end: 22}},
@@ -63,7 +61,6 @@ func TestParse(t *testing.T) {
 }
 `,
 			parseResult{
-				layout: "default.pushup",
 				exprs: []expr{exprLiteral{str: "<p>", typ: 0, pos: span{start: 0, end: 3}},
 					exprLiteral{str: "Don't break Go code", typ: 1, pos: span{start: 3, end: 22}},
 					exprLiteral{str: "</p>", typ: 0, pos: span{start: 22, end: 26}},
@@ -86,9 +83,6 @@ func TestParse(t *testing.T) {
 }
 
 func testParseResultsEqual(a, b parseResult) error {
-	if a.layout != b.layout {
-		return fmt.Errorf("layout: want: %q got: %q", a.layout, b.layout)
-	}
 	if len(a.exprs) != len(b.exprs) {
 		return fmt.Errorf("# of exprs: want: %d got %d\nwant:\n%#v\n===\ngot:\n%#v", len(a.exprs), len(b.exprs), a.exprs, b.exprs)
 	}

@@ -21,13 +21,16 @@ import (
 
 var outDir = "./build"
 
+var singleFlag = flag.String("single", "", "path to a single Pushup file")
+
 func main() {
-	singleFlag := flag.String("single", "", "path to a single Pushup file")
 	port := flag.String("port", "8080", "port to listen on with TCP IPv4")
 	unixSocket := flag.String("unix-socket", "", "path to listen on with Unix socket")
+	compileOnly := flag.Bool("compile-only", false, "compile only, don't start web server after")
 
 	flag.Parse()
 
+	var layoutFiles []string
 	var pushupFiles []string
 
 	os.RemoveAll(outDir)
@@ -36,40 +39,60 @@ func main() {
 	if flag.NArg() == 1 {
 		appDir = flag.Arg(0)
 	}
-	pagesDir := filepath.Join(appDir, "pages")
-
-	var defaultLayout parseResult
 
 	if *singleFlag != "" {
 		pushupFiles = []string{*singleFlag}
 	} else {
-		var err error
 		layoutsDir := filepath.Join(appDir, "layouts")
-		defaultLayout, err = compileLayout(filepath.Join(layoutsDir, "default.pushup"))
-		if err != nil {
-			log.Fatalf("compiling default pushup layout: %v", err)
+		{
+			if !dirExists(layoutsDir) {
+				log.Fatalf("invalid Pushup project directory structure: couldn't find `layouts` subdir")
+			}
+
+			entries, err := os.ReadDir(layoutsDir)
+			if err != nil {
+				log.Fatalf("reading app directory: %v", err)
+			}
+
+			for _, entry := range entries {
+				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
+					path := filepath.Join(layoutsDir, entry.Name())
+					// log.Printf("found pushup file: %s", path)
+					layoutFiles = append(layoutFiles, path)
+				}
+			}
 		}
 
-		if !dirExists(pagesDir) {
-			log.Fatalf("invalid Pushup project directory structure: couldn't find `pages` subdir")
-		}
+		pagesDir := filepath.Join(appDir, "pages")
+		{
+			if !dirExists(pagesDir) {
+				log.Fatalf("invalid Pushup project directory structure: couldn't find `pages` subdir")
+			}
 
-		entries, err := os.ReadDir(pagesDir)
-		if err != nil {
-			log.Fatalf("reading app directory: %v", err)
-		}
+			entries, err := os.ReadDir(pagesDir)
+			if err != nil {
+				log.Fatalf("reading app directory: %v", err)
+			}
 
-		for _, entry := range entries {
-			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
-				path := filepath.Join(pagesDir, entry.Name())
-				// log.Printf("found pushup file: %s", path)
-				pushupFiles = append(pushupFiles, path)
+			for _, entry := range entries {
+				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
+					path := filepath.Join(pagesDir, entry.Name())
+					// log.Printf("found pushup file: %s", path)
+					pushupFiles = append(pushupFiles, path)
+				}
 			}
 		}
 	}
 
+	for _, path := range layoutFiles {
+		err := compilePushup(path, compileLayout, outDir)
+		if err != nil {
+			log.Fatalf("compiling layout file %s: %v", path, err)
+		}
+	}
+
 	for _, path := range pushupFiles {
-		err := compilePushup(defaultLayout, path)
+		err := compilePushup(path, compilePushupComponent, outDir)
 		if err != nil {
 			log.Fatalf("compiling pushup file %s: %v", path, err)
 		}
@@ -77,15 +100,17 @@ func main() {
 
 	addSupport(outDir)
 
-	var args []string
-	if *unixSocket != "" {
-		args = []string{"-unix-socket", *unixSocket}
-	} else {
-		args = []string{"-port", *port}
-	}
-	// FIXME(paulsmith): separate build from run and move it in to compile step
-	if err := buildAndRun(outDir, args); err != nil {
-		log.Fatalf("building and running generated Go code: %v", err)
+	if !*compileOnly {
+		var args []string
+		if *unixSocket != "" {
+			args = []string{"-unix-socket", *unixSocket}
+		} else {
+			args = []string{"-port", *port}
+		}
+		// FIXME(paulsmith): separate build from run and move it in to compile step
+		if err := buildAndRun(outDir, args); err != nil {
+			log.Fatalf("building and running generated Go code: %v", err)
+		}
 	}
 }
 
@@ -139,6 +164,20 @@ func Render(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	return NotFound
+}
+
+type layout interface {
+	Render(yield chan struct{}, w io.Writer, req *http.Request) error
+}
+
+var layouts = make(map[string]layout)
+
+func getLayout(name string) layout {
+	l, ok := layouts[name]
+	if !ok {
+		panic("couldn't find layout " + name)
+	}
+	return l
 }
 `
 	if err := os.WriteFile(filepath.Join(dir, "pushup_support.go"), []byte(supportFile), 0644); err != nil {
@@ -282,41 +321,58 @@ func dirExists(path string) bool {
 	return fi.IsDir()
 }
 
-func compileLayout(path string) (parseResult, error) {
-	contents, err := os.ReadFile(path)
+type compilationStrategy int
+
+const (
+	compilePushupComponent compilationStrategy = iota
+	compileLayout
+)
+
+func compilePushup(sourcePath string, strategy compilationStrategy, targetDir string) error {
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return fmt.Errorf("creating output directory %s: %w", targetDir, err)
+	}
+
+	contents, err := os.ReadFile(sourcePath)
 	if err != nil {
-		return parseResult{}, fmt.Errorf("reading pushup layout file: %w", err)
+		return fmt.Errorf("reading file: %w", err)
 	}
 
-	parsedLayout, err := parsePushup(string(contents))
+	parse, err := parsePushup(string(contents))
 	if err != nil {
-		return parseResult{}, fmt.Errorf("parsing pushup layout file: %w", err)
+		return fmt.Errorf("parsing file: %w", err)
 	}
 
-	return parsedLayout, nil
-}
-
-func compilePushup(layout parseResult, path string) error {
-	// FIXME(paulsmith): specify output directory
-	if err := os.MkdirAll(outDir, 0755); err != nil {
-		return fmt.Errorf("creating output directory %s: %w", outDir, err)
+	var c codeGenUnit
+	switch strategy {
+	case compilePushupComponent:
+		// FIXME(paulsmith): allow user to override layout
+		layoutName := "default"
+		if *singleFlag != "" {
+			layoutName = ""
+		}
+		c = &componentCodeGen{layout: layoutName, parse: parse}
+	case compileLayout:
+		c = &layoutCodeGen{parse: parse}
+	default:
+		panic("")
 	}
 
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("reading pushup file: %w", err)
-	}
-
-	parsedPage, err := parsePushup(string(contents))
-	if err != nil {
-		return fmt.Errorf("parsing pushup file: %w", err)
-	}
-
-	filename := filepath.Base(path)
+	filename := filepath.Base(sourcePath)
 	basename := strings.TrimSuffix(filename, ".pushup")
 
-	// FIXME(paulsmith): pass in output/build dir path instead of being a package global
-	if err := genCode(layout, parsedPage, basename, filepath.Join(outDir, basename+".go")); err != nil {
+	var outputFilename string
+	switch strategy {
+	case compilePushupComponent:
+		outputFilename = basename + ".go"
+	case compileLayout:
+		outputFilename = basename + "_layout.go"
+	default:
+		panic("")
+	}
+	outputPath := filepath.Join(targetDir, outputFilename)
+
+	if err := generateCodeToFile(c, basename, outputPath, strategy); err != nil {
 		return fmt.Errorf("generating Go code from parse result: %w", err)
 	}
 
@@ -481,8 +537,12 @@ loop:
 		}
 	*/
 
+	// TODO(paulsmith): run @code blocks through the Go parser to catch
+	// parse errors at this step and possibly also do some light analysis
+
 	// FIXME(paulsmith): don't hardcode layouts
-	result := parseResult{layout: "default.pushup", exprs: exprs}
+	result := parseResult{exprs: exprs}
+
 	return result, nil
 }
 
@@ -528,8 +588,7 @@ func isKeyword(text string) bool {
 }
 
 type parseResult struct {
-	layout string
-	exprs  []expr
+	exprs []expr
 }
 
 type errWriter struct {
@@ -550,7 +609,41 @@ func newErrWriter(w io.Writer) *errWriter {
 	return &errWriter{w: w, err: nil}
 }
 
-func genCode(layout parseResult, p parseResult, basename string, outputPath string) error {
+func generateCodeToFile(c codeGenUnit, basename string, outputPath string, strategy compilationStrategy) error {
+	code, err := genCode(c, basename, strategy)
+	if err != nil {
+		return fmt.Errorf("code gen: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, code, 0644); err != nil {
+		return fmt.Errorf("writing out generated code to file: %w", err)
+	}
+
+	return nil
+}
+
+type codeGenUnit interface {
+	exprs() []expr
+}
+
+type componentCodeGen struct {
+	layout string
+	parse  parseResult
+}
+
+func (c *componentCodeGen) exprs() []expr {
+	return c.parse.exprs
+}
+
+type layoutCodeGen struct {
+	parse parseResult
+}
+
+func (l *layoutCodeGen) exprs() []expr {
+	return l.parse.exprs
+}
+
+func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]byte, error) {
 	var (
 		headerb  bytes.Buffer
 		importsb bytes.Buffer
@@ -569,12 +662,17 @@ func genCode(layout parseResult, p parseResult, basename string, outputPath stri
 	fprintf(&headerb, "// this file is mechanically generated, do not edit!\n")
 	fprintf(&headerb, "package %s\n", packageName)
 
-	imports := map[string]bool{"io": false, "net/http": false, "html/template": false}
+	imports := map[string]bool{
+		"io":                         false,
+		"net/http":                   false,
+		"html/template":              false,
+		"golang.org/x/sync/errgroup": false,
+	}
 	used := func(name string) {
 		imports[name] = true
 	}
 
-	typeName := genStructName(basename)
+	typeName := genStructName(basename, strategy)
 
 	type field struct {
 		name string
@@ -589,72 +687,118 @@ func genCode(layout parseResult, p parseResult, basename string, outputPath stri
 	}
 	fprintf(bodyw, "}\n")
 
-	// FIXME(paulsmith): handle nested routes (multiple slashes)
-	route := "/" + basename
-	if basename == "index" {
-		route = "/"
+	switch strategy {
+	case compilePushupComponent:
+		// FIXME(paulsmith): handle nested routes (multiple slashes)
+		route := "/" + basename
+		if basename == "index" {
+			route = "/"
+		}
+
+		fprintf(bodyw, "func (t *%s) register() {\n", typeName)
+		fprintf(bodyw, "\troutes.add(\"%s\", t)\n", route)
+		fprintf(bodyw, "}\n\n")
+
+		fprintf(bodyw, "func init() {\n")
+		fprintf(bodyw, "\t(&%s{}).register()\n", typeName)
+		fprintf(bodyw, "}\n\n")
+	case compileLayout:
+		fprintf(bodyw, "func init() {\n")
+		fprintf(bodyw, "\tlayouts[\"%s\"] = &%s{}\n", basename, typeName)
+		fprintf(bodyw, "}\n\n")
 	}
-
-	fprintf(bodyw, "func (t *%s) register() {\n", typeName)
-	fprintf(bodyw, "\troutes.add(\"%s\", t)\n", route)
-	fprintf(bodyw, "}\n\n")
-
-	fprintf(bodyw, "func init() {\n")
-	fprintf(bodyw, "\t(&%s{}).register()\n", typeName)
-	fprintf(bodyw, "}\n\n")
 
 	used("io")
 	used("net/http")
-	fprintf(bodyw, "func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
+	switch strategy {
+	case compilePushupComponent:
+		fprintf(bodyw, "func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
+	case compileLayout:
+		fprintf(bodyw, "func (t *%s) Render(yield chan struct{}, w io.Writer, req *http.Request) error {\n", typeName)
+	default:
+		panic("")
+	}
+
+	if strategy == compilePushupComponent {
+		comp := c.(*componentCodeGen)
+		if comp.layout != "" {
+			// TODO(paulsmith): this is where a flag that could conditionally toggle the rendering
+			// of the layout could go - maybe a special header in request object?
+			used("golang.org/x/sync/errgroup")
+			fprintf(bodyw, `
+	g := new(errgroup.Group)
+	yield := make(chan struct{})
+	{
+			layout := getLayout("%s")
+			g.Go(func() error {
+				if err := layout.Render(yield, w, req); err != nil {
+					return err
+				}
+				return nil
+			})
+			<-yield
+	}
+			`, comp.layout)
+		}
+	}
 
 	// FIXME(paulsmith): what to do about layout @code Go code?
 	// first pass over expressions to insert literal Go code at top of the method
-	for _, expr := range p.exprs {
+	exprs := c.exprs()
+	for _, expr := range exprs {
 		if e, ok := expr.(exprCode); ok {
 			fprintf(bodyw, "%s\n", e.code)
 		}
 	}
 
-	genCodeForExprs := func(exprs []expr, isLayout bool) []expr {
-		for i, expr := range exprs {
-			switch v := expr.(type) {
-			case exprLiteral:
-				switch v.typ {
-				case literalHTML:
-					fprintf(bodyw, "\t\tio.WriteString(w, %s)\n", strconv.Quote(v.str))
-				case literalRawString:
-					fprintf(bodyw, "\t\tio.WriteString(w, %s)\n", strconv.Quote(template.HTMLEscapeString(v.str)))
-				default:
-					panic("unimplemented literal type")
-				}
-			case exprVar:
-				if isLayout && v.name == "contents" {
-					return exprs[i+1:]
-				} else {
-					used("html/template")
-					// TODO(paulsmith): enforce Stringer() interface on these types
-					fprintf(bodyw, "\t\ttemplate.HTMLEscape(w, []byte(%s))\n", v.name)
-				}
-			case exprCode:
-				// no-op
+	for _, expr := range exprs {
+		switch v := expr.(type) {
+		case exprLiteral:
+			switch v.typ {
+			case literalHTML:
+				used("io")
+				fprintf(bodyw, "\t\tio.WriteString(w, %s)\n", strconv.Quote(v.str))
+			case literalRawString:
+				used("io")
+				fprintf(bodyw, "\t\tio.WriteString(w, %s)\n", strconv.Quote(template.HTMLEscapeString(v.str)))
 			default:
-				panic(fmt.Sprintf("unimplemented expression type %T %v", expr, v))
+				panic("unimplemented literal type")
 			}
+		case exprVar:
+			if strategy == compileLayout && v.name == "contents" {
+				// NOTE(paulsmith): this is acting sort of like a coroutine, yielding back to the
+				// component that is being rendered with this layout
+				fprintf(bodyw, "\t\tyield <- struct{}{}\n")
+				fprintf(bodyw, "\t\t<-yield\n")
+			} else {
+				used("html/template")
+				// TODO(paulsmith): enforce Stringer() interface on these types
+				fprintf(bodyw, "\t\ttemplate.HTMLEscape(w, []byte(%s))\n", v.name)
+			}
+		case exprCode:
+			// no-op
+		default:
+			panic(fmt.Sprintf("unimplemented expression type %T %v", expr, v))
 		}
-		return nil
 	}
 
-	// for the actual rendered HTML, first generate code for the layout up until the @contents
-	// variable is reached, then do this page's, then finish the layout after.
-	remainingLayoutExprs := genCodeForExprs(layout.exprs, true)
-	_ = genCodeForExprs(p.exprs, false)
-	_ = genCodeForExprs(remainingLayoutExprs, true)
+	if strategy == compilePushupComponent {
+		comp := c.(*componentCodeGen)
+		if comp.layout != "" {
+			fprintf(bodyw, `
+	yield <- struct{}{}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+`)
+		}
+	}
 
 	fprintf(bodyw, "\treturn nil\n")
 	fprintf(bodyw, "}\n")
 
 	if bodyw.err != nil {
-		return fmt.Errorf("problem writing to the codegen buffer: %w", bodyw.err)
+		return nil, fmt.Errorf("problem writing to the codegen buffer: %w", bodyw.err)
 	}
 
 	importsb.WriteString("\nimport (\n")
@@ -675,25 +819,27 @@ func genCode(layout parseResult, p parseResult, basename string, outputPath stri
 
 	formatted, err := format.Source(combinedb.Bytes())
 	if err != nil {
-		return fmt.Errorf("gofmt the generated code: %w", err)
+		return nil, fmt.Errorf("gofmt the generated code: %w", err)
 	}
 
-	if err := os.WriteFile(outputPath, formatted, 0644); err != nil {
-		return fmt.Errorf("writing out formatted generated code to file: %w", err)
-	}
-
-	return nil
+	return formatted, nil
 }
 
 var structNameIdx int = 0
 
-func genStructName(basename string) string {
-	structNameIdx++
+func safeGoIdentFromFilename(filename string) string {
 	// FIXME(paulsmith): need to be more rigorous in mapping safely from
-	// filenames to legal Go type names
-	basename = strings.ReplaceAll(strings.ReplaceAll(basename, ".", ""), "-", "_")
-	name := "Pushup__" + basename + "__" + strconv.Itoa(structNameIdx)
-	return name
+	// filenames to legal Go identifiers
+	return strings.ReplaceAll(strings.ReplaceAll(filename, ".", ""), "-", "_")
+}
+
+func genStructName(basename string, strategy compilationStrategy) string {
+	structNameIdx++
+	basename = safeGoIdentFromFilename(basename)
+	if strategy == compileLayout {
+		basename += "_layout"
+	}
+	return "Pushup__" + basename + "__" + strconv.Itoa(structNameIdx)
 }
 
 func isWhitespace(ch byte) bool {
