@@ -333,12 +333,13 @@ func compilePushup(sourcePath string, strategy compilationStrategy, targetDir st
 		return fmt.Errorf("creating output directory %s: %w", targetDir, err)
 	}
 
-	contents, err := os.ReadFile(sourcePath)
+	b, err := os.ReadFile(sourcePath)
 	if err != nil {
 		return fmt.Errorf("reading file: %w", err)
 	}
+	source := string(b)
 
-	parse, err := parsePushup(string(contents))
+	parse, err := parsePushup(source)
 	if err != nil {
 		return fmt.Errorf("parsing file: %w", err)
 	}
@@ -351,9 +352,9 @@ func compilePushup(sourcePath string, strategy compilationStrategy, targetDir st
 		if *singleFlag != "" {
 			layoutName = ""
 		}
-		c = &componentCodeGen{layout: layoutName, parse: parse}
+		c = &componentCodeGen{source: source, layout: layoutName, parse: parse}
 	case compileLayout:
-		c = &layoutCodeGen{parse: parse}
+		c = &layoutCodeGen{source: source, parse: parse}
 	default:
 		panic("")
 	}
@@ -625,9 +626,11 @@ func generateCodeToFile(c codeGenUnit, basename string, outputPath string, strat
 
 type codeGenUnit interface {
 	exprs() []expr
+	lineNo(span) int
 }
 
 type componentCodeGen struct {
+	source string
 	layout string
 	parse  parseResult
 }
@@ -636,12 +639,25 @@ func (c *componentCodeGen) exprs() []expr {
 	return c.parse.exprs
 }
 
+func (c *componentCodeGen) lineNo(s span) int {
+	return lineCount(c.source[:s.start+1])
+}
+
+func lineCount(s string) int {
+	return strings.Count(s, "\n") + 1
+}
+
 type layoutCodeGen struct {
-	parse parseResult
+	source string
+	parse  parseResult
 }
 
 func (l *layoutCodeGen) exprs() []expr {
 	return l.parse.exprs
+}
+
+func (l *layoutCodeGen) lineNo(s span) int {
+	return lineCount(l.source[:s.start+1])
 }
 
 func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]byte, error) {
@@ -747,10 +763,17 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	fprintf(bodyw, "// Begin user Go code and HTML\n")
 	fprintf(bodyw, "{\n")
 
+	lineNo := func(e expr) {
+		fprintf(bodyw, "//line %s:%d\n", basename+".pushup", c.lineNo(e.Pos()))
+	}
+
 	// first pass over expressions to insert Go code blocks at top of the method
 	exprs := c.exprs()
 	for _, expr := range exprs {
 		if e, ok := expr.(exprCode); ok {
+			// FIXME(paulsmith): this is currently inaccurate wrt line numbers, split by newlines
+			// and retrack the span for each
+			lineNo(expr)
 			fprintf(bodyw, "%s\n", e.code)
 		}
 	}
@@ -761,9 +784,11 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 			switch v.typ {
 			case literalHTML:
 				used("io")
+				lineNo(expr)
 				fprintf(bodyw, "io.WriteString(w, %s)\n", strconv.Quote(v.str))
 			case literalRawString:
 				used("io")
+				lineNo(expr)
 				fprintf(bodyw, "io.WriteString(w, %s)\n", strconv.Quote(template.HTMLEscapeString(v.str)))
 			default:
 				panic("unimplemented literal type")
@@ -777,6 +802,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 			} else {
 				used("html/template")
 				// TODO(paulsmith): enforce Stringer() interface on these types
+				lineNo(expr)
 				fprintf(bodyw, "template.HTMLEscape(w, []byte(%s))\n", v.name)
 			}
 		case exprCode:
