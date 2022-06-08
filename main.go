@@ -119,9 +119,10 @@ func addSupport(dir string) {
 package build
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
-	"errors"
 	"regexp"
 )
 
@@ -137,17 +138,18 @@ type routeList []route
 
 var routes routeList
 
-func (r *routeList) add(pattern string, c component) {
-	*r = append(*r, newRoute(pattern, c))
+func (r *routeList) add(path string, c component) {
+	*r = append(*r, newRoute(path, c))
 }
 
 type route struct {
+	path string
 	regex *regexp.Regexp
 	component component
 }
 
-func newRoute(pattern string, c component) route {
-	return route{regexp.MustCompile("^" + pattern + "$"), c}
+func newRoute(path string, c component) route {
+	return route{path, regexp.MustCompile("^" + path + "$"), c}
 }
 
 var NotFound = errors.New("page not found")
@@ -179,6 +181,15 @@ func getLayout(name string) layout {
 	}
 	return l
 }
+
+func Admin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, "<h1>Routes</h1>\n<ul>\n")
+	for _, route := range routes {
+		fmt.Fprintf(w, "\t<li>%s</li>\n", route.path)
+	}
+	fmt.Fprintf(w, "</ul>\n")
+}
 `
 	if err := os.WriteFile(filepath.Join(dir, "pushup_support.go"), []byte(supportFile), 0644); err != nil {
 		panic(err)
@@ -205,6 +216,8 @@ import (
 	"time"
 
 	"github.com/AdHocRandD/pushup/build"
+
+	"golang.org/x/sync/errgroup"
 )
 
 var logger *log.Logger
@@ -215,39 +228,64 @@ func main() {
 
 	port := flag.String("port", "8080", "port to listen on with TCP IPv4")
 	unixSocket := flag.String("unix-socket", "", "path to listen on with Unix socket")
+	adminPort := flag.String("admin-port", "9090", "port to listen on for admin")
+
 	// FIXME(paulsmith): can't have both port and unixSocket non-empty
 	flag.Parse()
 
-	// TODO(paulsmith): allow these middlewares to be configurable on/off
-	http.Handle("/", panicRecoveryMiddleware(requestLogMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := build.Render(w, r); err != nil {
-			logger.Printf("rendering route: %v", err)
-			if errors.Is(err, build.NotFound) {
-				http.NotFound(w, r)
-			} else {
-				http.Error(w, http.StatusText(500), 500)
+	g := new(errgroup.Group)
+
+	g.Go(func() error {
+		mux := http.NewServeMux()
+		// TODO(paulsmith): allow these middlewares to be configurable on/off
+		mux.Handle("/", panicRecoveryMiddleware(requestLogMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if err := build.Render(w, r); err != nil {
+				logger.Printf("rendering route: %v", err)
+				if errors.Is(err, build.NotFound) {
+					http.NotFound(w, r)
+				} else {
+					http.Error(w, http.StatusText(500), 500)
+				}
+				return
 			}
-			return
+		}))))
+
+		var ln net.Listener
+		var err error
+		if *unixSocket != "" {
+			ln, err = net.Listen("unix", *unixSocket)
+		} else {
+			host := "0.0.0.0"
+			addr := host + ":" + *port
+			ln, err = net.Listen("tcp4", addr) // TODO(paulsmith): may want to support IPv6
 		}
-	}))))
+		if err != nil {
+			return fmt.Errorf("getting a listener: %v", err)
+		}
 
-	var ln net.Listener
-	var err error
-	if *unixSocket != "" {
-		ln, err = net.Listen("unix", *unixSocket)
-	} else {
-		host := "0.0.0.0"
-		addr := host + ":" + *port
-		ln, err = net.Listen("tcp4", addr) // TODO(paulsmith): may want to support IPv6
-	}
-	if err != nil {
-		logger.Fatalf("getting a listener: %v", err)
-	}
+		srv := http.Server {Handler:mux}
 
-	fmt.Fprintf(os.Stdout, "\x1b[32m↑↑ Pushup ready and listening on %s ↑↑\x1b[0m\n", ln.Addr().String())
-	if err := http.Serve(ln, nil); err != nil {
-		logger.Fatalf("serving HTTP: %v", err)
+		fmt.Fprintf(os.Stdout, "\x1b[32m↑↑ Pushup ready and listening on %s ↑↑\x1b[0m\n", ln.Addr().String())
+		if err := srv.Serve(ln); err != nil {
+			return fmt.Errorf("serving HTTP: %v", err)
+		}
+
+		return nil
+	})
+
+	g.Go(func() error {
+		mux := http.NewServeMux()
+		mux.Handle("/", http.HandlerFunc(build.Admin))
+		srv := http.Server {
+			Addr: "127.0.0.1:" + *adminPort,
+			Handler: mux,
+		}
+		return srv.ListenAndServe()
+	})
+
+	if err := g.Wait(); err != nil {
+		logger.Fatalf("error: %v", err)
 	}
 }
 
