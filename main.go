@@ -736,7 +736,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 					}
 					return nil
 				})
-				// Let layout run until its @contents is encountered
+				// Let layout render run until its @contents is encountered
 				<-yield
 			`, comp.layout)
 		}
