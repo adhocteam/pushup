@@ -432,6 +432,7 @@ func parsePushup(source string) (parseResult, error) {
 		text = html.UnescapeString(text) // TODO(paulsmith): check this doesn't break Go code
 		text = strings.TrimPrefix(text, "@code {")
 		text = strings.TrimSuffix(text, "}")
+		text = strings.TrimSpace(text)
 		exprs = append(exprs, exprCode{
 			code: text,
 			pos:  span{start: start, end: pos},
@@ -683,7 +684,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 
 	fprintf(bodyw, "type %s struct {\n", typeName)
 	for _, field := range fields {
-		fprintf(bodyw, "\t%s %s\n", field.name, field.typ)
+		fprintf(bodyw, "%s %s\n", field.name, field.typ)
 	}
 	fprintf(bodyw, "}\n")
 
@@ -696,15 +697,15 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		}
 
 		fprintf(bodyw, "func (t *%s) register() {\n", typeName)
-		fprintf(bodyw, "\troutes.add(\"%s\", t)\n", route)
+		fprintf(bodyw, "routes.add(\"%s\", t)\n", route)
 		fprintf(bodyw, "}\n\n")
 
 		fprintf(bodyw, "func init() {\n")
-		fprintf(bodyw, "\t(&%s{}).register()\n", typeName)
+		fprintf(bodyw, "(&%s{}).register()\n", typeName)
 		fprintf(bodyw, "}\n\n")
 	case compileLayout:
 		fprintf(bodyw, "func init() {\n")
-		fprintf(bodyw, "\tlayouts[\"%s\"] = &%s{}\n", basename, typeName)
+		fprintf(bodyw, "layouts[\"%s\"] = &%s{}\n", basename, typeName)
 		fprintf(bodyw, "}\n\n")
 	}
 
@@ -725,25 +726,28 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 			// TODO(paulsmith): this is where a flag that could conditionally toggle the rendering
 			// of the layout could go - maybe a special header in request object?
 			used("golang.org/x/sync/errgroup")
-			fprintf(bodyw, `
-	g := new(errgroup.Group)
-	yield := make(chan struct{})
-	{
-			layout := getLayout("%s")
-			g.Go(func() error {
-				if err := layout.Render(yield, w, req); err != nil {
-					return err
-				}
-				return nil
-			})
-			<-yield
-	}
+			fprintf(bodyw,
+				`g := new(errgroup.Group)
+				yield := make(chan struct{})
+				layout := getLayout("%s")
+				g.Go(func() error {
+					if err := layout.Render(yield, w, req); err != nil {
+						return err
+					}
+					return nil
+				})
+				// Let layout run until its @contents is encountered
+				<-yield
 			`, comp.layout)
 		}
 	}
 
-	// FIXME(paulsmith): what to do about layout @code Go code?
-	// first pass over expressions to insert literal Go code at top of the method
+	// Make a new scope for the user's code block and HTML. This will help (but not fully prevent)
+	// name collisions with the surrounding code.
+	fprintf(bodyw, "// Begin user Go code and HTML\n")
+	fprintf(bodyw, "{\n")
+
+	// first pass over expressions to insert Go code blocks at top of the method
 	exprs := c.exprs()
 	for _, expr := range exprs {
 		if e, ok := expr.(exprCode); ok {
@@ -757,10 +761,10 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 			switch v.typ {
 			case literalHTML:
 				used("io")
-				fprintf(bodyw, "\t\tio.WriteString(w, %s)\n", strconv.Quote(v.str))
+				fprintf(bodyw, "io.WriteString(w, %s)\n", strconv.Quote(v.str))
 			case literalRawString:
 				used("io")
-				fprintf(bodyw, "\t\tio.WriteString(w, %s)\n", strconv.Quote(template.HTMLEscapeString(v.str)))
+				fprintf(bodyw, "io.WriteString(w, %s)\n", strconv.Quote(template.HTMLEscapeString(v.str)))
 			default:
 				panic("unimplemented literal type")
 			}
@@ -768,12 +772,12 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 			if strategy == compileLayout && v.name == "contents" {
 				// NOTE(paulsmith): this is acting sort of like a coroutine, yielding back to the
 				// component that is being rendered with this layout
-				fprintf(bodyw, "\t\tyield <- struct{}{}\n")
-				fprintf(bodyw, "\t\t<-yield\n")
+				fprintf(bodyw, "yield <- struct{}{}\n")
+				fprintf(bodyw, "<-yield\n")
 			} else {
 				used("html/template")
 				// TODO(paulsmith): enforce Stringer() interface on these types
-				fprintf(bodyw, "\t\ttemplate.HTMLEscape(w, []byte(%s))\n", v.name)
+				fprintf(bodyw, "template.HTMLEscape(w, []byte(%s))\n", v.name)
 			}
 		case exprCode:
 			// no-op
@@ -785,16 +789,20 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	if strategy == compilePushupComponent {
 		comp := c.(*componentCodeGen)
 		if comp.layout != "" {
-			fprintf(bodyw, `
-	yield <- struct{}{}
-	if err := g.Wait(); err != nil {
-		return err
-	}
-`)
+			fprintf(bodyw,
+				`yield <- struct{}{}
+				if err := g.Wait(); err != nil {
+					return err
+				}
+			`)
 		}
 	}
 
-	fprintf(bodyw, "\treturn nil\n")
+	// Close the scope we started for the user code and HTML.
+	fprintf(bodyw, "// End user Go code and HTML\n")
+	fprintf(bodyw, "}\n")
+
+	fprintf(bodyw, "return nil\n")
 	fprintf(bodyw, "}\n")
 
 	if bodyw.err != nil {
@@ -804,7 +812,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	importsb.WriteString("\nimport (\n")
 	for import_, ok := range imports {
 		if ok {
-			line := fmt.Sprintf("\t\"%s\"\n", import_)
+			line := fmt.Sprintf("\"%s\"\n", import_)
 			importsb.WriteString(line)
 		}
 	}
