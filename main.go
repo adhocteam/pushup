@@ -322,6 +322,15 @@ func (w *loggingResponseWriter) WriteHeader(statusCode int) {
 	return
 }
 
+func (w *loggingResponseWriter) Flush() {
+	if fl, ok := w.ResponseWriter.(http.Flusher); ok {
+		if w.code == 0 {
+			w.WriteHeader(200)
+		}
+		fl.Flush()
+	}
+}
+
 func requestLogMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t0 := time.Now()
@@ -835,6 +844,10 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 			if strategy == compileLayout && v.name == "contents" {
 				// NOTE(paulsmith): this is acting sort of like a coroutine, yielding back to the
 				// component that is being rendered with this layout
+				fprintf(bodyw, `if fl, ok := w.(http.Flusher); ok {
+					fl.Flush()
+				}
+				`)
 				fprintf(bodyw, "yield <- struct{}{}\n")
 				fprintf(bodyw, "<-yield\n")
 			} else {
