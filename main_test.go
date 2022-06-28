@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -151,8 +152,8 @@ func TestPushup(t *testing.T) {
 						return nil
 					}
 					done <- true
-					if !bytes.Equal(want, got) {
-						t.Errorf("want:\n%s\n===\ngot:\n%s", want, got)
+					if diff := cmp.Diff(want, got); diff != "" {
+						t.Errorf("expected render diff (-want +got)\n%s", diff)
 					} else {
 						allgood = true
 					}

@@ -1,0 +1,7 @@
+<p class="greeting">I @emotion Chicago!</p>
+
+@code {
+	emotion := "<em><3</em> & <strong>blue circle</strong>"
+}
+
+<div id="end">More</div>

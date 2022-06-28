@@ -1,14 +1,15 @@
 package main
 
 import (
-	"fmt"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestParse(t *testing.T) {
 	tests := []struct {
 		input string
-		want  parseResult
+		want  *syntaxTree
 	}{
 		{
 			`<p>Hello, @name!</p>
@@ -16,80 +17,96 @@ func TestParse(t *testing.T) {
 	name := "world"
 }
 `,
-			parseResult{
-				exprs: []expr{
-					exprLiteral{str: "<p>", typ: literalHTML, pos: span{start: 0, end: 3}},
-					exprLiteral{str: "Hello, ", typ: literalRawString, pos: span{start: 3, end: 10}},
-					exprVar{name: "name", pos: span{start: 10, end: 15}},
-					exprLiteral{str: "!", typ: literalRawString, pos: span{start: 15, end: 16}},
-					exprLiteral{str: "</p>", typ: literalHTML, pos: span{start: 16, end: 20}},
-					exprCode{code: "name := \"world\"", pos: span{start: 20, end: 48}},
+			&syntaxTree{
+				nodes: []node{
+					&nodeLiteral{str: "<p>", typ: literalHTML, pos: span{start: 0, end: 3}},
+					&nodeLiteral{str: "Hello, ", typ: literalHTML, pos: span{start: 3, end: 10}},
+					&nodeGoStrExpr{expr: "name", pos: span{start: 11, end: 15}},
+					&nodeLiteral{str: "!", typ: literalHTML, pos: span{start: 15, end: 16}},
+					&nodeLiteral{str: "</p>", typ: literalHTML, pos: span{start: 16, end: 20}},
+					&nodeLiteral{str: "\n", typ: literalHTML, pos: span{start: 20, end: 21}},
+					&nodeGoCode{code: "name := \"world\"\n", pos: span{start: 28, end: 44}},
+					&nodeLiteral{str: "\n", typ: literalHTML, pos: span{start: 47, end: 48}},
 				}},
 		},
 		{
-			`<p class="greeting">I @emotion Chicago!</p>
-@code {
-	emotion := "<em><3</em> & <strong>blue circle</strong>"
-}
-
-<div id="end">More</div>
-`,
-			parseResult{
-				exprs: []expr{
-					exprLiteral{str: "<p class=\"greeting\">", typ: 0, pos: span{start: 0, end: 20}},
-					exprLiteral{str: "I ", typ: 1, pos: span{start: 20, end: 22}},
-					exprVar{name: "emotion", pos: span{start: 22, end: 30}},
-					exprLiteral{str: " Chicago!", typ: 1, pos: span{start: 30, end: 39}},
-					exprLiteral{str: "</p>", typ: 0, pos: span{start: 39, end: 43}},
-					exprCode{code: "emotion := \"<em><3</em> & <strong>blue circle</strong>\"", pos: span{start: 43, end: 112}},
-					exprLiteral{str: "<div id=\"end\">", typ: 0, pos: span{start: 112, end: 126}},
-					exprLiteral{str: "More", typ: 1, pos: span{start: 126, end: 130}},
-					exprLiteral{str: "</div>", typ: 0, pos: span{start: 130, end: 136}},
-					exprLiteral{str: "\n", typ: 1, pos: span{start: 136, end: 137}}},
+			`@if name != "" {
+	<h1>Hello, @name!</h1>
+} else {
+	<h1>Hello, world!</h1>
+}`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeIf{
+						cond: &nodeGoStrExpr{
+							expr: "name != \"\"",
+							pos:  span{start: 4, end: 14},
+						},
+						then: &nodeStmtBlock{
+							nodes: []node{
+								&nodeLiteral{str: "<h1>", typ: literalHTML, pos: span{start: 18, end: 22}},
+								&nodeLiteral{str: "Hello, ", typ: literalHTML, pos: span{start: 22, end: 29}},
+								&nodeGoStrExpr{expr: "name", pos: span{start: 30, end: 34}},
+								&nodeLiteral{str: "!", typ: literalHTML, pos: span{start: 34, end: 35}},
+								&nodeLiteral{str: "</h1>", typ: literalHTML, pos: span{start: 35, end: 40}},
+							},
+						},
+						alt: &nodeStmtBlock{
+							nodes: []node{
+								&nodeLiteral{str: "<h1>", typ: literalHTML, pos: span{start: 51, end: 55}},
+								&nodeLiteral{str: "Hello, world!", typ: literalHTML, pos: span{start: 55, end: 68}},
+								&nodeLiteral{str: "</h1>", typ: literalHTML, pos: span{start: 68, end: 73}},
+							},
+						},
+					},
+				},
 			},
 		},
 		{
-			`<p>Don't break Go code</p>
-@code {
-	var foo = "This is a variable"
-	bar := func(a int, b int) (bool, error) {
-		if (a < b) {
-			return false, nil
-		}
-		return true, fmt.Errorf("error")
+			`@code {
+	type product struct {
+		name string
+		price float32
 	}
-}
+
+	products := []product{{name: "Widget", price: 9.49}}
+}`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeGoCode{
+						code: `type product struct {
+		name string
+		price float32
+	}
+
+	products := []product{{name: "Widget", price: 9.49}}
 `,
-			parseResult{
-				exprs: []expr{exprLiteral{str: "<p>", typ: 0, pos: span{start: 0, end: 3}},
-					exprLiteral{str: "Don't break Go code", typ: 1, pos: span{start: 3, end: 22}},
-					exprLiteral{str: "</p>", typ: 0, pos: span{start: 22, end: 26}},
-					exprCode{code: "var foo = \"This is a variable\"\n\tbar := func(a int, b int) (bool, error) {\n\t\tif (a < b) {\n\t\t\treturn false, nil\n\t\t}\n\t\treturn true, fmt.Errorf(\"error\")\n\t}", pos: span{start: 26, end: 190}}},
+						pos: span{start: 7, end: 117},
+					},
+				},
 			},
 		},
 	}
-
+	opts := cmp.AllowUnexported(unexported...)
 	for _, test := range tests {
 		t.Run("", func(t *testing.T) {
-			got, err := parsePushup(test.input)
+			got, err := parse(test.input)
 			if err != nil {
 				t.Fatalf("unexpected error parsing input: %v", err)
 			}
-			if err := testParseResultsEqual(test.want, got); err != nil {
-				t.Errorf("parse results not equal: %v", err)
+			if diff := cmp.Diff(test.want, got, opts); diff != "" {
+				t.Errorf("expected parse diff (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
-func testParseResultsEqual(a, b parseResult) error {
-	if len(a.exprs) != len(b.exprs) {
-		return fmt.Errorf("# of exprs: want: %d got %d\nwant:\n%#v\n===\ngot:\n%#v", len(a.exprs), len(b.exprs), a.exprs, b.exprs)
-	}
-	for i, e := range a.exprs {
-		if e != b.exprs[i] {
-			return fmt.Errorf("expr %d: want:\n%#v\ngot:\n%#v", i, e, b.exprs[i])
-		}
-	}
-	return nil
+var unexported = []any{
+	nodeGoCode{},
+	nodeGoStrExpr{},
+	nodeIf{},
+	nodeLiteral{},
+	nodeStmtBlock{},
+	span{},
+	syntaxTree{},
 }

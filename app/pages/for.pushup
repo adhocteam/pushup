@@ -1,0 +1,17 @@
+@code {
+    type product struct {
+        name string
+        price string
+    }
+    products := []product{
+        {"Big Kahuna Burger", "3.99"},
+        {"Everlasting Gobstopper", "0.25"},
+        {"Nike Air Mags", "249.99"},
+    }
+}
+
+<ul>
+    @for _, p := range products {
+    <li>@p.name ($@p.price)</li>
+    }
+</ul>

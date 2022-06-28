@@ -6,6 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"go/format"
+	goparser "go/parser"
+	"go/scanner"
+	"go/token"
 	"io"
 	"io/fs"
 	"log"
@@ -14,9 +17,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"text/template"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 var outDir = "./build"
@@ -57,7 +62,6 @@ func main() {
 			for _, entry := range entries {
 				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
 					path := filepath.Join(layoutsDir, entry.Name())
-					// log.Printf("found pushup file: %s", path)
 					layoutFiles = append(layoutFiles, path)
 				}
 			}
@@ -77,7 +81,6 @@ func main() {
 			for _, entry := range entries {
 				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
 					path := filepath.Join(pagesDir, entry.Name())
-					// log.Printf("found pushup file: %s", path)
 					pushupFiles = append(pushupFiles, path)
 				}
 			}
@@ -386,10 +389,17 @@ func compilePushup(sourcePath string, strategy compilationStrategy, targetDir st
 	}
 	source := string(b)
 
-	parse, err := parsePushup(source)
+	tree, err := parse(source)
 	if err != nil {
 		return fmt.Errorf("parsing file: %w", err)
 	}
+
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("panic while parsing %s: %v", sourcePath, err)
+			panic(err)
+		}
+	}()
 
 	var c codeGenUnit
 	switch strategy {
@@ -399,9 +409,9 @@ func compilePushup(sourcePath string, strategy compilationStrategy, targetDir st
 		if *singleFlag != "" {
 			layoutName = ""
 		}
-		c = &componentCodeGen{source: source, layout: layoutName, parse: parse}
+		c = &componentCodeGen{source: source, layout: layoutName, tree: tree}
 	case compileLayout:
-		c = &layoutCodeGen{source: source, parse: parse}
+		c = &layoutCodeGen{source: source, tree: tree}
 	default:
 		panic("")
 	}
@@ -427,217 +437,166 @@ func compilePushup(sourcePath string, strategy compilationStrategy, targetDir st
 	return nil
 }
 
-type expr interface {
+// node represents a portion of the Pushup syntax, like a chunk of HTML,
+// or a Go expression to be evaluated, or a control flow construct like `if'
+// or `for'.
+type node interface {
 	Pos() span
+	nodeAcceptor
+}
+
+type nodeAcceptor interface {
+	accept(nodeVisitor)
+}
+
+type nodeList []node
+
+func (n nodeList) accept(v nodeVisitor) { v.visitNodes(n) }
+
+type nodeVisitor interface {
+	visitLiteral(*nodeLiteral)
+	visitGoStrExpr(*nodeGoStrExpr)
+	visitGoCode(*nodeGoCode)
+	visitIf(*nodeIf)
+	visitFor(*nodeFor)
+	visitStmtBlock(*nodeStmtBlock)
+	visitNodes([]node)
 }
 
 type literalType int
 
 const (
+	// FIXME(paulsmith): convert to own expression type (to capture tag, atom, attrs as Go types)
 	literalHTML literalType = iota
-	literalRawString
+	literalText
 )
 
-type exprLiteral struct {
+type nodeLiteral struct {
 	str string
 	typ literalType
 	pos span
 }
 
-func (e exprLiteral) Pos() span { return e.pos }
+func (e nodeLiteral) Pos() span             { return e.pos }
+func (e *nodeLiteral) accept(v nodeVisitor) { v.visitLiteral(e) }
 
-type exprVar struct {
-	name string
+var _ node = (*nodeLiteral)(nil)
+
+func newLiteralTextNode(text string, start, end int) *nodeLiteral {
+	return &nodeLiteral{text, literalText, span{start, end}}
+}
+
+func newLiteralHTMLNode(html string, start, end int) *nodeLiteral {
+	return &nodeLiteral{html, literalHTML, span{start, end}}
+}
+
+type nodeGoStrExpr struct {
+	expr string
 	pos  span
 }
 
-func (e exprVar) Pos() span { return e.pos }
+func (e nodeGoStrExpr) Pos() span             { return e.pos }
+func (e *nodeGoStrExpr) accept(v nodeVisitor) { v.visitGoStrExpr(e) }
 
-type exprCode struct {
+var _ node = (*nodeGoStrExpr)(nil)
+
+func newGoStrExpr(expr string, start, end int) *nodeGoStrExpr {
+	return &nodeGoStrExpr{expr, span{start, end}}
+}
+
+type nodeGoCode struct {
 	code string
 	pos  span
 }
 
-func (e exprCode) Pos() span { return e.pos }
+func (e nodeGoCode) Pos() span             { return e.pos }
+func (e *nodeGoCode) accept(v nodeVisitor) { v.visitGoCode(e) }
 
-func parsePushup(source string) (parseResult, error) {
-	r := strings.NewReader(source)
-	z := html.NewTokenizer(r)
+var _ node = (*nodeGoCode)(nil)
 
-	const (
-		stateStart int = iota
-		stateInCode
-	)
-	state := stateStart
-	var accum string
-	var start int
-	var pos int
-
-	var exprs []expr
-
-	emitCode := func(text string) {
-		text = strings.TrimSpace(text)
-		text = html.UnescapeString(text) // TODO(paulsmith): check this doesn't break Go code
-		text = strings.TrimPrefix(text, "@code {")
-		text = strings.TrimSuffix(text, "}")
-		text = strings.TrimSpace(text)
-		exprs = append(exprs, exprCode{
-			code: text,
-			pos:  span{start: start, end: pos},
-		})
-	}
-
-loop:
-	for {
-		tt := z.Next()
-		t := z.Token()
-		raw := z.Raw()
-		pos += len(raw)
-
-		if tt == html.ErrorToken {
-			err := z.Err()
-			if err == io.EOF {
-				break loop
-			}
-			return parseResult{}, err
-		}
-
-		switch state {
-		case stateStart:
-			if tt == html.TextToken {
-				if idx := strings.Index(t.Data, "@code {"); idx != -1 {
-					if codeBlockClosed(t.Data) {
-						emitCode(t.Data)
-						start = pos
-					} else {
-						state = stateInCode
-						accum = t.Data
-					}
-				} else {
-					spans := scanForDirectives(t.Data)
-					idx := 0
-					for _, s := range spans {
-						if s.start > idx {
-							exprs = append(exprs, exprLiteral{
-								str: t.Data[idx:s.start],
-								typ: literalRawString,
-								pos: span{start: start + idx, end: start + s.start},
-							})
-						}
-						directive := t.Data[s.start:s.end]
-						// log.Printf("@ directive span: %v: %q", s, directive)
-						switch {
-						case isKeyword(directive[1:]):
-							kw := directive[1:]
-							switch kw {
-							default:
-								panic("unimplemented keyword " + kw)
-							}
-						default:
-							// variable substitution (technically, expression evaluation)
-							exprs = append(exprs, exprVar{
-								pos:  span{start: start + s.start, end: start + s.end},
-								name: directive[1:],
-							})
-							idx = s.end
-						}
-					}
-					if idx <= len(t.Data)-1 {
-						exprs = append(exprs, exprLiteral{
-							str: t.Data[idx:],
-							typ: literalRawString,
-							pos: span{start: start + idx, end: start + len(t.Data)},
-						})
-					}
-					start = pos
-				}
-			} else {
-				exprs = append(exprs, exprLiteral{
-					str: string(raw),
-					typ: literalHTML,
-					pos: span{start: start, end: pos},
-				})
-				start = pos
-			}
-		case stateInCode:
-			accum += string(raw)
-			if codeBlockClosed(accum) {
-				emitCode(accum)
-				state = stateStart
-				accum = ""
-				start = pos
-			}
-		}
-	}
-
-	/*
-		for _, expr := range exprs {
-			fmt.Fprintf(os.Stderr, "%T ", expr)
-			switch v := expr.(type) {
-			case exprLiteral:
-				fmt.Fprintf(os.Stderr, "%q\n", v.str)
-			case exprVar:
-				fmt.Fprintf(os.Stderr, "@%s\n", v.name)
-			case exprCode:
-				fmt.Fprintf(os.Stderr, "@code {\n%s\n}\n", v.code)
-			default:
-				panic("unimplemented expr type")
-			}
-		}
-	*/
-
-	// TODO(paulsmith): run @code blocks through the Go parser to catch
-	// parse errors at this step and possibly also do some light analysis
-
-	// FIXME(paulsmith): don't hardcode layouts
-	result := parseResult{exprs: exprs}
-
-	return result, nil
+type nodeIf struct {
+	cond *nodeGoStrExpr
+	then *nodeStmtBlock // FIXME: *nodeStmtBlock?
+	alt  *nodeStmtBlock
 }
 
-func codeBlockClosed(text string) bool {
-	return strings.Count(text, "{") == strings.Count(text, "}")
+func (e nodeIf) Pos() span             { return e.cond.pos }
+func (e *nodeIf) accept(v nodeVisitor) { v.visitIf(e) }
+
+var _ node = (*nodeIf)(nil)
+
+type nodeFor struct {
+	clause *nodeGoCode
+	block  *nodeStmtBlock
 }
+
+func (e nodeFor) Pos() span             { return e.clause.pos }
+func (e *nodeFor) accept(v nodeVisitor) { v.visitFor(e) }
+
+type nodeStmtBlock struct {
+	nodes []node
+}
+
+func (e *nodeStmtBlock) Pos() span {
+	// FIXME(paulsmith): span end all exprs
+	return e.nodes[0].Pos()
+}
+func (e *nodeStmtBlock) accept(v nodeVisitor) { v.visitStmtBlock(e) }
+
+var _ node = (*nodeStmtBlock)(nil)
 
 type span struct {
 	start int
 	end   int
 }
 
-func scanForDirectives(text string) []span {
-	var spans []span
-	idx := 0
-	for {
-		if idx >= len(text) {
-			break
-		}
-		ch := text[idx]
-		if ch == '@' {
-			start := idx
-			idx++
-			for idx < len(text) && isAlphaNumeric(text[idx]) {
-				idx++
-			}
-			s := span{start: start, end: idx}
-			spans = append(spans, s)
-		} else {
-			// no-op
-		}
-		idx++
+func generateCodeToFile(c codeGenUnit, basename string, outputPath string, strategy compilationStrategy) error {
+	code, err := genCode(c, basename, strategy)
+	if err != nil {
+		return fmt.Errorf("code gen: %w", err)
 	}
-	return spans
+
+	if err := os.WriteFile(outputPath, code, 0644); err != nil {
+		return fmt.Errorf("writing out generated code to file: %w", err)
+	}
+
+	return nil
 }
 
-func isAlphaNumeric(ch byte) bool {
-	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+type codeGenUnit interface {
+	nodes() []node
+	lineNo(span) int
 }
 
-func isKeyword(text string) bool {
-	return false
+type componentCodeGen struct {
+	source string
+	layout string
+	tree   *syntaxTree
 }
 
-type parseResult struct {
-	exprs []expr
+func (c *componentCodeGen) nodes() []node {
+	return c.tree.nodes
+}
+
+func (c *componentCodeGen) lineNo(s span) int {
+	return lineCount(c.source[:s.start+1])
+}
+
+func lineCount(s string) int {
+	return strings.Count(s, "\n") + 1
+}
+
+type layoutCodeGen struct {
+	source string
+	tree   *syntaxTree
+}
+
+func (l *layoutCodeGen) nodes() []node {
+	return l.tree.nodes
+}
+
+func (l *layoutCodeGen) lineNo(s span) int {
+	return lineCount(l.source[:s.start+1])
 }
 
 type errWriter struct {
@@ -658,83 +617,121 @@ func newErrWriter(w io.Writer) *errWriter {
 	return &errWriter{w: w, err: nil}
 }
 
-func generateCodeToFile(c codeGenUnit, basename string, outputPath string, strategy compilationStrategy) error {
-	code, err := genCode(c, basename, strategy)
-	if err != nil {
-		return fmt.Errorf("code gen: %w", err)
+type codeGenerator struct {
+	c        codeGenUnit
+	strategy compilationStrategy
+	basename string
+	imports  map[string]bool
+	bodyb    bytes.Buffer
+	bodyw    *errWriter
+}
+
+func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrategy) *codeGenerator {
+	var g codeGenerator
+	g.c = c
+	g.strategy = strategy
+	g.basename = basename
+	g.imports = imports
+	g.bodyw = newErrWriter(&g.bodyb)
+	return &g
+}
+
+var imports = map[string]bool{
+	"io":                         false,
+	"net/http":                   false,
+	"html/template":              false,
+	"golang.org/x/sync/errgroup": false,
+}
+
+func (g *codeGenerator) used(name string) {
+	g.imports[name] = true
+}
+
+func (g *codeGenerator) lineNo(e node) {
+	g.printf("//line %s:%d\n", g.basename+".pushup", g.c.lineNo(e.Pos()))
+}
+
+func (g *codeGenerator) printf(format string, args ...any) {
+	fmt.Fprintf(g.bodyw, format, args...)
+}
+
+func (g *codeGenerator) generate() {
+	g.visitNodes(g.c.nodes())
+}
+
+func (g *codeGenerator) visitLiteral(n *nodeLiteral) {
+	g.used("io")
+	g.lineNo(n)
+	g.printf("io.WriteString(w, %s)\n", strconv.Quote(n.str))
+}
+
+func (g *codeGenerator) visitGoStrExpr(n *nodeGoStrExpr) {
+	if g.strategy == compileLayout && n.expr == "contents" {
+		// NOTE(paulsmith): this is acting sort of like a coroutine, yielding back to the
+		// component that is being rendered with this layout
+		g.printf(`if fl, ok := w.(http.Flusher); ok {
+			fl.Flush()
+		}
+		`)
+		g.printf("yield <- struct{}{}\n")
+		g.printf("<-yield\n")
+	} else {
+		g.used("html/template")
+		// TODO(paulsmith): enforce Stringer() interface on these types
+		g.lineNo(n)
+		g.printf("template.HTMLEscape(w, []byte(%s))\n", n.expr)
 	}
+}
 
-	if err := os.WriteFile(outputPath, code, 0644); err != nil {
-		return fmt.Errorf("writing out generated code to file: %w", err)
+func (g *codeGenerator) visitGoCode(n *nodeGoCode) {
+	// TODO(paulsmith): separate passes, see genCode()
+}
+
+func (g *codeGenerator) visitIf(n *nodeIf) {
+	g.printf("if %s {\n", n.cond.expr)
+	n.then.accept(g)
+	if n.alt == nil {
+		g.printf("}\n")
+	} else {
+		g.printf("} else {\n")
+		n.alt.accept(g)
+		g.printf("}\n")
 	}
-
-	return nil
 }
 
-type codeGenUnit interface {
-	exprs() []expr
-	lineNo(span) int
+func (g *codeGenerator) visitFor(n *nodeFor) {
+	g.printf("for %s {\n", n.clause.code)
+	n.block.accept(g)
+	g.printf("}\n")
 }
 
-type componentCodeGen struct {
-	source string
-	layout string
-	parse  parseResult
+func (g *codeGenerator) visitStmtBlock(n *nodeStmtBlock) {
+	for _, e := range n.nodes {
+		e.accept(g)
+	}
 }
 
-func (c *componentCodeGen) exprs() []expr {
-	return c.parse.exprs
+func (g *codeGenerator) visitNodes(n []node) {
+	for _, e := range n {
+		e.accept(g)
+	}
 }
 
-func (c *componentCodeGen) lineNo(s span) int {
-	return lineCount(c.source[:s.start+1])
-}
-
-func lineCount(s string) int {
-	return strings.Count(s, "\n") + 1
-}
-
-type layoutCodeGen struct {
-	source string
-	parse  parseResult
-}
-
-func (l *layoutCodeGen) exprs() []expr {
-	return l.parse.exprs
-}
-
-func (l *layoutCodeGen) lineNo(s span) int {
-	return lineCount(l.source[:s.start+1])
-}
+var _ nodeVisitor = (*codeGenerator)(nil)
 
 func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]byte, error) {
 	var (
 		headerb  bytes.Buffer
 		importsb bytes.Buffer
-		bodyb    bytes.Buffer
 	)
 
-	bodyw := newErrWriter(&bodyb)
-
-	fprintf := func(w io.Writer, format string, a ...any) {
-		fmt.Fprintf(w, format, a...)
-	}
+	g := newCodeGenerator(c, basename, strategy)
 
 	// FIXME(paulsmith): need way to specify this as user
 	packageName := "build"
 
-	fprintf(&headerb, "// this file is mechanically generated, do not edit!\n")
-	fprintf(&headerb, "package %s\n", packageName)
-
-	imports := map[string]bool{
-		"io":                         false,
-		"net/http":                   false,
-		"html/template":              false,
-		"golang.org/x/sync/errgroup": false,
-	}
-	used := func(name string) {
-		imports[name] = true
-	}
+	fmt.Fprintf(&headerb, "// this file is mechanically generated, do not edit!\n")
+	fmt.Fprintf(&headerb, "package %s\n", packageName)
 
 	typeName := genStructName(basename, strategy)
 
@@ -745,11 +742,11 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 
 	fields := []field{}
 
-	fprintf(bodyw, "type %s struct {\n", typeName)
+	fmt.Fprintf(g.bodyw, "type %s struct {\n", typeName)
 	for _, field := range fields {
-		fprintf(bodyw, "%s %s\n", field.name, field.typ)
+		fmt.Fprintf(g.bodyw, "%s %s\n", field.name, field.typ)
 	}
-	fprintf(bodyw, "}\n")
+	fmt.Fprintf(g.bodyw, "}\n")
 
 	switch strategy {
 	case compilePushupComponent:
@@ -759,26 +756,26 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 			route = "/"
 		}
 
-		fprintf(bodyw, "func (t *%s) register() {\n", typeName)
-		fprintf(bodyw, "routes.add(\"%s\", t)\n", route)
-		fprintf(bodyw, "}\n\n")
+		fmt.Fprintf(g.bodyw, "func (t *%s) register() {\n", typeName)
+		fmt.Fprintf(g.bodyw, "routes.add(\"%s\", t)\n", route)
+		fmt.Fprintf(g.bodyw, "}\n\n")
 
-		fprintf(bodyw, "func init() {\n")
-		fprintf(bodyw, "(&%s{}).register()\n", typeName)
-		fprintf(bodyw, "}\n\n")
+		fmt.Fprintf(g.bodyw, "func init() {\n")
+		fmt.Fprintf(g.bodyw, "(&%s{}).register()\n", typeName)
+		fmt.Fprintf(g.bodyw, "}\n\n")
 	case compileLayout:
-		fprintf(bodyw, "func init() {\n")
-		fprintf(bodyw, "layouts[\"%s\"] = &%s{}\n", basename, typeName)
-		fprintf(bodyw, "}\n\n")
+		fmt.Fprintf(g.bodyw, "func init() {\n")
+		fmt.Fprintf(g.bodyw, "layouts[\"%s\"] = &%s{}\n", basename, typeName)
+		fmt.Fprintf(g.bodyw, "}\n\n")
 	}
 
-	used("io")
-	used("net/http")
+	g.used("io")
+	g.used("net/http")
 	switch strategy {
 	case compilePushupComponent:
-		fprintf(bodyw, "func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
+		fmt.Fprintf(g.bodyw, "func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
 	case compileLayout:
-		fprintf(bodyw, "func (t *%s) Render(yield chan struct{}, w io.Writer, req *http.Request) error {\n", typeName)
+		fmt.Fprintf(g.bodyw, "func (t *%s) Render(yield chan struct{}, w io.Writer, req *http.Request) error {\n", typeName)
 	default:
 		panic("")
 	}
@@ -788,8 +785,8 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		if comp.layout != "" {
 			// TODO(paulsmith): this is where a flag that could conditionally toggle the rendering
 			// of the layout could go - maybe a special header in request object?
-			used("golang.org/x/sync/errgroup")
-			fprintf(bodyw,
+			g.used("golang.org/x/sync/errgroup")
+			fmt.Fprintf(g.bodyw,
 				`g := new(errgroup.Group)
 				yield := make(chan struct{})
 				layout := getLayout("%s")
@@ -807,66 +804,26 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 
 	// Make a new scope for the user's code block and HTML. This will help (but not fully prevent)
 	// name collisions with the surrounding code.
-	fprintf(bodyw, "// Begin user Go code and HTML\n")
-	fprintf(bodyw, "{\n")
-
-	lineNo := func(e expr) {
-		fprintf(bodyw, "//line %s:%d\n", basename+".pushup", c.lineNo(e.Pos()))
-	}
+	fmt.Fprintf(g.bodyw, "// Begin user Go code and HTML\n")
+	fmt.Fprintf(g.bodyw, "{\n")
 
 	// first pass over expressions to insert Go code blocks at top of the method
-	exprs := c.exprs()
-	for _, expr := range exprs {
-		if e, ok := expr.(exprCode); ok {
+	nodes := c.nodes()
+	for _, n := range nodes {
+		if e, ok := n.(*nodeGoCode); ok {
 			// FIXME(paulsmith): this is currently inaccurate wrt line numbers, split by newlines
 			// and retrack the span for each
-			lineNo(expr)
-			fprintf(bodyw, "%s\n", e.code)
+			g.lineNo(n)
+			fmt.Fprintf(g.bodyw, "%s\n", e.code)
 		}
 	}
 
-	for _, expr := range exprs {
-		switch v := expr.(type) {
-		case exprLiteral:
-			switch v.typ {
-			case literalHTML:
-				used("io")
-				lineNo(expr)
-				fprintf(bodyw, "io.WriteString(w, %s)\n", strconv.Quote(v.str))
-			case literalRawString:
-				used("io")
-				lineNo(expr)
-				fprintf(bodyw, "io.WriteString(w, %s)\n", strconv.Quote(template.HTMLEscapeString(v.str)))
-			default:
-				panic("unimplemented literal type")
-			}
-		case exprVar:
-			if strategy == compileLayout && v.name == "contents" {
-				// NOTE(paulsmith): this is acting sort of like a coroutine, yielding back to the
-				// component that is being rendered with this layout
-				fprintf(bodyw, `if fl, ok := w.(http.Flusher); ok {
-					fl.Flush()
-				}
-				`)
-				fprintf(bodyw, "yield <- struct{}{}\n")
-				fprintf(bodyw, "<-yield\n")
-			} else {
-				used("html/template")
-				// TODO(paulsmith): enforce Stringer() interface on these types
-				lineNo(expr)
-				fprintf(bodyw, "template.HTMLEscape(w, []byte(%s))\n", v.name)
-			}
-		case exprCode:
-			// no-op
-		default:
-			panic(fmt.Sprintf("unimplemented expression type %T %v", expr, v))
-		}
-	}
+	g.generate()
 
 	if strategy == compilePushupComponent {
 		comp := c.(*componentCodeGen)
 		if comp.layout != "" {
-			fprintf(bodyw,
+			fmt.Fprintf(g.bodyw,
 				`yield <- struct{}{}
 				if err := g.Wait(); err != nil {
 					return err
@@ -876,14 +833,14 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	}
 
 	// Close the scope we started for the user code and HTML.
-	fprintf(bodyw, "// End user Go code and HTML\n")
-	fprintf(bodyw, "}\n")
+	fmt.Fprintf(g.bodyw, "// End user Go code and HTML\n")
+	fmt.Fprintf(g.bodyw, "}\n")
 
-	fprintf(bodyw, "return nil\n")
-	fprintf(bodyw, "}\n")
+	fmt.Fprintf(g.bodyw, "return nil\n")
+	fmt.Fprintf(g.bodyw, "}\n")
 
-	if bodyw.err != nil {
-		return nil, fmt.Errorf("problem writing to the codegen buffer: %w", bodyw.err)
+	if g.bodyw.err != nil {
+		return nil, fmt.Errorf("problem writing to the codegen buffer: %w", g.bodyw.err)
 	}
 
 	importsb.WriteString("\nimport (\n")
@@ -898,7 +855,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	var combinedb bytes.Buffer
 	combinedb.ReadFrom(&headerb)
 	combinedb.ReadFrom(&importsb)
-	combinedb.ReadFrom(&bodyb)
+	combinedb.ReadFrom(&g.bodyb)
 
 	//fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", combinedb.String())
 
@@ -927,6 +884,617 @@ func genStructName(basename string, strategy compilationStrategy) string {
 	return "Pushup__" + basename + "__" + strconv.Itoa(structNameIdx)
 }
 
-func isWhitespace(ch byte) bool {
-	return ch == ' ' || ch == '\n' || ch == '\t'
+var errUntermParenExpr = errors.New("unterminated parenthesized expression")
+var errUntermIndexExpr = errors.New("unterminated index expression")
+var errUntermStringExpr = errors.New("unterminated string expression")
+
+/* --------------------------------------------------------------------- */
+
+/*
+
+  - [x] Parse expressions
+  - [x] Parse @if
+  - [x] Return AST nodes from parser methods
+  - [x] Delete old parser
+  - [-] Adapt driver code to new parser
+  - [ ] Clean up parser tests
+  - [ ] Parse @for
+
+*/
+
+type syntaxTree struct {
+	nodes []node
+}
+
+func init() {
+	if atom.Lookup([]byte("text")) != 0 {
+		panic("expected <text> to not be a common HTML tag")
+	}
+}
+
+func parse(source string) (*syntaxTree, error) {
+	var p parser
+	p.src = source
+	p.offset = 0
+	p.htmlParser = &htmlParser{parser: &p}
+	p.codeParser = &codeParser{parser: &p}
+	stmtBlock := p.htmlParser.parseDocument()
+	var result syntaxTree
+	result.nodes = stmtBlock.nodes
+	return &result, nil
+}
+
+type parser struct {
+	src        string
+	offset     int
+	errs       []error
+	htmlParser *htmlParser
+	codeParser *codeParser
+}
+
+func (p *parser) source() string {
+	return p.sourceFrom(p.offset)
+}
+
+func (p *parser) sourceFrom(offset int) string {
+	return p.src[offset:]
+}
+
+func (p *parser) errorf(format string, args ...any) {
+	p.errs = append(p.errs, fmt.Errorf(format, args...))
+	log.Printf("\x1b[0;31mERROR: %v\x1b[0m", p.errs[len(p.errs)-1])
+}
+
+type htmlParser struct {
+	parser *parser
+
+	// current token
+	tok   html.Token
+	err   error
+	raw   string
+	start int
+}
+
+func (p *htmlParser) advance() {
+	// NOTE(paulsmith): we're re-creating a tokenizer each time through
+	// the loop, with the starting point of the source text moved up by the
+	// length of the previous token, in order to synchronize the position
+	// in the source between the code parser and the HTML parser. this is
+	// probably inefficient and could be done "better" and more efficiently
+	// by reusing the tokenizer, as for sure it generates more garbage. but
+	// would need to profile to see if this is actually a big problem to
+	// end users, and in any case, it's only during compilation, so doesn't
+	// impact the runtime web application.
+	tokenizer := html.NewTokenizer(strings.NewReader(p.parser.source()))
+	tokenizer.SetMaxBuf(0) // unlimited buffer size
+	tokenizer.Next()
+	p.err = tokenizer.Err()
+	p.raw = string(tokenizer.Raw())
+	p.tok = tokenizer.Token()
+	p.start = p.parser.offset
+	p.parser.offset += len(p.raw)
+}
+
+func isAllWhitespace(s string) bool {
+	for s != "" {
+		r, size := utf8.DecodeRuneInString(s)
+		if !unicode.IsSpace(r) {
+			return false
+		}
+		s = s[size:]
+	}
+	return true
+}
+
+func (p *htmlParser) skipWhitespace() {
+	for {
+		if p.tok.Type == html.TextToken && isAllWhitespace(p.raw) {
+			// TODO(paulsmith): emit this text
+			p.advance()
+		} else {
+			break
+		}
+	}
+}
+
+func (p *htmlParser) parseDocument() *nodeStmtBlock {
+	stmtBlock := new(nodeStmtBlock)
+tokenLoop:
+	for {
+		p.advance()
+		switch p.tok.Type {
+		case html.ErrorToken:
+			if p.err == io.EOF {
+				break tokenLoop
+			} else {
+				p.parser.errorf("HTML tokenizer: %w", p.err)
+			}
+		}
+		// FIXME(paulsmith): allow @ transition in an attribute
+		if idx := strings.IndexRune(p.raw, '@'); idx >= 0 && p.tok.Type != html.StartTagToken {
+			if idx < len(p.raw)-1 && p.raw[idx+1] == '@' {
+				// it's an escaped @
+				// TODO(paulsmith): emit '@' literal text expression
+			} else {
+				// TODO(paulsmith): check for an email address
+				newOffset := p.start + idx + 1
+				p.parser.offset = newOffset
+				leading := p.raw[:idx]
+				if idx > 0 {
+					var htmlNode nodeLiteral
+					htmlNode.pos.start = p.start
+					htmlNode.pos.end = p.start + len(leading)
+					htmlNode.str = leading
+					stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+				}
+				e := p.transition()
+				stmtBlock.nodes = append(stmtBlock.nodes, e)
+			}
+		} else {
+			var htmlNode nodeLiteral
+			htmlNode.pos.start = p.start
+			htmlNode.pos.end = p.parser.offset
+			htmlNode.str = p.raw
+			stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+		}
+	}
+	return stmtBlock
+}
+
+func (p *htmlParser) transition() node {
+	preview := p.parser.source()
+	if len(preview) > 40 {
+		preview = preview[:40]
+	}
+	codeParser := p.parser.codeParser
+	codeParser.reset()
+	e := codeParser.parseCodeBlock()
+	return e
+}
+
+func (p *htmlParser) parseBlock() *nodeStmtBlock {
+	p.skipWhitespace()
+	if p.tok.Type != html.StartTagToken {
+		p.parser.errorf("expected an HTML content block (i.e., single element)")
+		return &nodeStmtBlock{}
+	}
+	var tags []string
+	stmtBlock := new(nodeStmtBlock)
+	var htmlNode nodeLiteral
+	htmlNode.typ = literalHTML
+	htmlNode.pos.start = p.parser.offset - len(p.raw)
+	htmlNode.pos.end = p.parser.offset
+	htmlNode.str = p.raw
+	stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+
+tokenLoop:
+	for {
+		switch p.tok.Type {
+		case html.ErrorToken:
+			if p.err == io.EOF {
+				break tokenLoop
+			} else {
+				p.parser.errorf("HTML tokenizer: %w", p.err)
+			}
+		case html.StartTagToken:
+			tags = append(tags, p.tok.Data)
+		case html.EndTagToken:
+			if len(tags) == 0 {
+				p.parser.errorf("saw end tag %s before any start tags", p.tok.Data)
+				break tokenLoop
+			}
+			tag := tags[len(tags)-1]
+			tags = tags[:len(tags)-1]
+			if tag != p.tok.Data {
+				p.parser.errorf("wanted %s end tag, got %s", tag, p.tok.Data)
+			} else {
+				var htmlNode nodeLiteral
+				htmlNode.pos.start = p.start
+				htmlNode.pos.end = p.parser.offset
+				htmlNode.str = p.raw
+				stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+				break tokenLoop
+			}
+		case html.TextToken:
+			if idx := strings.IndexRune(p.raw, '@'); idx >= 0 {
+				if idx < len(p.raw)-1 && p.raw[idx+1] == '@' {
+					// it's an escaped @
+					// TODO(paulsmith): emit '@' literal text expression
+				} else {
+					// TODO(paulsmith): check for an email address
+					newOffset := p.start + idx + 1
+					p.parser.offset = newOffset
+					leading := p.raw[:idx]
+					if idx > 0 {
+						var htmlNode nodeLiteral
+						htmlNode.pos.start = p.start
+						htmlNode.pos.end = p.start + len(leading)
+						htmlNode.str = leading
+						stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+					}
+					e := p.transition()
+					stmtBlock.nodes = append(stmtBlock.nodes, e)
+				}
+			} else {
+				var htmlNode nodeLiteral
+				htmlNode.pos.start = p.start
+				htmlNode.pos.end = p.parser.offset
+				htmlNode.str = p.raw
+				stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+			}
+		}
+		p.advance()
+	}
+	return stmtBlock
+}
+
+type codeParser struct {
+	parser         *parser
+	baseOffset     int
+	file           *token.File
+	scanner        *scanner.Scanner
+	acceptedToken  goToken
+	lookaheadToken goToken
+}
+
+func (p *codeParser) reset() {
+	p.baseOffset = p.parser.offset
+	fset := token.NewFileSet()
+	source := p.parser.source()
+	p.file = fset.AddFile("", fset.Base(), len(source))
+	p.scanner = new(scanner.Scanner)
+	p.scanner.Init(p.file, []byte(source), p.handleGoScanErr, scanner.ScanComments)
+	p.acceptedToken = goToken{}
+	p.lookaheadToken = goToken{}
+}
+
+func (p *codeParser) source() string {
+	return p.parser.sourceFrom(p.baseOffset)
+}
+
+func (p *codeParser) sourceFrom(pos token.Pos) string {
+	return p.parser.sourceFrom(p.baseOffset + p.file.Offset(pos))
+}
+
+func (p *codeParser) lookahead() (t goToken) {
+	t.pos, t.tok, t.lit = p.scanner.Scan()
+	return t
+}
+
+func (p *codeParser) handleGoScanErr(pos token.Position, msg string) {
+	p.parser.errorf("Go scanning error: pos: %v msg: %s", pos, msg)
+}
+
+type goToken struct {
+	pos token.Pos
+	tok token.Token
+	lit string
+}
+
+func (t goToken) String() string {
+	if t.tok.IsLiteral() || t.tok == token.IDENT {
+		return t.lit
+	} else {
+		return t.tok.String()
+	}
+}
+
+func (p *codeParser) peek() goToken {
+	if p.lookaheadToken.pos == 0 {
+		p.lookaheadToken = p.lookahead()
+	}
+	return p.lookaheadToken
+}
+
+func (p *codeParser) prev() goToken {
+	return p.acceptedToken
+}
+
+func (p *codeParser) advance() {
+	t := p.peek()
+	// the Go scanner skips over whitespace so we need to be careful about the
+	// logic for advancing the main parser internal source offset.
+	p.parser.offset = p.baseOffset + p.file.Offset(t.pos) + len(t.String())
+	p.acceptedToken = t
+	p.lookaheadToken = p.lookahead()
+}
+
+type htmlTransitionMode int
+
+const (
+	htmlTransitionModeDoc htmlTransitionMode = iota
+	htmlTransitionModeBlock
+)
+
+func (p *codeParser) transition(mode htmlTransitionMode) *nodeStmtBlock {
+	htmlParser := p.parser.htmlParser
+	htmlParser.advance()
+	var e *nodeStmtBlock
+	switch mode {
+	case htmlTransitionModeDoc:
+		e = htmlParser.parseDocument()
+	case htmlTransitionModeBlock:
+		e = htmlParser.parseBlock()
+	default:
+		panic("")
+	}
+	p.reset()
+	return e
+}
+
+func (p *codeParser) parseCodeBlock() node {
+	// starting at the token just past the '@' indicating a transition from HTML
+	// parsing to Go code parsing
+	var e node
+	if p.peek().tok == token.IF {
+		p.advance()
+		e = p.parseIfStmt()
+	} else if p.peek().tok == token.IDENT && p.peek().lit == "code" {
+		p.advance()
+		e = p.parseCodeKeyword()
+	} else if p.peek().tok == token.FOR {
+		p.advance()
+		e = p.parseForStmt()
+	} else if p.peek().tok == token.LPAREN {
+		p.advance()
+		e = p.parseExplicitExpression()
+	} else if p.peek().tok == token.IDENT {
+		e = p.parseImplicitExpression()
+	} else if p.peek().tok == token.EOF {
+		p.parser.errorf("unexpected EOF")
+	} else {
+		panic("unexpected token type: " + p.peek().tok.String())
+	}
+	return e
+}
+
+func (p *codeParser) parseIfStmt() *nodeIf {
+	var stmt nodeIf
+	start := p.peek().pos
+loop:
+	for {
+		switch p.peek().tok {
+		case token.EOF:
+			p.parser.errorf("premature end of conditional in IF statement")
+			break loop
+		case token.LBRACE:
+			// conditional expression has been scanned
+			break loop
+		// TODO(paulsmith): add cases for tokens that are illegal in an expression
+		default:
+			p.advance()
+		}
+	}
+	n := (p.file.Offset(p.prev().pos) - p.file.Offset(start)) + len(p.prev().String())
+	offset := p.baseOffset + p.file.Offset(start)
+	stmt.cond = new(nodeGoStrExpr)
+	stmt.cond.pos.start = offset
+	stmt.cond.pos.end = offset + n
+	stmt.cond.expr = p.sourceFrom(start)[:n]
+	if _, err := goparser.ParseExpr(stmt.cond.expr); err != nil {
+		p.parser.errorf("parsing Go expression in IF conditional: %w", err)
+	}
+	stmt.then = p.parseStmtBlock()
+	if p.peek().tok == token.ELSE {
+		p.advance()
+		elseBlock := p.parseStmtBlock()
+		stmt.alt = elseBlock
+	}
+	return &stmt
+}
+
+func (p *codeParser) parseForStmt() *nodeFor {
+	var stmt nodeFor
+	start := p.peek().pos
+loop:
+	for {
+		switch p.peek().tok {
+		case token.EOF:
+			p.parser.errorf("premature end of clause in FOR statement")
+			break loop
+		case token.LBRACE:
+			break loop
+		default:
+			p.advance()
+		}
+	}
+	n := (p.file.Offset(p.prev().pos) - p.file.Offset(start)) + len(p.prev().String())
+	offset := p.baseOffset + p.file.Offset(start)
+	stmt.clause = new(nodeGoCode)
+	stmt.clause.pos.start = offset
+	stmt.clause.pos.end = offset + n
+	stmt.clause.code = p.sourceFrom(start)[:n]
+	stmt.block = p.parseStmtBlock()
+	return &stmt
+}
+
+func (p *codeParser) parseStmtBlock() *nodeStmtBlock {
+	// we are sitting on the opening '{' token here
+	if p.peek().tok != token.LBRACE {
+		panic("")
+	}
+	p.advance()
+	var block *nodeStmtBlock
+	// it is likely non-Go code (i.e., HTML, or HTML and a transition)
+	switch p.peek().tok {
+	case token.ILLEGAL:
+		if p.peek().lit == "@" {
+			p.scanner.ErrorCount--
+			p.advance()
+			// we can just stay in the code parser
+			codeBlock := p.parseCodeBlock()
+			block = &nodeStmtBlock{nodes: []node{codeBlock}}
+		}
+	case token.EOF:
+		p.parser.errorf("premature end of block in IF statement")
+	default:
+		block = p.transition(htmlTransitionModeBlock)
+	}
+	// we should be at the closing '}' token here
+	if p.peek().tok != token.RBRACE {
+		p.parser.errorf("expected closing '}', got %v", p.peek())
+	}
+	p.advance()
+	return block
+}
+
+func (p *codeParser) parseCodeKeyword() *nodeGoCode {
+	var result nodeGoCode
+	// we are one token past the 'code' keyword
+	if p.peek().tok != token.LBRACE {
+		p.parser.errorf("expected '{', got '%s'", p.peek().tok)
+	}
+	depth := 1
+	p.advance()
+	result.pos.start = p.parser.offset
+	start := p.peek().pos
+loop:
+	for {
+		switch p.peek().tok {
+		case token.LBRACE:
+			depth++
+		case token.RBRACE:
+			depth--
+			if depth == 0 {
+				break loop
+			}
+		}
+		p.advance()
+	}
+	n := (p.file.Offset(p.prev().pos) - p.file.Offset(start)) + len(p.prev().String())
+	if p.peek().tok != token.RBRACE {
+		panic("")
+	}
+	p.advance()
+	result.code = p.sourceFrom(start)[:n]
+	result.pos.end = result.pos.start + n
+	return &result
+}
+
+func (p *codeParser) parseExplicitExpression() *nodeGoStrExpr {
+	// one token past the opening '('
+	var result nodeGoStrExpr
+	result.pos.start = p.parser.offset
+	start := p.peek().pos
+	depth := 1
+loop:
+	for {
+		switch p.peek().tok {
+		case token.LPAREN:
+			depth++
+		case token.RPAREN:
+			depth--
+			if depth == 0 {
+				break loop
+			}
+		default:
+		}
+		p.advance()
+	}
+	n := (p.file.Offset(p.prev().pos) - p.file.Offset(start)) + len(p.prev().String())
+	if p.peek().tok != token.RPAREN {
+		panic("")
+	}
+	p.advance()
+	result.expr = p.sourceFrom(start)[:n]
+	result.pos.end = result.pos.start + n
+	if _, err := goparser.ParseExpr(result.expr); err != nil {
+		p.parser.errorf("illegal Go expression: %w", err)
+	}
+	return &result
+}
+
+func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
+	if p.peek().tok != token.IDENT {
+		panic("")
+	}
+	var result nodeGoStrExpr
+	result.pos.start = p.parser.offset
+	start := p.peek().pos
+	n := len(p.peek().String())
+	p.advance()
+	for {
+		if p.peek().tok == token.PERIOD {
+			p.advance()
+			if p.peek().tok == token.IDENT {
+				n += 1 + len(p.peek().String())
+				p.advance()
+			} else {
+				p.parser.errorf("illegal selector expression")
+				break
+			}
+		} else {
+			break
+		}
+	}
+	result.expr = p.sourceFrom(start)[:n]
+	result.pos.end = result.pos.start + n
+	if _, err := goparser.ParseExpr(result.expr); err != nil {
+		p.parser.errorf("illegal Go expression: %w", err)
+	}
+	return &result
+}
+
+type debugPrettyPrinter struct {
+	w     io.Writer
+	depth int
+}
+
+const pad = "    "
+
+func acceptAndIndent(n node, p *debugPrettyPrinter) {
+	p.depth++
+	n.accept(p)
+	p.depth--
+}
+
+func (p *debugPrettyPrinter) visitLiteral(n *nodeLiteral) {
+	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
+	fmt.Fprintf(p.w, "\x1b[32m%q\x1b[0m", n.str)
+	fmt.Fprintln(p.w, "")
+}
+
+func (p *debugPrettyPrinter) visitGoStrExpr(n *nodeGoStrExpr) {
+	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
+	fmt.Fprintf(p.w, "\x1b[33m%s\x1b[0m", n.expr)
+	fmt.Fprintln(p.w, "")
+}
+
+func (p *debugPrettyPrinter) visitGoCode(n *nodeGoCode) {
+	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
+	fmt.Fprintf(p.w, "\x1b[34m%s\x1b[0m", n.code)
+	fmt.Fprintln(p.w, "")
+}
+
+func (p *debugPrettyPrinter) visitIf(n *nodeIf) {
+	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
+	fmt.Fprintf(p.w, "\x1b[35mIF\x1b[0m\n")
+	acceptAndIndent(n.cond, p)
+	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
+	fmt.Fprintf(p.w, "\x1b[35mTHEN\x1b[0m\n")
+	acceptAndIndent(n.then, p)
+	if n.alt != nil {
+		p.w.Write([]byte(strings.Repeat(pad, p.depth)))
+		fmt.Fprintf(p.w, "\x1b[1;35mELSE\x1b[0m\n")
+		acceptAndIndent(n.alt, p)
+	}
+	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
+	fmt.Fprintf(p.w, "\x1b[35mEND IF\x1b[0m\n")
+}
+
+func (p *debugPrettyPrinter) visitFor(n *nodeFor) {
+	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
+	fmt.Fprintf(p.w, "\x1b[36mFOR\x1b[0m\n")
+	acceptAndIndent(n.clause, p)
+	acceptAndIndent(n.block, p)
+}
+
+func (p *debugPrettyPrinter) visitStmtBlock(n *nodeStmtBlock) {
+	nodeList(n.nodes).accept(p)
+}
+
+func (p *debugPrettyPrinter) visitNodes(nodes []node) {
+	for _, n := range nodes {
+		acceptAndIndent(n, p)
+	}
 }

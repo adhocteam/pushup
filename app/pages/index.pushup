@@ -1,6 +1,11 @@
 <h1>@title</h1>
 <p>Hello, @name!</p>
-<a href="/about">About</a>
+<p>
+    <a href="/about">About</a> |
+    <a href="/escape">Escaping</a> |
+    <a href="/if">If</a> |
+    <a href="/for">For</a>
+</p>
 
 @code {
     var title = "Welcome to Pushup"
