@@ -4,7 +4,8 @@
     <a href="/about">About</a> |
     <a href="/escape">Escaping</a> |
     <a href="/if">If</a> |
-    <a href="/for">For</a>
+    <a href="/for">For</a> |
+    <a href="/dump">Dump</a>
 </p>
 
 @code {

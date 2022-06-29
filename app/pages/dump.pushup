@@ -1,0 +1,8 @@
+<h2>Dump request headers</h2>
+<ul>
+@for key := range req.Header {
+    <li>
+        <b>@key</b>: @(req.Header.Get(key))
+    </li>
+}
+</ul>
