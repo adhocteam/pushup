@@ -477,17 +477,8 @@ type nodeVisitor interface {
 	visitNodes([]node)
 }
 
-type literalType int
-
-const (
-	// FIXME(paulsmith): convert to own expression type (to capture tag, atom, attrs as Go types)
-	literalHTML literalType = iota
-	literalText
-)
-
 type nodeLiteral struct {
 	str string
-	typ literalType
 	pos span
 }
 
@@ -495,14 +486,6 @@ func (e nodeLiteral) Pos() span             { return e.pos }
 func (e *nodeLiteral) accept(v nodeVisitor) { v.visitLiteral(e) }
 
 var _ node = (*nodeLiteral)(nil)
-
-func newLiteralTextNode(text string, start, end int) *nodeLiteral {
-	return &nodeLiteral{text, literalText, span{start, end}}
-}
-
-func newLiteralHTMLNode(html string, start, end int) *nodeLiteral {
-	return &nodeLiteral{html, literalHTML, span{start, end}}
-}
 
 type nodeGoStrExpr struct {
 	expr string

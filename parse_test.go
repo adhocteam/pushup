@@ -19,14 +19,14 @@ func TestParse(t *testing.T) {
 `,
 			&syntaxTree{
 				nodes: []node{
-					&nodeLiteral{str: "<p>", typ: literalHTML, pos: span{start: 0, end: 3}},
-					&nodeLiteral{str: "Hello, ", typ: literalHTML, pos: span{start: 3, end: 10}},
+					&nodeLiteral{str: "<p>", pos: span{start: 0, end: 3}},
+					&nodeLiteral{str: "Hello, ", pos: span{start: 3, end: 10}},
 					&nodeGoStrExpr{expr: "name", pos: span{start: 11, end: 15}},
-					&nodeLiteral{str: "!", typ: literalHTML, pos: span{start: 15, end: 16}},
-					&nodeLiteral{str: "</p>", typ: literalHTML, pos: span{start: 16, end: 20}},
-					&nodeLiteral{str: "\n", typ: literalHTML, pos: span{start: 20, end: 21}},
+					&nodeLiteral{str: "!", pos: span{start: 15, end: 16}},
+					&nodeLiteral{str: "</p>", pos: span{start: 16, end: 20}},
+					&nodeLiteral{str: "\n", pos: span{start: 20, end: 21}},
 					&nodeGoCode{code: "name := \"world\"\n", pos: span{start: 28, end: 44}},
-					&nodeLiteral{str: "\n", typ: literalHTML, pos: span{start: 47, end: 48}},
+					&nodeLiteral{str: "\n", pos: span{start: 47, end: 48}},
 				}},
 		},
 		{
