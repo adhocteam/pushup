@@ -153,7 +153,7 @@ func TestPushup(t *testing.T) {
 						return nil
 					}
 					done <- true
-					if diff := cmp.Diff(want, got); diff != "" {
+					if diff := cmp.Diff(string(want), string(got)); diff != "" {
 						t.Errorf("expected render diff (-want +got)\n%s", diff)
 					} else {
 						allgood = true
