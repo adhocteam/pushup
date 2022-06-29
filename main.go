@@ -377,9 +377,8 @@ func dirExists(path string) bool {
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return false
-		} else {
-			panic(err)
 		}
+		panic(err)
 	}
 	return fi.IsDir()
 }
@@ -851,9 +850,9 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	}
 
 	importsb.WriteString("\nimport (\n")
-	for import_, ok := range imports {
+	for im, ok := range imports {
 		if ok {
-			line := fmt.Sprintf("\"%s\"\n", import_)
+			line := fmt.Sprintf("\"%s\"\n", im)
 			importsb.WriteString(line)
 		}
 	}
@@ -1288,9 +1287,8 @@ type goToken struct {
 func (t goToken) String() string {
 	if t.tok.IsLiteral() || t.tok == token.IDENT {
 		return t.lit
-	} else {
-		return t.tok.String()
 	}
+	return t.tok.String()
 }
 
 func (p *codeParser) peek() goToken {
