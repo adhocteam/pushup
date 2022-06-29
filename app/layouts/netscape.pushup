@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Pushup Navigator</title>
+        <style>
+            html {
+                background: #c6c6c6;
+            }
+            body {
+                font-family: Times New Roman, serif;
+            }
+            hr {
+                border-size: 10px;
+            }
+        </style>
+        <script src="https://unpkg.com/htmx.org@1.7.0"></script>
+    </head>
+    <body>
+        <header>
+            <h1>Pushup Navigator</h1>
+        </header>
+        <main hx-boost="true">
+            @contents
+        </main>
+        <hr>
+        <footer>
+            <p>&copy;2022 Ad Hoc</p>
+        </footer>
+    </body>
+</html>

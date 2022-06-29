@@ -1,0 +1,5 @@
+@layout netscape
+
+<p>Greetings.</p>
+<p>This component has a non-default layout, specified with the @@layout directive.</p>
+<p><a href="/" hx-boost="false">Back home</a></p>

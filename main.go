@@ -27,6 +27,7 @@ import (
 var outDir = "./build"
 
 var singleFlag = flag.String("single", "", "path to a single Pushup file")
+var applyOptimizations = flag.Bool("O", false, "apply simple optimizations to the parse tree")
 
 func main() {
 	port := flag.String("port", "8080", "port to listen on with TCP IPv4")
@@ -414,13 +415,14 @@ func compilePushup(sourcePath string, strategy compilationStrategy, targetDir st
 	}()
 
 	// apply some simple optimizations
-	tree = optimize(tree)
+	if *applyOptimizations {
+		tree = optimize(tree)
+	}
 
 	var c codeGenUnit
 	switch strategy {
 	case compilePushupComponent:
-		// FIXME(paulsmith): allow user to override layout
-		layoutName := "default"
+		layoutName := tree.layout
 		if *singleFlag != "" {
 			layoutName = ""
 		}
@@ -712,7 +714,10 @@ func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrate
 	g.c = c
 	g.strategy = strategy
 	g.basename = basename
-	g.imports = imports
+	g.imports = make(map[string]bool)
+	for k, v := range imports {
+		g.imports[k] = v
+	}
 	g.bodyw = newErrWriter(&g.bodyb)
 	return &g
 }
@@ -940,7 +945,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	}
 
 	importsb.WriteString("\nimport (\n")
-	for im, ok := range imports {
+	for im, ok := range g.imports {
 		if ok {
 			line := fmt.Sprintf("\"%s\"\n", im)
 			importsb.WriteString(line)
@@ -999,7 +1004,8 @@ var errUntermStringExpr = errors.New("unterminated string expression")
 */
 
 type syntaxTree struct {
-	nodes []node
+	layout string
+	nodes  []node
 }
 
 func init() {
@@ -1014,10 +1020,11 @@ func parse(source string) (*syntaxTree, error) {
 	p.offset = 0
 	p.htmlParser = &htmlParser{parser: &p}
 	p.codeParser = &codeParser{parser: &p}
-	stmtBlock := p.htmlParser.parseDocument()
-	var result syntaxTree
+	stmtBlock, layout := p.htmlParser.parseDocument()
+	result := new(syntaxTree)
 	result.nodes = stmtBlock.nodes
-	return &result, nil
+	result.layout = layout
+	return result, nil
 }
 
 type parser struct {
@@ -1045,9 +1052,10 @@ type htmlParser struct {
 	parser *parser
 
 	// current token
-	tok   html.Token
-	err   error
-	raw   string
+	tok html.Token
+	err error
+	raw string
+	// the global parser offset at the beginning of a new token
 	start int
 }
 
@@ -1096,13 +1104,13 @@ func (p *htmlParser) skipWhitespace() []*nodeLiteral {
 	return result
 }
 
-func (p *htmlParser) parseDocument() *nodeBlock {
+func (p *htmlParser) parseDocument() (*nodeBlock, string) {
+	layout := "default"
 	stmtBlock := new(nodeBlock)
 tokenLoop:
 	for {
 		p.advance()
-		switch p.tok.Type {
-		case html.ErrorToken:
+		if p.tok.Type == html.ErrorToken {
 			if p.err == io.EOF {
 				break tokenLoop
 			} else {
@@ -1111,23 +1119,71 @@ tokenLoop:
 		}
 		// FIXME(paulsmith): allow @ transition in an attribute
 		if idx := strings.IndexRune(p.raw, '@'); idx >= 0 && p.tok.Type != html.StartTagToken {
-			if idx < len(p.raw)-1 && p.raw[idx+1] == '@' {
+			if escapedAt := strings.Index(p.raw, "@@"); escapedAt >= 0 {
 				// it's an escaped @
-				// TODO(paulsmith): emit '@' literal text expression
+				if escapedAt > 0 {
+					// emit the leading text before the "@@"
+					e := new(nodeLiteral)
+					e.pos.start = p.start
+					e.pos.end = p.start + escapedAt
+					e.str = p.raw[:escapedAt]
+					stmtBlock.nodes = append(stmtBlock.nodes, e)
+				}
+				e := new(nodeLiteral)
+				e.pos.start = p.start + escapedAt
+				e.pos.end = p.start + escapedAt + 2
+				e.str = "@"
+				stmtBlock.nodes = append(stmtBlock.nodes, e)
+				p.parser.offset = p.start + escapedAt + 2
 			} else {
 				// TODO(paulsmith): check for an email address
-				newOffset := p.start + idx + 1
-				p.parser.offset = newOffset
-				leading := p.raw[:idx]
-				if idx > 0 {
-					var htmlNode nodeLiteral
-					htmlNode.pos.start = p.start
-					htmlNode.pos.end = p.start + len(leading)
-					htmlNode.str = leading
-					stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+				// FIXME(paulsmith): clean this up!
+				if strings.HasPrefix(p.raw[idx+1:], "layout") {
+					s := p.raw[idx+1+len("layout"):]
+					n := 0
+					if len(s) < 1 || s[0] != ' ' {
+						p.parser.errorf("@layout must be followed by a space")
+						break tokenLoop
+					}
+					s = s[1:]
+					n++
+					if len(s) > 0 && s[0] == '!' {
+						layout = ""
+						n++
+					} else {
+						var name []rune
+						for {
+							r, size := utf8.DecodeRuneInString(s)
+							if r == 0 {
+								break
+							}
+							if unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' || r == '-' || r == '.' {
+								name = append(name, r)
+								s = s[size:]
+								n += size
+							} else {
+								break
+							}
+						}
+						layout = string(name)
+					}
+					newOffset := p.start + idx + 1 + len("layout") + n
+					p.parser.offset = newOffset
+					continue
+				} else {
+					newOffset := p.start + idx + 1
+					p.parser.offset = newOffset
+					leading := p.raw[:idx]
+					if idx > 0 {
+						var htmlNode nodeLiteral
+						htmlNode.pos.start = p.start
+						htmlNode.pos.end = p.start + len(leading)
+						htmlNode.str = leading
+						stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+					}
+					e := p.transition()
+					stmtBlock.nodes = append(stmtBlock.nodes, e)
 				}
-				e := p.transition()
-				stmtBlock.nodes = append(stmtBlock.nodes, e)
 			}
 		} else {
 			var htmlNode nodeLiteral
@@ -1137,7 +1193,7 @@ tokenLoop:
 			stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
 		}
 	}
-	return stmtBlock
+	return stmtBlock, layout
 }
 
 func (p *htmlParser) transition() node {

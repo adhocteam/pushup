@@ -18,6 +18,7 @@ func TestParse(t *testing.T) {
 }
 `,
 			&syntaxTree{
+				layout: "default",
 				nodes: []node{
 					&nodeLiteral{str: "<p>", pos: span{start: 0, end: 3}},
 					&nodeLiteral{str: "Hello, ", pos: span{start: 3, end: 10}},
@@ -36,6 +37,7 @@ func TestParse(t *testing.T) {
 	<h1>Hello, world!</h1>
 }`,
 			&syntaxTree{
+				layout: "default",
 				nodes: []node{
 					&nodeIf{
 						cond: &nodeGoStrExpr{
@@ -75,6 +77,7 @@ func TestParse(t *testing.T) {
     </div>
 }`,
 			&syntaxTree{
+				layout: "default",
 				nodes: []node{
 					&nodeIf{
 						cond: &nodeGoStrExpr{
@@ -125,6 +128,7 @@ func TestParse(t *testing.T) {
 	products := []product{{name: "Widget", price: 9.49}}
 }`,
 			&syntaxTree{
+				layout: "default",
 				nodes: []node{
 					&nodeGoCode{
 						code: `type product struct {

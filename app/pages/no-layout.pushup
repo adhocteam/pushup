@@ -1,0 +1,13 @@
+@layout !
+
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>No layout!</title>
+    </head>
+    <body>
+        <h1>No layout!</h1>
+        <p>This component has no layout.</p>
+        <p><a href="/" hx-boost="false">Back home</a></p>
+    </body>
+</html>

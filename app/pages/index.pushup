@@ -5,7 +5,9 @@
     <a href="/escape">Escaping</a> |
     <a href="/if">If</a> |
     <a href="/for">For</a> |
-    <a href="/dump">Dump</a>
+    <a href="/dump">Dump</a> |
+    <a href="/alt-layout" hx-boost="false">Non-default layout</a> |
+    <a href="/no-layout" hx-boost="false">No layout</a>
 </p>
 
 @code {
