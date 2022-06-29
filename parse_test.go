@@ -42,7 +42,7 @@ func TestParse(t *testing.T) {
 							expr: "name != \"\"",
 							pos:  span{start: 4, end: 14},
 						},
-						then: &nodeStmtBlock{
+						then: &nodeBlock{
 							nodes: []node{
 								&nodeLiteral{str: "\n\t", pos: span{start: 16, end: 18}},
 								&nodeElement{tag: tag{name: "h1"}, pos: span{start: 18, end: 22}, children: []node{
@@ -52,7 +52,7 @@ func TestParse(t *testing.T) {
 								}},
 							},
 						},
-						alt: &nodeStmtBlock{
+						alt: &nodeBlock{
 							nodes: []node{
 								&nodeLiteral{str: "\n\t", pos: span{start: 49, end: 51}},
 								&nodeElement{tag: tag{name: "h1"}, pos: span{start: 51, end: 55}, children: []node{
@@ -81,7 +81,7 @@ func TestParse(t *testing.T) {
 							expr: "name == \"\"",
 							pos:  span{start: 4, end: 14},
 						},
-						then: &nodeStmtBlock{
+						then: &nodeBlock{
 							nodes: []node{
 								&nodeLiteral{str: "\n    ", pos: span{start: 16, end: 21}},
 								&nodeElement{tag: tag{name: "div"}, pos: span{start: 21, end: 26}, children: []node{
@@ -95,7 +95,7 @@ func TestParse(t *testing.T) {
 								},
 							},
 						},
-						alt: &nodeStmtBlock{
+						alt: &nodeBlock{
 							nodes: []node{
 								&nodeLiteral{str: "\n    ", pos: span{start: 77, end: 82}},
 								&nodeElement{tag: tag{name: "div"}, pos: span{start: 82, end: 87}, children: []node{
@@ -160,7 +160,7 @@ var unexported = []any{
 	nodeGoStrExpr{},
 	nodeIf{},
 	nodeLiteral{},
-	nodeStmtBlock{},
+	nodeBlock{},
 	span{},
 	syntaxTree{},
 	tag{},

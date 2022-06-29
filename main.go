@@ -475,7 +475,7 @@ type nodeVisitor interface {
 	visitGoCode(*nodeGoCode)
 	visitIf(*nodeIf)
 	visitFor(*nodeFor)
-	visitStmtBlock(*nodeStmtBlock)
+	visitStmtBlock(*nodeBlock)
 	visitNodes([]node)
 }
 
@@ -515,8 +515,8 @@ var _ node = (*nodeGoCode)(nil)
 
 type nodeIf struct {
 	cond *nodeGoStrExpr
-	then *nodeStmtBlock // FIXME: *nodeStmtBlock?
-	alt  *nodeStmtBlock
+	then *nodeBlock
+	alt  *nodeBlock
 }
 
 func (e nodeIf) Pos() span             { return e.cond.pos }
@@ -526,25 +526,25 @@ var _ node = (*nodeIf)(nil)
 
 type nodeFor struct {
 	clause *nodeGoCode
-	block  *nodeStmtBlock
+	block  *nodeBlock
 }
 
 func (e nodeFor) Pos() span             { return e.clause.pos }
 func (e *nodeFor) accept(v nodeVisitor) { v.visitFor(e) }
 
-// A nodeStmtBlock represents a block of nodes, i.e., a sequence of nodes that
+// A nodeBlock represents a block of nodes, i.e., a sequence of nodes that
 // appear in order in the source syntax.
-type nodeStmtBlock struct {
+type nodeBlock struct {
 	nodes []node
 }
 
-func (e *nodeStmtBlock) Pos() span {
+func (e *nodeBlock) Pos() span {
 	// FIXME(paulsmith): span end all exprs
 	return e.nodes[0].Pos()
 }
-func (e *nodeStmtBlock) accept(v nodeVisitor) { v.visitStmtBlock(e) }
+func (e *nodeBlock) accept(v nodeVisitor) { v.visitStmtBlock(e) }
 
-var _ node = (*nodeStmtBlock)(nil)
+var _ node = (*nodeBlock)(nil)
 
 // nodeElement represents an HTML element, with a start tag, optional
 // attributes, optional children, and an end tag.
@@ -597,7 +597,7 @@ func (o *optimizer) visitFor(n *nodeFor) {
 	n.block.accept(o)
 }
 
-func (o *optimizer) visitStmtBlock(n *nodeStmtBlock) {
+func (o *optimizer) visitStmtBlock(n *nodeBlock) {
 	nodeList(n.nodes).accept(o)
 }
 
@@ -794,7 +794,7 @@ func (g *codeGenerator) visitFor(n *nodeFor) {
 	g.printf("}\n")
 }
 
-func (g *codeGenerator) visitStmtBlock(n *nodeStmtBlock) {
+func (g *codeGenerator) visitStmtBlock(n *nodeBlock) {
 	for _, e := range n.nodes {
 		e.accept(g)
 	}
@@ -1089,8 +1089,8 @@ func (p *htmlParser) skipWhitespace() []*nodeLiteral {
 	return result
 }
 
-func (p *htmlParser) parseDocument() *nodeStmtBlock {
-	stmtBlock := new(nodeStmtBlock)
+func (p *htmlParser) parseDocument() *nodeBlock {
+	stmtBlock := new(nodeBlock)
 tokenLoop:
 	for {
 		p.advance()
@@ -1384,10 +1384,10 @@ func (p *codeParser) advance() {
 	p.lookaheadToken = p.lookahead()
 }
 
-func (p *codeParser) transition() *nodeStmtBlock {
+func (p *codeParser) transition() *nodeBlock {
 	htmlParser := p.parser.htmlParser
 	htmlParser.advance()
-	var stmtBlock nodeStmtBlock
+	var stmtBlock nodeBlock
 	ws := htmlParser.skipWhitespace()
 	for _, n := range ws {
 		stmtBlock.nodes = append(stmtBlock.nodes, n)
@@ -1484,13 +1484,13 @@ loop:
 	return &stmt
 }
 
-func (p *codeParser) parseStmtBlock() *nodeStmtBlock {
+func (p *codeParser) parseStmtBlock() *nodeBlock {
 	// we are sitting on the opening '{' token here
 	if p.peek().tok != token.LBRACE {
 		panic("")
 	}
 	p.advance()
-	var block *nodeStmtBlock
+	var block *nodeBlock
 	// it is likely non-Go code (i.e., HTML, or HTML and a transition)
 	switch p.peek().tok {
 	case token.ILLEGAL:
@@ -1499,7 +1499,7 @@ func (p *codeParser) parseStmtBlock() *nodeStmtBlock {
 			p.advance()
 			// we can just stay in the code parser
 			codeBlock := p.parseCodeBlock()
-			block = &nodeStmtBlock{nodes: []node{codeBlock}}
+			block = &nodeBlock{nodes: []node{codeBlock}}
 		}
 	case token.EOF:
 		p.parser.errorf("premature end of block in IF statement")
@@ -1676,7 +1676,7 @@ func (p *debugPrettyPrinter) visitElement(n *nodeElement) {
 	fmt.Fprintf(p.w, "\x1b[31m%s\x1b[0m\n", n.tag.end())
 }
 
-func (p *debugPrettyPrinter) visitStmtBlock(n *nodeStmtBlock) {
+func (p *debugPrettyPrinter) visitStmtBlock(n *nodeBlock) {
 	nodeList(n.nodes).accept(p)
 }
 
