@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/net/html"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -183,4 +184,29 @@ func splitExt(path string) (name string, ext string) {
 	ext = filepath.Ext(path)
 	name = strings.TrimSuffix(path, ext)
 	return
+}
+
+func TestTagString(t *testing.T) {
+	tests := []struct {
+		tag  tag
+		want string
+	}{
+		{
+			tag{name: "h1"},
+			"h1",
+		},
+		{
+			tag{name: "div", attr: []html.Attribute{{Key: "class", Val: "banner"}}},
+			"div class=\"banner\"",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+			got := test.tag.String()
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("(-want, +got)\n%s", diff)
+			}
+		})
+	}
 }

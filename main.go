@@ -31,6 +31,7 @@ var singleFlag = flag.String("single", "", "path to a single Pushup file")
 func main() {
 	port := flag.String("port", "8080", "port to listen on with TCP IPv4")
 	unixSocket := flag.String("unix-socket", "", "path to listen on with Unix socket")
+	parseOnly := flag.Bool("parse-only", false, "exit after dumping parse result")
 	compileOnly := flag.Bool("compile-only", false, "compile only, don't start web server after")
 
 	flag.Parse()
@@ -85,6 +86,18 @@ func main() {
 				}
 			}
 		}
+	}
+
+	if *parseOnly {
+		for _, path := range pushupFiles {
+			b, err := os.ReadFile(path)
+			if err != nil {
+				log.Fatalf("reading file %s: %v", path, err)
+			}
+			tree, err := parse(string(b))
+			(&debugPrettyPrinter{w: os.Stdout}).visitNodes(tree.nodes)
+		}
+		os.Exit(0)
 	}
 
 	for _, path := range layoutFiles {
@@ -454,6 +467,7 @@ type nodeList []node
 func (n nodeList) accept(v nodeVisitor) { v.visitNodes(n) }
 
 type nodeVisitor interface {
+	visitElement(*nodeElement)
 	visitLiteral(*nodeLiteral)
 	visitGoStrExpr(*nodeGoStrExpr)
 	visitGoCode(*nodeGoCode)
@@ -533,6 +547,8 @@ type nodeFor struct {
 func (e nodeFor) Pos() span             { return e.clause.pos }
 func (e *nodeFor) accept(v nodeVisitor) { v.visitFor(e) }
 
+// A nodeStmtBlock represents a block of nodes, i.e., a sequence of nodes that
+// appear in order in the source syntax.
 type nodeStmtBlock struct {
 	nodes []node
 }
@@ -663,6 +679,14 @@ func (g *codeGenerator) visitLiteral(n *nodeLiteral) {
 	g.used("io")
 	g.lineNo(n)
 	g.printf("io.WriteString(w, %s)\n", strconv.Quote(n.str))
+}
+
+func (g *codeGenerator) visitElement(n *nodeElement) {
+	g.used("io")
+	g.lineNo(n)
+	g.printf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.start()))
+	nodeList(n.children).accept(g)
+	g.printf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.end()))
 }
 
 func (g *codeGenerator) visitGoStrExpr(n *nodeGoStrExpr) {
@@ -1052,50 +1076,150 @@ func (p *htmlParser) transition() node {
 	return e
 }
 
-func (p *htmlParser) parseBlock() *nodeStmtBlock {
-	p.skipWhitespace()
-	if p.tok.Type != html.StartTagToken {
-		p.parser.errorf("expected an HTML content block (i.e., single element)")
-		return &nodeStmtBlock{}
-	}
-	var tags []string
-	stmtBlock := new(nodeStmtBlock)
-	var htmlNode nodeLiteral
-	htmlNode.typ = literalHTML
-	htmlNode.pos.start = p.parser.offset - len(p.raw)
-	htmlNode.pos.end = p.parser.offset
-	htmlNode.str = p.raw
-	stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+type tag struct {
+	name string
+	attr []html.Attribute
+}
 
-tokenLoop:
+func (t tag) String() string {
+	if len(t.attr) == 0 {
+		return t.name
+	}
+	buf := bytes.NewBufferString(t.name)
+	for _, a := range t.attr {
+		buf.WriteByte(' ')
+		buf.WriteString(a.Key)
+		buf.WriteString(`="`)
+		buf.WriteString(html.EscapeString(a.Val))
+		buf.WriteByte('"')
+	}
+	return buf.String()
+}
+
+func (t tag) start() string {
+	return "<" + t.String() + ">"
+}
+
+func (t tag) end() string {
+	return "</" + t.String() + ">"
+}
+
+func tok2tag(tok html.Token) tag {
+	return tag{name: tok.Data, attr: tok.Attr}
+}
+
+// nodeElement represents an HTML element, with a start tag, optional
+// attributes, optional children, and an end tag.
+type nodeElement struct {
+	tag      tag
+	pos      span
+	children []node
+}
+
+func (e nodeElement) Pos() span             { return e.pos }
+func (e *nodeElement) accept(v nodeVisitor) { v.visitElement(e) }
+
+func (p *htmlParser) match(typ html.TokenType) bool {
+	return p.tok.Type == typ
+}
+
+func (p *htmlParser) parseElement() *nodeElement {
+	var result *nodeElement
+
+	p.skipWhitespace()
+
+	if !p.match(html.StartTagToken) {
+		p.parser.errorf("expected an HTML element start tag, got %s", p.tok.Type)
+		return result
+	}
+
+	result = new(nodeElement)
+	result.tag = tok2tag(p.tok)
+	result.pos.start = p.parser.offset - len(p.raw)
+	result.pos.end = p.parser.offset
+	p.advance()
+
+	result.children = p.parseChildren()
+
+	if !p.match(html.EndTagToken) {
+		p.parser.errorf("expected an HTML element end tag, got %q", p.tok.Type)
+		return result
+	}
+
+	if result.tag.name != p.tok.Data {
+		p.parser.errorf("expected </%s> end tag, got </%s>", result.tag.name, p.tok.Data)
+	}
+
+	return result
+}
+
+func sprintStartTag(elems []*nodeElement) string {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "[")
+	for i, e := range elems {
+		fmt.Fprintf(&buf, "%s", e.tag.name)
+		if i < len(elems)-1 {
+			fmt.Fprintf(&buf, " ")
+		}
+	}
+	fmt.Fprintf(&buf, "]")
+	return buf.String()
+}
+
+func sprintNodes(nodes []node) string {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "[")
+	for i, n := range nodes {
+		switch n := n.(type) {
+		case *nodeLiteral:
+			fmt.Fprintf(&buf, "%q", n.str)
+		case *nodeElement:
+			fmt.Fprintf(&buf, "%s", n.tag.name)
+		}
+		if i < len(nodes)-1 {
+			fmt.Fprintf(&buf, " ")
+		}
+	}
+	fmt.Fprintf(&buf, "]")
+	return buf.String()
+}
+
+func (p *htmlParser) parseChildren() []node {
+	var result []node // either *nodeElement or *nodeLiteral
+	var elemStack []*nodeElement
+loop:
 	for {
 		switch p.tok.Type {
 		case html.ErrorToken:
 			if p.err == io.EOF {
-				break tokenLoop
+				break loop
 			} else {
 				p.parser.errorf("HTML tokenizer: %w", p.err)
 			}
+		// FIXME(paulsmith): handle self-closing tags/elements
 		case html.StartTagToken:
-			tags = append(tags, p.tok.Data)
+			elem := new(nodeElement)
+			elem.tag = tok2tag(p.tok)
+			elem.pos.start = p.parser.offset - len(p.raw)
+			elem.pos.end = p.parser.offset
+			p.advance()
+			elem.children = p.parseChildren()
+			result = append(result, elem)
+			elemStack = append(elemStack, elem)
 		case html.EndTagToken:
-			if len(tags) == 0 {
-				p.parser.errorf("saw end tag %s before any start tags", p.tok.Data)
-				break tokenLoop
+			if len(elemStack) == 0 {
+				return result
 			}
-			tag := tags[len(tags)-1]
-			tags = tags[:len(tags)-1]
-			if tag != p.tok.Data {
-				p.parser.errorf("wanted %s end tag, got %s", tag, p.tok.Data)
+			elem := elemStack[len(elemStack)-1]
+			if elem.tag.name == p.tok.Data {
+				elemStack = elemStack[:len(elemStack)-1]
+				p.advance()
 			} else {
-				var htmlNode nodeLiteral
-				htmlNode.pos.start = p.start
-				htmlNode.pos.end = p.parser.offset
-				htmlNode.str = p.raw
-				stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
-				break tokenLoop
+				p.parser.errorf("mismatch end tag, expected </%s>, got </%s>", elem.tag.name, p.tok.Data)
+				return result
 			}
 		case html.TextToken:
+			// TODO(paulsmith): de-dupe this logic
 			if idx := strings.IndexRune(p.raw, '@'); idx >= 0 {
 				if idx < len(p.raw)-1 && p.raw[idx+1] == '@' {
 					// it's an escaped @
@@ -1110,22 +1234,29 @@ tokenLoop:
 						htmlNode.pos.start = p.start
 						htmlNode.pos.end = p.start + len(leading)
 						htmlNode.str = leading
-						stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+						result = append(result, &htmlNode)
 					}
 					e := p.transition()
-					stmtBlock.nodes = append(stmtBlock.nodes, e)
+					result = append(result, e)
 				}
 			} else {
 				var htmlNode nodeLiteral
 				htmlNode.pos.start = p.start
 				htmlNode.pos.end = p.parser.offset
 				htmlNode.str = p.raw
-				stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+				result = append(result, &htmlNode)
 			}
+			p.advance()
+		case html.CommentToken:
+			// ???
+		case html.DoctypeToken:
+			// ???
+		default:
+			panic("")
 		}
-		p.advance()
 	}
-	return stmtBlock
+
+	return result
 }
 
 type codeParser struct {
@@ -1203,18 +1334,18 @@ type htmlTransitionMode int
 
 const (
 	htmlTransitionModeDoc htmlTransitionMode = iota
-	htmlTransitionModeBlock
+	htmlTransitionModeElement
 )
 
-func (p *codeParser) transition(mode htmlTransitionMode) *nodeStmtBlock {
+func (p *codeParser) transition(mode htmlTransitionMode) node {
 	htmlParser := p.parser.htmlParser
 	htmlParser.advance()
-	var e *nodeStmtBlock
+	var e node
 	switch mode {
 	case htmlTransitionModeDoc:
 		e = htmlParser.parseDocument()
-	case htmlTransitionModeBlock:
-		e = htmlParser.parseBlock()
+	case htmlTransitionModeElement:
+		e = htmlParser.parseElement()
 	default:
 		panic("")
 	}
@@ -1328,7 +1459,9 @@ func (p *codeParser) parseStmtBlock() *nodeStmtBlock {
 	case token.EOF:
 		p.parser.errorf("premature end of block in IF statement")
 	default:
-		block = p.transition(htmlTransitionModeBlock)
+		elem := p.transition(htmlTransitionModeElement)
+		block = new(nodeStmtBlock)
+		block.nodes = []node{elem}
 	}
 	// we should be at the closing '}' token here
 	if p.peek().tok != token.RBRACE {
@@ -1440,6 +1573,8 @@ type debugPrettyPrinter struct {
 	depth int
 }
 
+var _ nodeVisitor = (*debugPrettyPrinter)(nil)
+
 const pad = "    "
 
 func acceptAndIndent(n node, p *debugPrettyPrinter) {
@@ -1487,6 +1622,15 @@ func (p *debugPrettyPrinter) visitFor(n *nodeFor) {
 	fmt.Fprintf(p.w, "\x1b[36mFOR\x1b[0m\n")
 	acceptAndIndent(n.clause, p)
 	acceptAndIndent(n.block, p)
+}
+
+func (p *debugPrettyPrinter) visitElement(n *nodeElement) {
+	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
+	fmt.Fprintf(p.w, "\x1b[31m%s\x1b[0m\n", n.tag.start())
+	for _, e := range n.children {
+		acceptAndIndent(e, p)
+	}
+	fmt.Fprintf(p.w, "\x1b[31m%s\x1b[0m\n", n.tag.end())
 }
 
 func (p *debugPrettyPrinter) visitStmtBlock(n *nodeStmtBlock) {
