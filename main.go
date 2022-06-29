@@ -728,8 +728,12 @@ func (g *codeGenerator) used(name string) {
 	g.imports[name] = true
 }
 
-func (g *codeGenerator) lineNo(e node) {
-	g.printf("//line %s:%d\n", g.basename+".pushup", g.c.lineNo(e.Pos()))
+func (g *codeGenerator) nodeLineNo(e node) {
+	g.lineNo(g.c.lineNo(e.Pos()))
+}
+
+func (g *codeGenerator) lineNo(n int) {
+	g.printf("//line %s:%d\n", g.basename+".pushup", n)
 }
 
 func (g *codeGenerator) printf(format string, args ...any) {
@@ -742,13 +746,13 @@ func (g *codeGenerator) generate() {
 
 func (g *codeGenerator) visitLiteral(n *nodeLiteral) {
 	g.used("io")
-	g.lineNo(n)
+	g.nodeLineNo(n)
 	g.printf("io.WriteString(w, %s)\n", strconv.Quote(n.str))
 }
 
 func (g *codeGenerator) visitElement(n *nodeElement) {
 	g.used("io")
-	g.lineNo(n)
+	g.nodeLineNo(n)
 	g.printf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.start()))
 	nodeList(n.children).accept(g)
 	g.printf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.end()))
@@ -767,7 +771,7 @@ func (g *codeGenerator) visitGoStrExpr(n *nodeGoStrExpr) {
 	} else {
 		g.used("html/template")
 		// TODO(paulsmith): enforce Stringer() interface on these types
-		g.lineNo(n)
+		g.nodeLineNo(n)
 		g.printf("template.HTMLEscape(w, []byte(%s))\n", n.expr)
 	}
 }
@@ -900,10 +904,13 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	nodes := c.nodes()
 	for _, n := range nodes {
 		if e, ok := n.(*nodeGoCode); ok {
-			// FIXME(paulsmith): this is currently inaccurate wrt line numbers, split by newlines
-			// and retrack the span for each
-			g.lineNo(n)
-			fmt.Fprintf(g.bodyw, "%s\n", e.code)
+			srcLineNo := c.lineNo(n.Pos())
+			lines := strings.Split(e.code, "\n")
+			for _, line := range lines {
+				g.lineNo(srcLineNo)
+				fmt.Fprintf(g.bodyw, "%s\n", line)
+				srcLineNo++
+			}
 		}
 	}
 
