@@ -413,6 +413,9 @@ func compilePushup(sourcePath string, strategy compilationStrategy, targetDir st
 		}
 	}()
 
+	// apply some simple optimizations
+	tree = optimize(tree)
+
 	var c codeGenUnit
 	switch strategy {
 	case compilePushupComponent:
@@ -543,9 +546,89 @@ func (e *nodeStmtBlock) accept(v nodeVisitor) { v.visitStmtBlock(e) }
 
 var _ node = (*nodeStmtBlock)(nil)
 
+// nodeElement represents an HTML element, with a start tag, optional
+// attributes, optional children, and an end tag.
+type nodeElement struct {
+	tag      tag
+	pos      span
+	children []node
+}
+
+func (e nodeElement) Pos() span             { return e.pos }
+func (e *nodeElement) accept(v nodeVisitor) { v.visitElement(e) }
+
+var _ node = (*nodeElement)(nil)
+
 type span struct {
 	start int
 	end   int
+}
+
+func optimize(tree *syntaxTree) *syntaxTree {
+	//opt := optimizer{}
+	//opt.visitNodes(nodeList(tree.nodes))
+	tree.nodes = coalesceLiterals(tree.nodes)
+	return tree
+}
+
+// TODO(paulsmith): this needs to be fleshed out and wired up correctly,
+// currently it is not actually in use.
+type optimizer struct{}
+
+func (o *optimizer) visitElement(n *nodeElement) {
+	nodeList(n.children).accept(o)
+}
+
+func (o *optimizer) visitLiteral(n *nodeLiteral) {
+}
+
+func (o *optimizer) visitGoStrExpr(n *nodeGoStrExpr) {
+}
+
+func (o *optimizer) visitGoCode(n *nodeGoCode) {
+}
+
+func (o *optimizer) visitIf(n *nodeIf) {
+	n.then.accept(o)
+	n.alt.accept(o)
+}
+
+func (o *optimizer) visitFor(n *nodeFor) {
+	n.block.accept(o)
+}
+
+func (o *optimizer) visitStmtBlock(n *nodeStmtBlock) {
+	nodeList(n.nodes).accept(o)
+}
+
+func (o *optimizer) visitNodes(n []node) {
+	n = coalesceLiterals(n)
+	for i := range n {
+		n[i].accept(o)
+	}
+}
+
+var _ nodeVisitor = (*optimizer)(nil)
+
+// coalesceLiterals is an optimization that coalesces consecutive HTML literal
+// nodes together by concatenating their strings together in a single node.
+func coalesceLiterals(nodes []node) []node {
+	//before := len(nodes)
+	n := 0
+	for range nodes[:len(nodes)-1] {
+		this, thisOk := nodes[n].(*nodeLiteral)
+		next, nextOk := nodes[n+1].(*nodeLiteral)
+		if thisOk && nextOk && len(this.str) < 512 {
+			this.str += next.str
+			this.pos.end = next.pos.end
+			nodes = append(nodes[:n+1], nodes[n+2:]...)
+		} else {
+			n++
+		}
+	}
+	nodes = nodes[:n+1]
+	//log.Printf("SAVED %d NODES", before-len(nodes))
+	return nodes
 }
 
 func generateCodeToFile(c codeGenUnit, basename string, outputPath string, strategy compilationStrategy) error {
@@ -992,15 +1075,18 @@ func isAllWhitespace(s string) bool {
 	return true
 }
 
-func (p *htmlParser) skipWhitespace() {
+func (p *htmlParser) skipWhitespace() []*nodeLiteral {
+	var result []*nodeLiteral
 	for {
 		if p.tok.Type == html.TextToken && isAllWhitespace(p.raw) {
-			// TODO(paulsmith): emit this text
+			n := nodeLiteral{str: p.raw, pos: span{start: p.start, end: p.parser.offset}}
+			result = append(result, &n)
 			p.advance()
 		} else {
 			break
 		}
 	}
+	return result
 }
 
 func (p *htmlParser) parseDocument() *nodeStmtBlock {
@@ -1090,25 +1176,12 @@ func tok2tag(tok html.Token) tag {
 	return tag{name: tok.Data, attr: tok.Attr}
 }
 
-// nodeElement represents an HTML element, with a start tag, optional
-// attributes, optional children, and an end tag.
-type nodeElement struct {
-	tag      tag
-	pos      span
-	children []node
-}
-
-func (e nodeElement) Pos() span             { return e.pos }
-func (e *nodeElement) accept(v nodeVisitor) { v.visitElement(e) }
-
 func (p *htmlParser) match(typ html.TokenType) bool {
 	return p.tok.Type == typ
 }
 
 func (p *htmlParser) parseElement() *nodeElement {
 	var result *nodeElement
-
-	p.skipWhitespace()
 
 	if !p.match(html.StartTagToken) {
 		p.parser.errorf("expected an HTML element start tag, got %s", p.tok.Type)
@@ -1311,27 +1384,18 @@ func (p *codeParser) advance() {
 	p.lookaheadToken = p.lookahead()
 }
 
-type htmlTransitionMode int
-
-const (
-	htmlTransitionModeDoc htmlTransitionMode = iota
-	htmlTransitionModeElement
-)
-
-func (p *codeParser) transition(mode htmlTransitionMode) node {
+func (p *codeParser) transition() *nodeStmtBlock {
 	htmlParser := p.parser.htmlParser
 	htmlParser.advance()
-	var e node
-	switch mode {
-	case htmlTransitionModeDoc:
-		e = htmlParser.parseDocument()
-	case htmlTransitionModeElement:
-		e = htmlParser.parseElement()
-	default:
-		panic("")
+	var stmtBlock nodeStmtBlock
+	ws := htmlParser.skipWhitespace()
+	for _, n := range ws {
+		stmtBlock.nodes = append(stmtBlock.nodes, n)
 	}
+	elem := htmlParser.parseElement()
+	stmtBlock.nodes = append(stmtBlock.nodes, elem)
 	p.reset()
-	return e
+	return &stmtBlock
 }
 
 func (p *codeParser) parseCodeBlock() node {
@@ -1440,9 +1504,7 @@ func (p *codeParser) parseStmtBlock() *nodeStmtBlock {
 	case token.EOF:
 		p.parser.errorf("premature end of block in IF statement")
 	default:
-		elem := p.transition(htmlTransitionModeElement)
-		block = new(nodeStmtBlock)
-		block.nodes = []node{elem}
+		block = p.transition()
 	}
 	// we should be at the closing '}' token here
 	if p.peek().tok != token.RBRACE {

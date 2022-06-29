@@ -44,6 +44,7 @@ func TestParse(t *testing.T) {
 						},
 						then: &nodeStmtBlock{
 							nodes: []node{
+								&nodeLiteral{str: "\n\t", pos: span{start: 16, end: 18}},
 								&nodeElement{tag: tag{name: "h1"}, pos: span{start: 18, end: 22}, children: []node{
 									&nodeLiteral{str: "Hello, ", pos: span{start: 22, end: 29}},
 									&nodeGoStrExpr{expr: "name", pos: span{start: 30, end: 34}},
@@ -53,6 +54,7 @@ func TestParse(t *testing.T) {
 						},
 						alt: &nodeStmtBlock{
 							nodes: []node{
+								&nodeLiteral{str: "\n\t", pos: span{start: 49, end: 51}},
 								&nodeElement{tag: tag{name: "h1"}, pos: span{start: 51, end: 55}, children: []node{
 									&nodeLiteral{str: "Hello, world!", pos: span{start: 55, end: 68}},
 								}},
@@ -81,6 +83,7 @@ func TestParse(t *testing.T) {
 						},
 						then: &nodeStmtBlock{
 							nodes: []node{
+								&nodeLiteral{str: "\n    ", pos: span{start: 16, end: 21}},
 								&nodeElement{tag: tag{name: "div"}, pos: span{start: 21, end: 26}, children: []node{
 									&nodeLiteral{str: "\n        ", pos: span{start: 26, end: 35}},
 									&nodeElement{tag: tag{name: "h1"}, pos: span{start: 35, end: 39}, children: []node{
@@ -94,6 +97,7 @@ func TestParse(t *testing.T) {
 						},
 						alt: &nodeStmtBlock{
 							nodes: []node{
+								&nodeLiteral{str: "\n    ", pos: span{start: 77, end: 82}},
 								&nodeElement{tag: tag{name: "div"}, pos: span{start: 82, end: 87}, children: []node{
 									&nodeLiteral{str: "\n        ", pos: span{start: 87, end: 96}},
 									&nodeElement{tag: tag{name: "h1"}, pos: span{start: 96, end: 100}, children: []node{
