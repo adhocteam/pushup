@@ -7,10 +7,10 @@
                 background: #eee;
             }
             body {
-                font-family: Georgia, serif;
+                font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
                 background: #fff;
                 margin: 0 auto;
-                max-width: 900px;
+                max-width: 640px;
                 padding: 40px;
             }
             header > h1 {
