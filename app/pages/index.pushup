@@ -1,5 +1,7 @@
+@import "time"
+
 <h1>@title</h1>
-<p>Hello, @name!</p>
+<p>Hello, @name! It is currently @(time.Now().Format(time.UnixDate)).</p>
 <p>
     <a href="/about">About</a> |
     <a href="/escape">Escaping</a> |

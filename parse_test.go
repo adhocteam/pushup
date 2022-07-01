@@ -18,7 +18,6 @@ func TestParse(t *testing.T) {
 }
 `,
 			&syntaxTree{
-				layout: "default",
 				nodes: []node{
 					&nodeLiteral{str: "<p>", pos: span{start: 0, end: 3}},
 					&nodeLiteral{str: "Hello, ", pos: span{start: 3, end: 10}},
@@ -37,7 +36,6 @@ func TestParse(t *testing.T) {
 	<h1>Hello, world!</h1>
 }`,
 			&syntaxTree{
-				layout: "default",
 				nodes: []node{
 					&nodeIf{
 						cond: &nodeGoStrExpr{
@@ -77,7 +75,6 @@ func TestParse(t *testing.T) {
     </div>
 }`,
 			&syntaxTree{
-				layout: "default",
 				nodes: []node{
 					&nodeIf{
 						cond: &nodeGoStrExpr{
@@ -128,7 +125,6 @@ func TestParse(t *testing.T) {
 	products := []product{{name: "Widget", price: 9.49}}
 }`,
 			&syntaxTree{
-				layout: "default",
 				nodes: []node{
 					&nodeGoCode{
 						code: `type product struct {
@@ -140,6 +136,27 @@ func TestParse(t *testing.T) {
 `,
 						pos: span{start: 7, end: 117},
 					},
+				},
+			},
+		},
+		{
+			`@layout !`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeLayout{name: "!", pos: span{start: 1, end: 9}},
+				},
+			},
+		},
+		{
+			`@import "time"`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeImport{
+						decl: importDecl{
+							pkgName: "",
+							path:    "\"time\"",
+						},
+						pos: span{}},
 				},
 			},
 		},
@@ -159,12 +176,15 @@ func TestParse(t *testing.T) {
 }
 
 var unexported = []any{
+	importDecl{},
+	nodeBlock{},
 	nodeElement{},
 	nodeGoCode{},
 	nodeGoStrExpr{},
 	nodeIf{},
+	nodeImport{},
+	nodeLayout{},
 	nodeLiteral{},
-	nodeBlock{},
 	span{},
 	syntaxTree{},
 	tag{},

@@ -109,7 +109,7 @@ func main() {
 	}
 
 	for _, path := range pushupFiles {
-		err := compilePushup(path, compilePushupComponent, outDir)
+		err := compilePushup(path, compilePushupPage, outDir)
 		if err != nil {
 			log.Fatalf("compiling pushup file %s: %v", path, err)
 		}
@@ -387,7 +387,7 @@ func dirExists(path string) bool {
 type compilationStrategy int
 
 const (
-	compilePushupComponent compilationStrategy = iota
+	compilePushupPage compilationStrategy = iota
 	compileLayout
 )
 
@@ -421,12 +421,16 @@ func compilePushup(sourcePath string, strategy compilationStrategy, targetDir st
 
 	var c codeGenUnit
 	switch strategy {
-	case compilePushupComponent:
-		layoutName := tree.layout
+	case compilePushupPage:
+		page, err := postProcessTree(tree)
+		if err != nil {
+			return fmt.Errorf("post-processing tree: %w", err)
+		}
+		layoutName := page.layout
 		if *singleFlag != "" {
 			layoutName = ""
 		}
-		c = &componentCodeGen{source: source, layout: layoutName, tree: tree}
+		c = &pageCodeGen{source: source, layout: layoutName, page: page}
 	case compileLayout:
 		c = &layoutCodeGen{source: source, tree: tree}
 	default:
@@ -438,7 +442,7 @@ func compilePushup(sourcePath string, strategy compilationStrategy, targetDir st
 
 	var outputFilename string
 	switch strategy {
-	case compilePushupComponent:
+	case compilePushupPage:
 		outputFilename = basename + ".go"
 	case compileLayout:
 		outputFilename = basename + "_layout.go"
@@ -468,6 +472,7 @@ type nodeAcceptor interface {
 
 type nodeList []node
 
+func (n nodeList) Pos() span            { return n[0].Pos() }
 func (n nodeList) accept(v nodeVisitor) { v.visitNodes(n) }
 
 type nodeVisitor interface {
@@ -479,6 +484,8 @@ type nodeVisitor interface {
 	visitFor(*nodeFor)
 	visitStmtBlock(*nodeBlock)
 	visitNodes([]node)
+	visitImport(*nodeImport)
+	visitLayout(*nodeLayout)
 }
 
 type nodeLiteral struct {
@@ -552,14 +559,36 @@ var _ node = (*nodeBlock)(nil)
 // attributes, optional children, and an end tag.
 type nodeElement struct {
 	tag      tag
-	pos      span
 	children []node
+	pos      span
 }
 
 func (e nodeElement) Pos() span             { return e.pos }
 func (e *nodeElement) accept(v nodeVisitor) { v.visitElement(e) }
 
 var _ node = (*nodeElement)(nil)
+
+type nodeImport struct {
+	decl importDecl
+	pos  span
+}
+
+func (e nodeImport) Pos() span             { return e.pos }
+func (e *nodeImport) accept(v nodeVisitor) { v.visitImport(e) }
+
+var _ node = (*nodeImport)(nil)
+
+type nodeLayout struct {
+	name string
+	pos  span
+}
+
+func (e nodeLayout) Pos() span             { return e.pos }
+func (e *nodeLayout) accept(v nodeVisitor) { v.visitLayout(e) }
+
+var _ node = (*nodeLayout)(nil)
+
+/* ------------------ end of syntax nodes -------------------------*/
 
 type span struct {
 	start int
@@ -610,6 +639,12 @@ func (o *optimizer) visitNodes(n []node) {
 	}
 }
 
+func (o *optimizer) visitImport(n *nodeImport) {
+}
+
+func (o *optimizer) visitLayout(n *nodeLayout) {
+}
+
 var _ nodeVisitor = (*optimizer)(nil)
 
 // coalesceLiterals is an optimization that coalesces consecutive HTML literal
@@ -633,6 +668,43 @@ func coalesceLiterals(nodes []node) []node {
 	return nodes
 }
 
+type page struct {
+	layout     string
+	imports    []importDecl
+	codeBlocks []string
+	nodes      []node
+}
+
+func postProcessTree(tree *syntaxTree) (*page, error) {
+	// FIXME(paulsmith): recurse down into child nodes
+	// FIXME(paulsmith): handle nodeGoCode nodes
+	layoutSet := false
+	page := new(page)
+	page.layout = "default"
+	n := 0
+	for _, e := range tree.nodes {
+		switch e := e.(type) {
+		case *nodeImport:
+			page.imports = append(page.imports, e.decl)
+		case *nodeLayout:
+			if layoutSet {
+				return nil, fmt.Errorf("layout already set as %q", page.layout)
+			}
+			if e.name == "!" {
+				page.layout = ""
+			} else {
+				page.layout = e.name
+			}
+			layoutSet = true
+		default:
+			tree.nodes[n] = e
+			n++
+		}
+	}
+	page.nodes = tree.nodes[:n]
+	return page, nil
+}
+
 func generateCodeToFile(c codeGenUnit, basename string, outputPath string, strategy compilationStrategy) error {
 	code, err := genCode(c, basename, strategy)
 	if err != nil {
@@ -651,17 +723,17 @@ type codeGenUnit interface {
 	lineNo(span) int
 }
 
-type componentCodeGen struct {
+type pageCodeGen struct {
 	source string
 	layout string
-	tree   *syntaxTree
+	page   *page
 }
 
-func (c *componentCodeGen) nodes() []node {
-	return c.tree.nodes
+func (c *pageCodeGen) nodes() []node {
+	return c.page.nodes
 }
 
-func (c *componentCodeGen) lineNo(s span) int {
+func (c *pageCodeGen) lineNo(s span) int {
 	return lineCount(c.source[:s.start+1])
 }
 
@@ -723,10 +795,11 @@ func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrate
 }
 
 var imports = map[string]bool{
+	"fmt":                        false,
+	"golang.org/x/sync/errgroup": false,
+	"html/template":              false,
 	"io":                         false,
 	"net/http":                   false,
-	"html/template":              false,
-	"golang.org/x/sync/errgroup": false,
 }
 
 func (g *codeGenerator) used(name string) {
@@ -775,14 +848,27 @@ func (g *codeGenerator) visitGoStrExpr(n *nodeGoStrExpr) {
 		g.printf("<-yield\n")
 	} else {
 		g.used("html/template")
-		// TODO(paulsmith): enforce Stringer() interface on these types
+		g.used("fmt")
+		g.used("io")
 		g.nodeLineNo(n)
-		g.printf("template.HTMLEscape(w, []byte(%s))\n", n.expr)
+		g.printf("{\n")
+		g.printf("\tvar __x any = %s\n", n.expr)
+		g.printf("\tswitch __val := __x.(type) {\n")
+		g.printf("\t\tcase string:\n")
+		g.printf("\t\t\tio.WriteString(w, template.HTMLEscapeString(__val))\n")
+		g.printf("\t\tcase fmt.Stringer:\n")
+		g.printf("\t\t\tio.WriteString(w, template.HTMLEscapeString(__val.String()))\n")
+		g.printf("\t\tcase []byte:\n")
+		g.printf("\t\t\ttemplate.HTMLEscape(w, __val)\n")
+		g.printf("\t\tdefault:\n")
+		g.printf("\t\t\tpanic(\"expected a string or fmt.Stringer expression\")\n")
+		g.printf("\t}\n")
+		g.printf("}\n")
 	}
 }
 
 func (g *codeGenerator) visitGoCode(n *nodeGoCode) {
-	// TODO(paulsmith): separate passes, see genCode()
+	// NOTE(paulsmith): separate passes, see genCode()
 }
 
 func (g *codeGenerator) visitIf(n *nodeIf) {
@@ -813,6 +899,14 @@ func (g *codeGenerator) visitNodes(n []node) {
 	for _, e := range n {
 		e.accept(g)
 	}
+}
+
+func (g *codeGenerator) visitLayout(n *nodeLayout) {
+	// no-op
+}
+
+func (g *codeGenerator) visitImport(n *nodeImport) {
+	// no-op
 }
 
 var _ nodeVisitor = (*codeGenerator)(nil)
@@ -847,7 +941,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	fmt.Fprintf(g.bodyw, "}\n")
 
 	switch strategy {
-	case compilePushupComponent:
+	case compilePushupPage:
 		// FIXME(paulsmith): handle nested routes (multiple slashes)
 		route := "/" + basename
 		if basename == "index" {
@@ -870,7 +964,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	g.used("io")
 	g.used("net/http")
 	switch strategy {
-	case compilePushupComponent:
+	case compilePushupPage:
 		fmt.Fprintf(g.bodyw, "func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
 	case compileLayout:
 		fmt.Fprintf(g.bodyw, "func (t *%s) Render(yield chan struct{}, w io.Writer, req *http.Request) error {\n", typeName)
@@ -878,8 +972,8 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		panic("")
 	}
 
-	if strategy == compilePushupComponent {
-		comp := c.(*componentCodeGen)
+	if strategy == compilePushupPage {
+		comp := c.(*pageCodeGen)
 		if comp.layout != "" {
 			// TODO(paulsmith): this is where a flag that could conditionally toggle the rendering
 			// of the layout could go - maybe a special header in request object?
@@ -921,8 +1015,8 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 
 	g.generate()
 
-	if strategy == compilePushupComponent {
-		comp := c.(*componentCodeGen)
+	if strategy == compilePushupPage {
+		comp := c.(*pageCodeGen)
 		if comp.layout != "" {
 			fmt.Fprintf(g.bodyw,
 				`yield <- struct{}{}
@@ -952,6 +1046,15 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		}
 	}
 	importsb.WriteString(")\n\n")
+	if c, ok := c.(*pageCodeGen); ok {
+		for _, decl := range c.page.imports {
+			importsb.WriteString("import ")
+			if decl.pkgName != "" {
+				importsb.WriteString(decl.pkgName + " ")
+			}
+			importsb.WriteString(decl.path + "\n")
+		}
+	}
 
 	var combinedb bytes.Buffer
 	combinedb.ReadFrom(&headerb)
@@ -985,27 +1088,13 @@ func genStructName(basename string, strategy compilationStrategy) string {
 	return "Pushup__" + basename + "__" + strconv.Itoa(structNameIdx)
 }
 
-var errUntermParenExpr = errors.New("unterminated parenthesized expression")
-var errUntermIndexExpr = errors.New("unterminated index expression")
-var errUntermStringExpr = errors.New("unterminated string expression")
-
-/* --------------------------------------------------------------------- */
-
-/*
-
-  - [x] Parse expressions
-  - [x] Parse @if
-  - [x] Return AST nodes from parser methods
-  - [x] Delete old parser
-  - [-] Adapt driver code to new parser
-  - [ ] Clean up parser tests
-  - [ ] Parse @for
-
-*/
+type importDecl struct {
+	pkgName string
+	path    string
+}
 
 type syntaxTree struct {
-	layout string
-	nodes  []node
+	nodes []node
 }
 
 func init() {
@@ -1020,11 +1109,11 @@ func parse(source string) (*syntaxTree, error) {
 	p.offset = 0
 	p.htmlParser = &htmlParser{parser: &p}
 	p.codeParser = &codeParser{parser: &p}
-	stmtBlock, layout := p.htmlParser.parseDocument()
-	result := new(syntaxTree)
-	result.nodes = stmtBlock.nodes
-	result.layout = layout
-	return result, nil
+	tree := p.htmlParser.parseDocument()
+	if len(p.errs) > 0 {
+		return nil, p.errs[0]
+	}
+	return tree, nil
 }
 
 type parser struct {
@@ -1104,9 +1193,8 @@ func (p *htmlParser) skipWhitespace() []*nodeLiteral {
 	return result
 }
 
-func (p *htmlParser) parseDocument() (*nodeBlock, string) {
-	layout := "default"
-	stmtBlock := new(nodeBlock)
+func (p *htmlParser) parseDocument() *syntaxTree {
+	tree := new(syntaxTree)
 tokenLoop:
 	for {
 		p.advance()
@@ -1127,13 +1215,13 @@ tokenLoop:
 					e.pos.start = p.start
 					e.pos.end = p.start + escapedAt
 					e.str = p.raw[:escapedAt]
-					stmtBlock.nodes = append(stmtBlock.nodes, e)
+					tree.nodes = append(tree.nodes, e)
 				}
 				e := new(nodeLiteral)
 				e.pos.start = p.start + escapedAt
 				e.pos.end = p.start + escapedAt + 2
 				e.str = "@"
-				stmtBlock.nodes = append(stmtBlock.nodes, e)
+				tree.nodes = append(tree.nodes, e)
 				p.parser.offset = p.start + escapedAt + 2
 			} else {
 				// TODO(paulsmith): check for an email address
@@ -1147,8 +1235,9 @@ tokenLoop:
 					}
 					s = s[1:]
 					n++
+					e := new(nodeLayout)
 					if len(s) > 0 && s[0] == '!' {
-						layout = ""
+						e.name = "!"
 						n++
 					} else {
 						var name []rune
@@ -1165,11 +1254,13 @@ tokenLoop:
 								break
 							}
 						}
-						layout = string(name)
+						e.name = string(name)
 					}
-					newOffset := p.start + idx + 1 + len("layout") + n
+					e.pos.start = p.start + idx + 1
+					newOffset := e.pos.start + len("layout") + n
+					e.pos.end = newOffset
 					p.parser.offset = newOffset
-					continue
+					tree.nodes = append(tree.nodes, e)
 				} else {
 					newOffset := p.start + idx + 1
 					p.parser.offset = newOffset
@@ -1179,21 +1270,25 @@ tokenLoop:
 						htmlNode.pos.start = p.start
 						htmlNode.pos.end = p.start + len(leading)
 						htmlNode.str = leading
-						stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+						tree.nodes = append(tree.nodes, &htmlNode)
 					}
 					e := p.transition()
-					stmtBlock.nodes = append(stmtBlock.nodes, e)
+					// NOTE(paulsmith): this bubbles up nil due to parseImportKeyword,
+					// the result of which we don't treat as a node in the syntax tree
+					if e != nil {
+						tree.nodes = append(tree.nodes, e)
+					}
 				}
 			}
 		} else {
-			var htmlNode nodeLiteral
-			htmlNode.pos.start = p.start
-			htmlNode.pos.end = p.parser.offset
-			htmlNode.str = p.raw
-			stmtBlock.nodes = append(stmtBlock.nodes, &htmlNode)
+			e := new(nodeLiteral)
+			e.pos.start = p.start
+			e.pos.end = p.parser.offset
+			e.str = p.raw
+			tree.nodes = append(tree.nodes, e)
 		}
 	}
-	return stmtBlock, layout
+	return tree
 }
 
 func (p *htmlParser) transition() node {
@@ -1471,6 +1566,9 @@ func (p *codeParser) parseCodeBlock() node {
 	} else if p.peek().tok == token.IDENT && p.peek().lit == "code" {
 		p.advance()
 		e = p.parseCodeKeyword()
+	} else if p.peek().tok == token.IMPORT {
+		p.advance()
+		e = p.parseImportKeyword()
 	} else if p.peek().tok == token.FOR {
 		p.advance()
 		e = p.parseForStmt()
@@ -1610,6 +1708,41 @@ loop:
 	return &result
 }
 
+func (p *codeParser) parseImportKeyword() *nodeImport {
+	/*
+		examples
+		@import   "lib/math"         math.Sin
+		@import m "lib/math"         m.Sin
+		@import . "lib/math"         Sin
+	*/
+	e := new(nodeImport)
+	// we are one token past the 'code' keyword
+	switch p.peek().tok {
+	case token.STRING:
+		e.decl.path = p.peek().lit
+		p.advance()
+	case token.IDENT:
+		e.decl.pkgName = p.peek().lit
+		p.advance()
+		if p.peek().tok != token.STRING {
+			p.parser.errorf("expected string, got %s", p.peek().tok)
+			return e
+		}
+		e.decl.path = p.peek().lit
+	case token.PERIOD:
+		e.decl.pkgName = "."
+		p.advance()
+		if p.peek().tok != token.STRING {
+			p.parser.errorf("expected string, got %s", p.peek().tok)
+			return e
+		}
+		e.decl.path = p.peek().lit
+	default:
+		p.parser.errorf("unexpected token type after @import: %s", p.peek().tok)
+	}
+	return e
+}
+
 func (p *codeParser) parseExplicitExpression() *nodeGoStrExpr {
 	// one token past the opening '('
 	var result nodeGoStrExpr
@@ -1747,4 +1880,18 @@ func (p *debugPrettyPrinter) visitNodes(nodes []node) {
 	for _, n := range nodes {
 		acceptAndIndent(n, p)
 	}
+}
+
+func (p *debugPrettyPrinter) visitImport(n *nodeImport) {
+	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
+	fmt.Fprintf(p.w, "IMPORT ")
+	if n.decl.pkgName != "" {
+		fmt.Fprintf(p.w, "%s", n.decl.pkgName)
+	}
+	fmt.Fprintf(p.w, "%s\n", n.decl.path)
+}
+
+func (p *debugPrettyPrinter) visitLayout(n *nodeLayout) {
+	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
+	fmt.Fprintf(p.w, "LAYOUT %s\n", n.name)
 }
