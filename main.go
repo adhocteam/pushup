@@ -37,6 +37,9 @@ func main() {
 
 	flag.Parse()
 
+	var layoutsDir string
+	var pagesDir string
+
 	var layoutFiles []string
 	var pushupFiles []string
 
@@ -50,7 +53,7 @@ func main() {
 	if *singleFlag != "" {
 		pushupFiles = []string{*singleFlag}
 	} else {
-		layoutsDir := filepath.Join(appDir, "layouts")
+		layoutsDir = filepath.Join(appDir, "layouts")
 		{
 			if !dirExists(layoutsDir) {
 				log.Fatalf("invalid Pushup project directory structure: couldn't find `layouts` subdir")
@@ -69,23 +72,13 @@ func main() {
 			}
 		}
 
-		pagesDir := filepath.Join(appDir, "pages")
+		pagesDir = filepath.Join(appDir, "pages")
 		{
 			if !dirExists(pagesDir) {
 				log.Fatalf("invalid Pushup project directory structure: couldn't find `pages` subdir")
 			}
 
-			entries, err := os.ReadDir(pagesDir)
-			if err != nil {
-				log.Fatalf("reading app directory: %v", err)
-			}
-
-			for _, entry := range entries {
-				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
-					path := filepath.Join(pagesDir, entry.Name())
-					pushupFiles = append(pushupFiles, path)
-				}
-			}
+			pushupFiles = getPushupPagePaths(pagesDir)
 		}
 	}
 
@@ -102,15 +95,13 @@ func main() {
 	}
 
 	for _, path := range layoutFiles {
-		err := compilePushup(path, compileLayout, outDir)
-		if err != nil {
+		if err := compilePushup(path, layoutsDir, compileLayout, outDir); err != nil {
 			log.Fatalf("compiling layout file %s: %v", path, err)
 		}
 	}
 
 	for _, path := range pushupFiles {
-		err := compilePushup(path, compilePushupPage, outDir)
-		if err != nil {
+		if err := compilePushup(path, pagesDir, compilePushupPage, outDir); err != nil {
 			log.Fatalf("compiling pushup file %s: %v", path, err)
 		}
 	}
@@ -129,6 +120,20 @@ func main() {
 			log.Fatalf("building and running generated Go code: %v", err)
 		}
 	}
+}
+
+func getPushupPagePaths(root string) []string {
+	var paths []string
+	err := fs.WalkDir(os.DirFS(root), ".", func(path string, d fs.DirEntry, err error) error {
+		if !d.IsDir() && filepath.Ext(path) == ".pushup" {
+			paths = append(paths, filepath.Join(root, path))
+		}
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+	return paths
 }
 
 func addSupport(dir string) {
@@ -391,7 +396,7 @@ const (
 	compileLayout
 )
 
-func compilePushup(sourcePath string, strategy compilationStrategy, targetDir string) error {
+func compilePushup(sourcePath string, rootDir string, strategy compilationStrategy, targetDir string) error {
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("creating output directory %s: %w", targetDir, err)
 	}
@@ -430,32 +435,84 @@ func compilePushup(sourcePath string, strategy compilationStrategy, targetDir st
 		if *singleFlag != "" {
 			layoutName = ""
 		}
-		c = &pageCodeGen{source: source, layout: layoutName, page: page}
+		route := routeFromPath(sourcePath, rootDir)
+		c = &pageCodeGen{source: source, layout: layoutName, page: page, route: route}
 	case compileLayout:
 		c = &layoutCodeGen{source: source, tree: tree}
 	default:
 		panic("")
 	}
 
-	filename := filepath.Base(sourcePath)
-	basename := strings.TrimSuffix(filename, ".pushup")
-
-	var outputFilename string
-	switch strategy {
-	case compilePushupPage:
-		outputFilename = basename + ".go"
-	case compileLayout:
-		outputFilename = basename + "_layout.go"
-	default:
-		panic("")
-	}
+	outputFilename := generatedFilename(sourcePath, rootDir, strategy)
 	outputPath := filepath.Join(targetDir, outputFilename)
+	basename := strings.TrimSuffix(filepath.Base(sourcePath), filepath.Ext(sourcePath))
 
 	if err := generateCodeToFile(c, basename, outputPath, strategy); err != nil {
 		return fmt.Errorf("generating Go code from parse result: %w", err)
 	}
 
 	return nil
+}
+
+// generatedFilename returns the filename for the .go file containing the
+// generated code for the Pushup page.
+func generatedFilename(path string, root string, strategy compilationStrategy) string {
+	path = trimCommonPrefix(path, root)
+	var dirs []string
+	dir := filepath.Dir(path)
+	if dir != "." {
+		dirs = strings.Split(dir, string([]rune{os.PathSeparator}))
+	}
+	file := filepath.Base(path)
+	base := strings.TrimSuffix(file, filepath.Ext(file))
+	prefix := strings.Join(dirs, "__")
+	var result string
+	var suffix string
+	switch strategy {
+	case compileLayout:
+		suffix = "_layout"
+	case compilePushupPage:
+		suffix = ""
+	default:
+		panic("")
+	}
+	if prefix != "" {
+		result = prefix + "__" + base + suffix + ".go"
+	} else {
+		result = base + suffix + ".go"
+	}
+	return result
+}
+
+// routeFromPath produces the URL path route from the name of the Pushup page.
+// path is the path to the Pushup file. root is the path of the root of the
+// Pushup project.
+func routeFromPath(path string, root string) string {
+	path = trimCommonPrefix(path, root)
+	var dirs []string
+	dir := filepath.Dir(path)
+	if dir != "." {
+		dirs = strings.Split(dir, string([]rune{os.PathSeparator}))
+	}
+	file := filepath.Base(path)
+	base := strings.TrimSuffix(file, filepath.Ext(file))
+	var route string
+	if base == "index" {
+		route = "/" + strings.Join(dirs, "/")
+	} else {
+		route = "/" + strings.Join(append(dirs, base), "/")
+	}
+	return route
+}
+
+func trimCommonPrefix(path string, prefix string) string {
+	path = filepath.Clean(path)
+	prefix = filepath.Clean(prefix)
+	stripped := strings.TrimPrefix(path, prefix)
+	if strings.HasPrefix(stripped, "/") {
+		stripped = strings.TrimPrefix(stripped, "/")
+	}
+	return stripped
 }
 
 // node represents a portion of the Pushup syntax, like a chunk of HTML,
@@ -727,6 +784,7 @@ type pageCodeGen struct {
 	source string
 	layout string
 	page   *page
+	route  string
 }
 
 func (c *pageCodeGen) nodes() []node {
@@ -942,14 +1000,8 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 
 	switch strategy {
 	case compilePushupPage:
-		// FIXME(paulsmith): handle nested routes (multiple slashes)
-		route := "/" + basename
-		if basename == "index" {
-			route = "/"
-		}
-
 		fmt.Fprintf(g.bodyw, "func (t *%s) register() {\n", typeName)
-		fmt.Fprintf(g.bodyw, "routes.add(\"%s\", t)\n", route)
+		fmt.Fprintf(g.bodyw, "routes.add(\"%s\", t)\n", c.(*pageCodeGen).route)
 		fmt.Fprintf(g.bodyw, "}\n\n")
 
 		fmt.Fprintf(g.bodyw, "func init() {\n")

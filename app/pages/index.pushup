@@ -2,15 +2,16 @@
 
 <h1>@title</h1>
 <p>Hello, @name! It is currently @(time.Now().Format(time.UnixDate)).</p>
-<p>
-    <a href="/about">About</a> |
-    <a href="/escape">Escaping</a> |
-    <a href="/if">If</a> |
-    <a href="/for">For</a> |
-    <a href="/dump">Dump</a> |
-    <a href="/alt-layout" hx-boost="false">Non-default layout</a> |
-    <a href="/no-layout" hx-boost="false">No layout</a>
-</p>
+<ul>
+    <li><a href="/about">About</a></li>
+    <li><a href="/escape">Escaping</a></li>
+    <li><a href="/if">If</a></li>
+    <li><a href="/for">For</a></li>
+    <li><a href="/dump">Dump</a></li>
+    <li><a href="/alt-layout">Non-default layout</a></li>
+    <li><a href="/no-layout">No layout</a></li>
+    <li><a href="/x/sub">Subdirectory route (<tt>/x/sub</tt>)</a></li>
+</ul>
 
 @code {
     var title = "Welcome to Pushup"

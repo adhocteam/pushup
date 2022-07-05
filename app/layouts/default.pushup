@@ -39,7 +39,7 @@
         <header>
             <h1>Pushup demo</h1>
         </header>
-        <main hx-boost="true">
+        <main>
             @contents
         </main>
         <footer>

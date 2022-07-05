@@ -33,9 +33,9 @@ func TestPushup(t *testing.T) {
 		if strings.HasSuffix(entry.Name(), ".pushup") {
 			t.Run(entry.Name(), func(t *testing.T) {
 				basename, _ := splitExt(entry.Name())
-				requestPath := "/" + basename
+				requestPath := "/samples/" + basename
 				if basename == "index" {
-					requestPath = "/"
+					requestPath = "/samples"
 				}
 				pushupFile := filepath.Join(samplesDir, entry.Name())
 				outFile := filepath.Join(samplesDir, basename+".out")
@@ -206,6 +206,112 @@ func TestTagString(t *testing.T) {
 			got := test.tag.String()
 			if diff := cmp.Diff(test.want, got); diff != "" {
 				t.Errorf("(-want, +got)\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestTrimCommonPrefix(t *testing.T) {
+	tests := []struct {
+		path string
+		root string
+		want string
+	}{
+		{
+			"app/pages/index.pushup",
+			"app/pages",
+			"index.pushup",
+		},
+		{
+			"./app/pages/index.pushup",
+			"app/pages",
+			"index.pushup",
+		},
+		{
+			"index.pushup",
+			".",
+			"index.pushup",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+			if got := trimCommonPrefix(test.path, test.root); test.want != got {
+				t.Errorf("want %q, got %q", test.want, got)
+			}
+		})
+	}
+}
+
+func TestRouteFromPath(t *testing.T) {
+	tests := []struct {
+		path string
+		root string
+		want string
+	}{
+		{
+			"app/pages/index.pushup",
+			"app/pages",
+			"/",
+		},
+		{
+			"app/pages/about.pushup",
+			"app/pages",
+			"/about",
+		},
+		{
+			"app/pages/x/sub.pushup",
+			"app/pages",
+			"/x/sub",
+		},
+		{
+			"samples/foo.pushup",
+			".",
+			"/samples/foo",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+			if got := routeFromPath(test.path, test.root); test.want != got {
+				t.Errorf("want %q, got %q", test.want, got)
+			}
+		})
+	}
+}
+
+func TestGeneratedFilename(t *testing.T) {
+	tests := []struct {
+		path string
+		root string
+		want string
+	}{
+		{
+			"app/pages/index.pushup",
+			"app/pages",
+			"index.go",
+		},
+		{
+			"app/pages/about.pushup",
+			"app/pages",
+			"about.go",
+		},
+		{
+			"app/pages/x/sub.pushup",
+			"app/pages",
+			"x__sub.go",
+		},
+		{
+			"samples/foo.pushup",
+			".",
+			"samples__foo.go",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+			if got := generatedFilename(test.path, test.root, compilePushupPage); test.want != got {
+				t.Errorf("want %q, got %q", test.want, got)
 			}
 		})
 	}
