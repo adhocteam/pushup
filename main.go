@@ -815,31 +815,14 @@ func (l *layoutCodeGen) lineNo(s span) int {
 	return lineCount(l.source[:s.start+1])
 }
 
-type errWriter struct {
-	w   io.Writer
-	err error
-}
-
-func (w *errWriter) Write(p []byte) (int, error) {
-	if w.err != nil {
-		return 0, w.err
-	}
-	var n int
-	n, w.err = w.w.Write(p)
-	return n, w.err
-}
-
-func newErrWriter(w io.Writer) *errWriter {
-	return &errWriter{w: w, err: nil}
-}
-
 type codeGenerator struct {
 	c        codeGenUnit
 	strategy compilationStrategy
 	basename string
-	imports  map[string]bool
+	imports  map[importDecl]bool
+	outb     bytes.Buffer
 	bodyb    bytes.Buffer
-	bodyw    *errWriter
+	importsb bytes.Buffer
 }
 
 func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrategy) *codeGenerator {
@@ -847,13 +830,17 @@ func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrate
 	g.c = c
 	g.strategy = strategy
 	g.basename = basename
-	g.imports = make(map[string]bool)
-	g.bodyw = newErrWriter(&g.bodyb)
+	g.imports = make(map[importDecl]bool)
+	if c, ok := c.(*pageCodeGen); ok {
+		for _, decl := range c.page.imports {
+			g.imports[decl] = true
+		}
+	}
 	return &g
 }
 
-func (g *codeGenerator) used(name string) {
-	g.imports[name] = true
+func (g *codeGenerator) used(path string) {
+	g.imports[importDecl{path: strconv.Quote(path), pkgName: ""}] = true
 }
 
 func (g *codeGenerator) nodeLineNo(e node) {
@@ -861,11 +848,15 @@ func (g *codeGenerator) nodeLineNo(e node) {
 }
 
 func (g *codeGenerator) lineNo(n int) {
-	g.printf("//line %s:%d\n", g.basename+".pushup", n)
+	g.bodyPrintf("//line %s:%d\n", g.basename+".pushup", n)
 }
 
-func (g *codeGenerator) printf(format string, args ...any) {
-	fmt.Fprintf(g.bodyw, format, args...)
+func (g *codeGenerator) outPrintf(format string, args ...any) {
+	fmt.Fprintf(&g.outb, format, args...)
+}
+
+func (g *codeGenerator) bodyPrintf(format string, args ...any) {
+	fmt.Fprintf(&g.bodyb, format, args...)
 }
 
 func (g *codeGenerator) generate() {
@@ -875,45 +866,45 @@ func (g *codeGenerator) generate() {
 func (g *codeGenerator) visitLiteral(n *nodeLiteral) {
 	g.used("io")
 	g.nodeLineNo(n)
-	g.printf("io.WriteString(w, %s)\n", strconv.Quote(n.str))
+	g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(n.str))
 }
 
 func (g *codeGenerator) visitElement(n *nodeElement) {
 	g.used("io")
 	g.nodeLineNo(n)
-	g.printf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.start()))
+	g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.start()))
 	nodeList(n.children).accept(g)
-	g.printf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.end()))
+	g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.end()))
 }
 
 func (g *codeGenerator) visitGoStrExpr(n *nodeGoStrExpr) {
 	if g.strategy == compileLayout && n.expr == "contents" {
 		// NOTE(paulsmith): this is acting sort of like a coroutine, yielding back to the
 		// component that is being rendered with this layout
-		g.printf(`if fl, ok := w.(http.Flusher); ok {
+		g.bodyPrintf(`if fl, ok := w.(http.Flusher); ok {
 			fl.Flush()
 		}
 		`)
-		g.printf("yield <- struct{}{}\n")
-		g.printf("<-yield\n")
+		g.bodyPrintf("yield <- struct{}{}\n")
+		g.bodyPrintf("<-yield\n")
 	} else {
 		g.used("html/template")
 		g.used("fmt")
 		g.used("io")
 		g.nodeLineNo(n)
-		g.printf("{\n")
-		g.printf("\tvar __x any = %s\n", n.expr)
-		g.printf("\tswitch __val := __x.(type) {\n")
-		g.printf("\t\tcase string:\n")
-		g.printf("\t\t\tio.WriteString(w, template.HTMLEscapeString(__val))\n")
-		g.printf("\t\tcase fmt.Stringer:\n")
-		g.printf("\t\t\tio.WriteString(w, template.HTMLEscapeString(__val.String()))\n")
-		g.printf("\t\tcase []byte:\n")
-		g.printf("\t\t\ttemplate.HTMLEscape(w, __val)\n")
-		g.printf("\t\tdefault:\n")
-		g.printf("\t\t\tpanic(\"expected a string, []bytes, or fmt.Stringer expression\")\n")
-		g.printf("\t}\n")
-		g.printf("}\n")
+		g.bodyPrintf("{\n")
+		g.bodyPrintf("\tvar __x any = %s\n", n.expr)
+		g.bodyPrintf("\tswitch __val := __x.(type) {\n")
+		g.bodyPrintf("\t\tcase string:\n")
+		g.bodyPrintf("\t\t\tio.WriteString(w, template.HTMLEscapeString(__val))\n")
+		g.bodyPrintf("\t\tcase fmt.Stringer:\n")
+		g.bodyPrintf("\t\t\tio.WriteString(w, template.HTMLEscapeString(__val.String()))\n")
+		g.bodyPrintf("\t\tcase []byte:\n")
+		g.bodyPrintf("\t\t\ttemplate.HTMLEscape(w, __val)\n")
+		g.bodyPrintf("\t\tdefault:\n")
+		g.bodyPrintf("\t\t\tpanic(\"expected a string, []bytes, or fmt.Stringer expression\")\n")
+		g.bodyPrintf("\t}\n")
+		g.bodyPrintf("}\n")
 	}
 }
 
@@ -922,27 +913,27 @@ func (g *codeGenerator) visitGoCode(n *nodeGoCode) {
 	lines := strings.Split(n.code, "\n")
 	for _, line := range lines {
 		g.lineNo(srcLineNo)
-		g.printf("%s\n", line)
+		g.bodyPrintf("%s\n", line)
 		srcLineNo++
 	}
 }
 
 func (g *codeGenerator) visitIf(n *nodeIf) {
-	g.printf("if %s {\n", n.cond.expr)
+	g.bodyPrintf("if %s {\n", n.cond.expr)
 	n.then.accept(g)
 	if n.alt == nil {
-		g.printf("}\n")
+		g.bodyPrintf("}\n")
 	} else {
-		g.printf("} else {\n")
+		g.bodyPrintf("} else {\n")
 		n.alt.accept(g)
-		g.printf("}\n")
+		g.bodyPrintf("}\n")
 	}
 }
 
 func (g *codeGenerator) visitFor(n *nodeFor) {
-	g.printf("for %s {\n", n.clause.code)
+	g.bodyPrintf("for %s {\n", n.clause.code)
 	n.block.accept(g)
-	g.printf("}\n")
+	g.bodyPrintf("}\n")
 }
 
 func (g *codeGenerator) visitStmtBlock(n *nodeBlock) {
@@ -968,18 +959,13 @@ func (g *codeGenerator) visitImport(n *nodeImport) {
 var _ nodeVisitor = (*codeGenerator)(nil)
 
 func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]byte, error) {
-	var (
-		headerb  bytes.Buffer
-		importsb bytes.Buffer
-	)
-
 	g := newCodeGenerator(c, basename, strategy)
 
 	// FIXME(paulsmith): need way to specify this as user
 	packageName := "build"
 
-	fmt.Fprintf(&headerb, "// this file is mechanically generated, do not edit!\n")
-	fmt.Fprintf(&headerb, "package %s\n", packageName)
+	g.outPrintf("// this file is mechanically generated, do not edit!\n")
+	g.outPrintf("package %s\n\n", packageName)
 
 	typeName := genStructName(basename, strategy)
 
@@ -990,34 +976,34 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 
 	fields := []field{}
 
-	fmt.Fprintf(g.bodyw, "type %s struct {\n", typeName)
+	g.bodyPrintf("type %s struct {\n", typeName)
 	for _, field := range fields {
-		fmt.Fprintf(g.bodyw, "%s %s\n", field.name, field.typ)
+		g.bodyPrintf("%s %s\n", field.name, field.typ)
 	}
-	fmt.Fprintf(g.bodyw, "}\n")
+	g.bodyPrintf("}\n")
 
 	switch strategy {
 	case compilePushupPage:
-		fmt.Fprintf(g.bodyw, "func (t *%s) register() {\n", typeName)
-		fmt.Fprintf(g.bodyw, "routes.add(\"%s\", t)\n", c.(*pageCodeGen).route)
-		fmt.Fprintf(g.bodyw, "}\n\n")
+		g.bodyPrintf("func (t *%s) register() {\n", typeName)
+		g.bodyPrintf("routes.add(\"%s\", t)\n", c.(*pageCodeGen).route)
+		g.bodyPrintf("}\n\n")
 
-		fmt.Fprintf(g.bodyw, "func init() {\n")
-		fmt.Fprintf(g.bodyw, "(&%s{}).register()\n", typeName)
-		fmt.Fprintf(g.bodyw, "}\n\n")
+		g.bodyPrintf("func init() {\n")
+		g.bodyPrintf("(&%s{}).register()\n", typeName)
+		g.bodyPrintf("}\n\n")
 	case compileLayout:
-		fmt.Fprintf(g.bodyw, "func init() {\n")
-		fmt.Fprintf(g.bodyw, "layouts[\"%s\"] = &%s{}\n", basename, typeName)
-		fmt.Fprintf(g.bodyw, "}\n\n")
+		g.bodyPrintf("func init() {\n")
+		g.bodyPrintf("layouts[\"%s\"] = &%s{}\n", basename, typeName)
+		g.bodyPrintf("}\n\n")
 	}
 
 	g.used("io")
 	g.used("net/http")
 	switch strategy {
 	case compilePushupPage:
-		fmt.Fprintf(g.bodyw, "func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
+		g.bodyPrintf("func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
 	case compileLayout:
-		fmt.Fprintf(g.bodyw, "func (t *%s) Render(yield chan struct{}, w io.Writer, req *http.Request) error {\n", typeName)
+		g.bodyPrintf("func (t *%s) Render(yield chan struct{}, w io.Writer, req *http.Request) error {\n", typeName)
 	default:
 		panic("")
 	}
@@ -1028,7 +1014,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 			// TODO(paulsmith): this is where a flag that could conditionally toggle the rendering
 			// of the layout could go - maybe a special header in request object?
 			g.used("golang.org/x/sync/errgroup")
-			fmt.Fprintf(g.bodyw,
+			g.bodyPrintf(
 				`g := new(errgroup.Group)
 				yield := make(chan struct{})
 				layout := getLayout("%s")
@@ -1046,15 +1032,15 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 
 	// Make a new scope for the user's code block and HTML. This will help (but not fully prevent)
 	// name collisions with the surrounding code.
-	fmt.Fprintf(g.bodyw, "// Begin user Go code and HTML\n")
-	fmt.Fprintf(g.bodyw, "{\n")
+	g.bodyPrintf("// Begin user Go code and HTML\n")
+	g.bodyPrintf("{\n")
 
 	g.generate()
 
 	if strategy == compilePushupPage {
 		comp := c.(*pageCodeGen)
 		if comp.layout != "" {
-			fmt.Fprintf(g.bodyw,
+			g.bodyPrintf(
 				`yield <- struct{}{}
 				if err := g.Wait(); err != nil {
 					return err
@@ -1064,42 +1050,31 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	}
 
 	// Close the scope we started for the user code and HTML.
-	fmt.Fprintf(g.bodyw, "// End user Go code and HTML\n")
-	fmt.Fprintf(g.bodyw, "}\n")
+	g.bodyPrintf("// End user Go code and HTML\n")
+	g.bodyPrintf("}\n")
 
-	fmt.Fprintf(g.bodyw, "return nil\n")
-	fmt.Fprintf(g.bodyw, "}\n")
+	g.bodyPrintf("return nil\n")
+	g.bodyPrintf("}\n")
 
-	if g.bodyw.err != nil {
-		return nil, fmt.Errorf("problem writing to the codegen buffer: %w", g.bodyw.err)
-	}
-
-	importsb.WriteString("\nimport (\n")
-	for im, ok := range g.imports {
+	g.outPrintf("import (\n")
+	for decl, ok := range g.imports {
 		if ok {
-			line := fmt.Sprintf("\"%s\"\n", im)
-			importsb.WriteString(line)
-		}
-	}
-	importsb.WriteString(")\n\n")
-	if c, ok := c.(*pageCodeGen); ok {
-		for _, decl := range c.page.imports {
-			importsb.WriteString("import ")
 			if decl.pkgName != "" {
-				importsb.WriteString(decl.pkgName + " ")
+				g.outPrintf("%s ", decl.pkgName)
 			}
-			importsb.WriteString(decl.path + "\n")
+			g.outPrintf("%s\n", decl.path)
 		}
 	}
+	g.outPrintf(")\n\n")
 
-	var combinedb bytes.Buffer
-	combinedb.ReadFrom(&headerb)
-	combinedb.ReadFrom(&importsb)
-	combinedb.ReadFrom(&g.bodyb)
+	raw, err := io.ReadAll(io.MultiReader(&g.outb, &g.bodyb))
+	if err != nil {
+		return nil, fmt.Errorf("reading all buffers: %w", err)
+	}
 
-	//fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", combinedb.String())
+	//fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
 
-	formatted, err := format.Source(combinedb.Bytes())
+	formatted, err := format.Source(raw)
 	if err != nil {
 		return nil, fmt.Errorf("gofmt the generated code: %w", err)
 	}
