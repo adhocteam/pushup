@@ -1,0 +1,2 @@
+<p>This is a page showing how filesystem-based routing works with subdirectories</p>
+<p>URL path: @(req.URL.Path)</p>
