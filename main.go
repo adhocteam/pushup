@@ -89,6 +89,9 @@ func main() {
 				log.Fatalf("reading file %s: %v", path, err)
 			}
 			tree, err := parse(string(b))
+			if err != nil {
+				log.Fatalf("parsing file %s: %v", path, err)
+			}
 			(&debugPrettyPrinter{w: os.Stdout}).visitNodes(tree.nodes)
 		}
 		os.Exit(0)
