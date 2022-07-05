@@ -918,7 +918,13 @@ func (g *codeGenerator) visitGoStrExpr(n *nodeGoStrExpr) {
 }
 
 func (g *codeGenerator) visitGoCode(n *nodeGoCode) {
-	// NOTE(paulsmith): separate passes, see genCode()
+	srcLineNo := g.c.lineNo(n.Pos())
+	lines := strings.Split(n.code, "\n")
+	for _, line := range lines {
+		g.lineNo(srcLineNo)
+		g.printf("%s\n", line)
+		srcLineNo++
+	}
 }
 
 func (g *codeGenerator) visitIf(n *nodeIf) {
@@ -1042,20 +1048,6 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	// name collisions with the surrounding code.
 	fmt.Fprintf(g.bodyw, "// Begin user Go code and HTML\n")
 	fmt.Fprintf(g.bodyw, "{\n")
-
-	// first pass over expressions to insert Go code blocks at top of the method
-	nodes := c.nodes()
-	for _, n := range nodes {
-		if e, ok := n.(*nodeGoCode); ok {
-			srcLineNo := c.lineNo(n.Pos())
-			lines := strings.Split(e.code, "\n")
-			for _, line := range lines {
-				g.lineNo(srcLineNo)
-				fmt.Fprintf(g.bodyw, "%s\n", line)
-				srcLineNo++
-			}
-		}
-	}
 
 	g.generate()
 

@@ -1,5 +1,10 @@
 @import "time"
 
+@code {
+    var title = "Welcome to Pushup"
+    var name = "Ad Hoc"
+}
+
 <h1>@title</h1>
 <p>Hello, @name! It is currently @(time.Now().Format(time.UnixDate)).</p>
 <ul>
@@ -12,8 +17,3 @@
     <li><a href="/no-layout">No layout</a></li>
     <li><a href="/x/sub">Subdirectory route (<tt>/x/sub</tt>)</a></li>
 </ul>
-
-@code {
-    var title = "Welcome to Pushup"
-    var name = "Ad Hoc"
-}

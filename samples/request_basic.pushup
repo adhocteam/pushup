@@ -1,8 +1,7 @@
-<!DOCTYPE html>
-<title>@title</title>
-<p>HTTP method: @method</p>
-
 @code {
     title := "Pushup: request object basic test"
     method := req.Method
 }
+<!DOCTYPE html>
+<title>@title</title>
+<p>HTTP method: @method</p>
