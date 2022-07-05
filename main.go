@@ -152,7 +152,7 @@ func buildAndRun(dir string, passthruArgs []string) error {
 		return fmt.Errorf("making directory for command: %w", err)
 	}
 
-	if err := copyFile(filepath.Join(mainExeDir, "main.go"), filepath.Join("runtime", "main.go")); err != nil {
+	if err := copyFile(filepath.Join(mainExeDir, "main.go"), filepath.Join("runtime", "cmd", "main.go")); err != nil {
 		return fmt.Errorf("copying main.go file: %w", err)
 	}
 
