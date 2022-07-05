@@ -1,17 +1,17 @@
 @code {
     type product struct {
         name string
-        price string
+        price float32
     }
     products := []product{
-        {"Big Kahuna Burger", "3.99"},
-        {"Everlasting Gobstopper", "0.25"},
-        {"Nike Air Mags", "249.99"},
+        {"Big Kahuna Burger", 3.99},
+        {"Everlasting Gobstopper", 0.25},
+        {"Nike Air Mags", 249.99},
     }
 }
 
 <ul>
-    @for _, p := range products {
-    <li>@p.name ($@p.price)</li>
-    }
+@for _, p := range products {
+    <li>@p.name ($@(fmt.Sprintf("%.2f", p.price)))</li>
+}
 </ul>

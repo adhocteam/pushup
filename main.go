@@ -848,19 +848,8 @@ func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrate
 	g.strategy = strategy
 	g.basename = basename
 	g.imports = make(map[string]bool)
-	for k, v := range imports {
-		g.imports[k] = v
-	}
 	g.bodyw = newErrWriter(&g.bodyb)
 	return &g
-}
-
-var imports = map[string]bool{
-	"fmt":                        false,
-	"golang.org/x/sync/errgroup": false,
-	"html/template":              false,
-	"io":                         false,
-	"net/http":                   false,
 }
 
 func (g *codeGenerator) used(name string) {
@@ -922,7 +911,7 @@ func (g *codeGenerator) visitGoStrExpr(n *nodeGoStrExpr) {
 		g.printf("\t\tcase []byte:\n")
 		g.printf("\t\t\ttemplate.HTMLEscape(w, __val)\n")
 		g.printf("\t\tdefault:\n")
-		g.printf("\t\t\tpanic(\"expected a string or fmt.Stringer expression\")\n")
+		g.printf("\t\t\tpanic(\"expected a string, []bytes, or fmt.Stringer expression\")\n")
 		g.printf("\t}\n")
 		g.printf("}\n")
 	}
