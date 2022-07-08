@@ -70,7 +70,9 @@ func TestPushup(t *testing.T) {
 
 				g.Go(func() error {
 					cmd := exec.Command("go", "run", "main.go", "-single", pushupFile, "-unix-socket", socketPath)
-					cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+					cmd.SysProcAttr = &syscall.SysProcAttr{
+						Setpgid: true,
+					}
 
 					stdout, err := cmd.StdoutPipe()
 					if err != nil {
@@ -85,6 +87,7 @@ func TestPushup(t *testing.T) {
 
 					g.Go(func() error {
 						var buf [256]byte
+						// NOTE(paulsmith): keep this in sync with the string in main.go
 						needle := []byte("Pushup ready and listening on ")
 						select {
 						case <-ctx.Done():
@@ -111,7 +114,7 @@ func TestPushup(t *testing.T) {
 					g.Go(func() error {
 						select {
 						case <-done:
-							syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+							syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
 							cmd.Wait()
 							return nil
 						case <-ctx.Done():

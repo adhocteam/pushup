@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,32 +12,135 @@ import (
 	"go/token"
 	"io"
 	"io/fs"
+	"io/ioutil"
 	"log"
+	"mime"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/fsnotify/fsnotify"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+	"golang.org/x/sync/errgroup"
 )
 
 var outDir = "./build"
 
 var singleFlag = flag.String("single", "", "path to a single Pushup file")
 var applyOptimizations = flag.Bool("O", false, "apply simple optimizations to the parse tree")
+var port = flag.String("port", "8080", "port to listen on with TCP IPv4")
+var unixSocket = flag.String("unix-socket", "", "path to listen on with Unix socket")
 
 func main() {
-	port := flag.String("port", "8080", "port to listen on with TCP IPv4")
-	unixSocket := flag.String("unix-socket", "", "path to listen on with Unix socket")
 	parseOnly := flag.Bool("parse-only", false, "exit after dumping parse result")
 	compileOnly := flag.Bool("compile-only", false, "compile only, don't start web server after")
+	devReload := flag.Bool("dev", false, "compile and run the Pushup app and reload on changes")
 
 	flag.Parse()
 
+	appDir := "app"
+	if flag.NArg() == 1 {
+		appDir = flag.Arg(0)
+	}
+
+	if err := parseAndCompile(appDir, outDir, *parseOnly); err != nil {
+		log.Fatalf("parsing and compiling: %v", err)
+	}
+
+	// TODO(paulsmith): add a linkOnly flag and separate build step from
+	// buildAndRun. (or a releaseMode flag, alternatively?)
+	if !*compileOnly {
+		wait := make(chan struct{})
+		ctx0, cancel := context.WithCancel(context.Background())
+		ctx1, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		ctx := newCancellationSource(contextSource{ctx0, cancelSourceFileChange}, contextSource{ctx1, cancelSourceSignal})
+		var mu sync.Mutex
+		buildComplete := sync.NewCond(&mu)
+
+		if *devReload {
+			reload, err := watchForReload(cancel, wait, appDir)
+			if err != nil {
+				log.Fatalf("watching for reload: %v", err)
+			}
+			tmpdir, err := ioutil.TempDir("", "pushupdev")
+			if err != nil {
+				log.Fatalf("creating temp dir: %v", err)
+			}
+			defer os.RemoveAll(tmpdir)
+			socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+".sock")
+			if err := startReloadRevProxy(socketPath, buildComplete); err != nil {
+				log.Fatalf("starting reverse proxy: %v", err)
+			}
+			ln, err := net.Listen("unix", socketPath)
+			if err != nil {
+				log.Fatalf("listening on Unix socket: %v", err)
+			}
+			go func() {
+				for {
+					select {
+					case <-reload:
+						cancel()
+					case <-ctx1.Done():
+						return
+					}
+				}
+			}()
+			for {
+				select {
+				case <-ctx1.Done():
+					return
+				default:
+				}
+				if err := parseAndCompile(appDir, outDir, *parseOnly); err != nil {
+					log.Fatalf("parsing and compiling: %v", err)
+				}
+				wait = make(chan struct{})
+				ctx0, cancel = context.WithCancel(context.Background())
+				ctx1, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+				ctx = newCancellationSource(contextSource{ctx0, cancelSourceFileChange}, contextSource{ctx1, cancelSourceSignal})
+				if err := buildAndRun(ctx, stop, outDir, ln, buildComplete); err != nil {
+					log.Fatalf("building and running generated Go code: %v", err)
+				}
+				close(wait)
+			}
+		} else {
+			var err error
+			var ln net.Listener
+			if *unixSocket != "" {
+				ln, err = net.Listen("unix", *unixSocket)
+				if err != nil {
+					log.Fatalf("listening on Unix socket: %v", err)
+				}
+			} else {
+				ln, err = net.Listen("tcp4", "0.0.0.0:"+*port)
+				if err != nil {
+					log.Fatalf("listening on TCP socket: %v", err)
+				}
+			}
+
+			// FIXME(paulsmith): separate build from run and move it in to compile step
+			if err := buildAndRun(ctx, stop, outDir, ln, buildComplete); err != nil {
+				log.Fatalf("building and running generated Go code: %v", err)
+			}
+			close(wait)
+		}
+	}
+}
+
+func parseAndCompile(root string, outDir string, parseOnly bool) error {
 	var layoutsDir string
 	var pagesDir string
 
@@ -45,23 +149,18 @@ func main() {
 
 	os.RemoveAll(outDir)
 
-	appDir := "app"
-	if flag.NArg() == 1 {
-		appDir = flag.Arg(0)
-	}
-
 	if *singleFlag != "" {
 		pushupFiles = []string{*singleFlag}
 	} else {
-		layoutsDir = filepath.Join(appDir, "layouts")
+		layoutsDir = filepath.Join(root, "layouts")
 		{
 			if !dirExists(layoutsDir) {
-				log.Fatalf("invalid Pushup project directory structure: couldn't find `layouts` subdir")
+				return fmt.Errorf("invalid Pushup project directory structure: couldn't find `layouts` subdir")
 			}
 
 			entries, err := os.ReadDir(layoutsDir)
 			if err != nil {
-				log.Fatalf("reading app directory: %v", err)
+				return fmt.Errorf("reading app directory: %w", err)
 			}
 
 			for _, entry := range entries {
@@ -72,25 +171,25 @@ func main() {
 			}
 		}
 
-		pagesDir = filepath.Join(appDir, "pages")
+		pagesDir = filepath.Join(root, "pages")
 		{
 			if !dirExists(pagesDir) {
-				log.Fatalf("invalid Pushup project directory structure: couldn't find `pages` subdir")
+				return fmt.Errorf("invalid Pushup project directory structure: couldn't find `pages` subdir")
 			}
 
 			pushupFiles = getPushupPagePaths(pagesDir)
 		}
 	}
 
-	if *parseOnly {
+	if parseOnly {
 		for _, path := range pushupFiles {
 			b, err := os.ReadFile(path)
 			if err != nil {
-				log.Fatalf("reading file %s: %v", path, err)
+				return fmt.Errorf("reading file %s: %w", path, err)
 			}
 			tree, err := parse(string(b))
 			if err != nil {
-				log.Fatalf("parsing file %s: %v", path, err)
+				return fmt.Errorf("parsing file %s: %w", path, err)
 			}
 			(&debugPrettyPrinter{w: os.Stdout}).visitNodes(tree.nodes)
 		}
@@ -99,32 +198,335 @@ func main() {
 
 	for _, path := range layoutFiles {
 		if err := compilePushup(path, layoutsDir, compileLayout, outDir); err != nil {
-			log.Fatalf("compiling layout file %s: %v", path, err)
+			return fmt.Errorf("compiling layout file %s: %w", path, err)
 		}
 	}
 
 	for _, path := range pushupFiles {
 		if err := compilePushup(path, pagesDir, compilePushupPage, outDir); err != nil {
-			log.Fatalf("compiling pushup file %s: %v", path, err)
+			return fmt.Errorf("compiling pushup file %s: %w", path, err)
 		}
 	}
 
-	if err := copyFile(filepath.Join(outDir, "pushup_support.go"), filepath.Join("runtime", "pushup_support.go")); err != nil {
-		panic(err)
+	if err := copyFile(filepath.Join(outDir, "pushup_support.go"), filepath.Join("_runtime", "pushup_support.go")); err != nil {
+		return fmt.Errorf("copying runtime file: %w", err)
 	}
 
-	if !*compileOnly {
-		var args []string
-		if *unixSocket != "" {
-			args = []string{"-unix-socket", *unixSocket}
-		} else {
-			args = []string{"-port", *port}
+	return nil
+}
+
+func watchForReload(cancel context.CancelFunc, wait chan struct{}, root string) (chan struct{}, error) {
+	reload := make(chan struct{})
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("creating new fsnotify watcher: %v", err)
+	}
+
+	go debounce(250*time.Millisecond, watcher.Events, func(event fsnotify.Event) {
+		if event.Op > 0 {
+			log.Printf("file changed in project directory, reloading")
+			cancel()
+			reload <- struct{}{}
 		}
-		// FIXME(paulsmith): separate build from run and move it in to compile step
-		if err := buildAndRun(outDir, args); err != nil {
-			log.Fatalf("building and running generated Go code: %v", err)
+	})
+
+	if err := fs.WalkDir(os.DirFS(root), ".", func(path string, d fs.DirEntry, err error) error {
+		if d.IsDir() {
+			if err := watcher.Add(filepath.Join(root, path)); err != nil {
+				return fmt.Errorf("adding path %s to watch: %v", path, err)
+			} else {
+				log.Printf("added %s to watch for reloading", d.Name())
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("walking project for dirs to watch: %v", err)
+	}
+
+	return reload, nil
+}
+
+func startReloadRevProxy(socketPath string, buildComplete *sync.Cond) error {
+	addr := "0.0.0.0:" + *port
+	ln, err := net.Listen("tcp4", addr)
+	if err != nil {
+		return fmt.Errorf("listening to port: %w", err)
+	}
+
+	target, err := url.Parse("http://" + addr)
+	if err != nil {
+		return fmt.Errorf("parsing URL: %w", err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.Transport = &http.Transport{
+		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return net.Dial("unix", socketPath)
+		},
+	}
+
+	reloadHandler := new(devReloader)
+	reloadHandler.complete = buildComplete
+
+	mux := http.NewServeMux()
+	mux.Handle("/", devReloaderMiddleware(proxy))
+	mux.Handle("/--dev-reload", reloadHandler)
+
+	srv := http.Server{Handler: mux}
+	// FIXME(paulsmith): shutdown
+	go srv.Serve(ln)
+	fmt.Fprintf(os.Stdout, "\x1b[1;36mPUSHUP DEV RELOADER ON http://%s\x1b[0m\n", addr)
+	return nil
+}
+
+type devReloader struct {
+	complete *sync.Cond
+}
+
+func (d *devReloader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		panic("can't flush response so SSE not supported")
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	built := make(chan struct{})
+	done := make(chan struct{})
+
+	go func() {
+		d.complete.L.Lock()
+		d.complete.Wait()
+		d.complete.L.Unlock()
+		select {
+		case built <- struct{}{}:
+		case <-done:
+			return
+		}
+	}()
+
+loop:
+	for {
+		select {
+		case <-built:
+			w.Write([]byte("event: reload\ndata: \n\n"))
+		case <-r.Context().Done():
+			log.Printf("client disconnected")
+			close(done)
+			break loop
+		case <-time.After(1 * time.Second):
+			w.Write([]byte("data: keepalive\n\n"))
+			flusher.Flush()
 		}
 	}
+}
+
+type devReloaderWriter struct {
+	w    http.ResponseWriter
+	buf  bytes.Buffer
+	code int
+}
+
+func (d *devReloaderWriter) Header() http.Header {
+	return d.w.Header()
+}
+
+func (d *devReloaderWriter) Write(p []byte) (int, error) {
+	if d.code == 0 {
+		d.WriteHeader(http.StatusOK)
+	}
+	return d.buf.Write(p)
+}
+
+func (d *devReloaderWriter) WriteHeader(statusCode int) {
+	d.code = statusCode
+}
+
+var devReloaderScript = `
+if (!!window.EventSource) {
+	var source = new EventSource("http://localhost:8080/--dev-reload");
+
+	source.onmessage = e => {
+		console.log("message:", e.data);
+	}
+
+	source.addEventListener("reload", () => {
+		console.log("Reloading");
+		//location.reload(true);
+		source.close();
+		htmx.ajax('GET', location.pathname, {target: "body", source: "body", swap: "outerHTML"});
+	}, false);
+
+	source.addEventListener("open", e => {
+		console.log("SSE connection was opened");
+	}, false);
+
+	source.onerror = err => {
+		console.error("SSE error:", err);
+	};
+} else {
+	// TODO(paulsmith): fallback to XHR polling
+}
+`
+
+func appendDevReloaderScript(r io.Reader) (*html.Node, error) {
+	doc, err := html.Parse(r)
+	if err != nil {
+		return nil, fmt.Errorf("parsing HTML: %w", err)
+	}
+	var f func(*html.Node)
+	f = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "body" {
+			text := &html.Node{
+				Type: html.TextNode,
+				Data: devReloaderScript,
+			}
+			script := &html.Node{
+				Type:     html.ElementNode,
+				Data:     "script",
+				DataAtom: atom.Script,
+				Attr: []html.Attribute{
+					{Key: "type", Val: "text/javascript"},
+				},
+			}
+			script.AppendChild(text)
+			n.AppendChild(script)
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			f(c)
+		}
+	}
+	f(doc)
+	return doc, nil
+}
+
+func (d *devReloaderWriter) finish() error {
+	if d.code > 0 {
+		d.w.WriteHeader(d.code)
+	}
+
+	mediatype, _, err := mime.ParseMediaType(d.Header().Get("Content-Type"))
+	if err != nil {
+		return fmt.Errorf("parsing MIME type: %w", err)
+	}
+
+	var r io.Reader
+	if mediatype == "text/html" {
+		doc, err := appendDevReloaderScript(&d.buf)
+		if err != nil {
+			return fmt.Errorf("appending dev reloading script: %w", err)
+		}
+
+		var buf bytes.Buffer
+		if err := html.Render(&buf, doc); err != nil {
+			return fmt.Errorf("rendering modified HTML doc: %w", err)
+		}
+
+		d.w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+
+		r = &buf
+		if _, err := io.Copy(d.w, &buf); err != nil {
+			return fmt.Errorf("copying modified rendered HTML to underlying writer: %w", err)
+		}
+	} else {
+		r = &d.buf
+	}
+
+	if _, err := io.Copy(d.w, r); err != nil {
+		return fmt.Errorf("copying modified rendered HTML to underlying writer: %w", err)
+	}
+
+	return nil
+}
+
+func devReloaderMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dw := new(devReloaderWriter)
+		dw.w = w
+		h.ServeHTTP(dw, r)
+		if err := dw.finish(); err != nil {
+			log.Printf("dev reloader middleware: %v", err)
+		}
+	})
+}
+
+func debounce[T any](interval time.Duration, input chan T, fn func(arg T)) {
+	var item T
+	timer := time.NewTimer(interval)
+	for {
+		select {
+		case item = <-input:
+			timer.Reset(interval)
+		case <-timer.C:
+			fn(item)
+		}
+	}
+}
+
+// cancellationSource implements the context.Context interface and allows a
+// caller to distinguish between one of two possible contexts for which one was
+// responsible for cancellation, by testing for identity against the `final'
+// struct member.
+type cancellationSource struct {
+	a     contextSource
+	b     contextSource
+	final contextSource
+	done  chan struct{}
+	err   error
+}
+
+type contextSource struct {
+	context.Context
+	source cancelSourceId
+}
+
+type cancelSourceId int
+
+const (
+	cancelSourceFileChange cancelSourceId = iota
+	cancelSourceSignal
+)
+
+func newCancellationSource(a contextSource, b contextSource) *cancellationSource {
+	s := new(cancellationSource)
+	s.a = a
+	s.b = b
+	s.done = make(chan struct{})
+	go s.run()
+	return s
+}
+
+func (s *cancellationSource) run() {
+	select {
+	case <-s.a.Done():
+		s.final = s.a
+		s.err = s.final.Err()
+	case <-s.b.Done():
+		s.final = s.b
+		s.err = s.final.Err()
+	case <-s.done:
+		return
+	}
+	close(s.done)
+}
+
+func (s *cancellationSource) Deadline() (deadline time.Time, ok bool) {
+	return time.Time{}, false
+}
+
+func (s *cancellationSource) Done() <-chan struct{} {
+	return s.done
+}
+
+func (s *cancellationSource) Err() error {
+	return s.err
+}
+
+func (s *cancellationSource) Value(key any) any {
+	panic("not implemented") // TODO: Implement
 }
 
 func getPushupPagePaths(root string) []string {
@@ -146,23 +548,97 @@ func copyFile(dest, src string) error {
 	return os.Link(src, dest)
 }
 
-func buildAndRun(dir string, passthruArgs []string) error {
+func buildAndRun(ctx context.Context, cancel context.CancelFunc, dir string, ln net.Listener, buildComplete *sync.Cond) error {
 	mainExeDir := filepath.Join(dir, "cmd", "myproject")
 	if err := os.MkdirAll(mainExeDir, 0755); err != nil {
 		return fmt.Errorf("making directory for command: %w", err)
 	}
 
-	if err := copyFile(filepath.Join(mainExeDir, "main.go"), filepath.Join("runtime", "cmd", "main.go")); err != nil {
+	if err := copyFile(filepath.Join(mainExeDir, "main.go"), filepath.Join("_runtime", "cmd", "main.go")); err != nil {
 		return fmt.Errorf("copying main.go file: %w", err)
 	}
 
-	// TODO(paulsmith): build and run the executable instead
-	args := append([]string{"run", "./build/cmd/myproject"}, passthruArgs...)
+	var file *os.File
+	var err error
+	switch ln := ln.(type) {
+	case *net.TCPListener:
+		file, err = ln.File()
+	case *net.UnixListener:
+		file, err = ln.File()
+	default:
+		panic("")
+	}
+	if err != nil {
+		return fmt.Errorf("getting file from Unix socket listener: %w", err)
+	}
+
+	args := []string{"run", "./build/cmd/myproject"}
 	cmd := exec.Command("go", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("running project main executable: %w", err)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid:   true,
+		Pdeathsig: syscall.SIGINT,
+	}
+	cmd.ExtraFiles = []*os.File{file}
+	cmd.Env = append(os.Environ(), "PUSHUP_LISTENER_FD=3")
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("starting project main executable: %w", err)
+	}
+
+	// FIXME(paulsmith): actually detect when the build is complete
+	buildComplete.Broadcast()
+
+	g := new(errgroup.Group)
+	done := make(chan struct{})
+
+	g.Go(func() error {
+		select {
+		case <-ctx.Done():
+		case <-done:
+			return nil
+		}
+		if ctx, ok := ctx.(*cancellationSource); ok {
+			if ctx.final.source == cancelSourceFileChange {
+				log.Printf("\x1b[35mCONTEXT CANCEL: FILE CHANGED\x1b[0m")
+			} else if ctx.final.source == cancelSourceSignal {
+				log.Printf("\x1b[34mCONTEXT CANCEL: SIGNAL TRAPPED\x1b[0m")
+			}
+		}
+		//cancel()
+		//log.Printf("KILL SIGINT ON THE PROCESS GROUP %d", -cmd.Process.Pid)
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
+			return fmt.Errorf("syscall kill: %w", err)
+		}
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			return ctx.Err()
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		defer close(done)
+		// NOTE(paulsmith): we have to wait() the child process(es) in any case,
+		// regardless of how they were exited. this is also way there is a
+		// `done' channel in this function, to signal to the other goroutine
+		// waiting for context cancellation.
+		err := cmd.Wait()
+		//log.Printf("WAITED: %T %v %v", err, err, cmd.ProcessState)
+		if err != nil {
+			if err, ok := err.(*exec.ExitError); ok {
+				//log.Printf("parent:%t sig:%t", ctx.final == fileChangeCtx, ctx.final == sigCtx)
+				if _, ok := ctx.(*cancellationSource); !ok {
+					return fmt.Errorf("wait: %w", err)
+				}
+			} else {
+				return fmt.Errorf("wait: %w", err)
+			}
+		}
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("errgroup: %w", err)
 	}
 
 	return nil
@@ -869,7 +1345,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	return formatted, nil
 }
 
-var structNameIdx int = 0
+var structNameIdx int
 
 func safeGoIdentFromFilename(filename string) string {
 	// FIXME(paulsmith): need to be more rigorous in mapping safely from
