@@ -318,7 +318,7 @@ loop:
 			close(done)
 			break loop
 		case <-time.After(1 * time.Second):
-			w.Write([]byte("data: keepalive\n\n"))
+			w.Write([]byte(":keepalive\n\n"))
 			flusher.Flush()
 		}
 	}
@@ -347,7 +347,7 @@ func (d *devReloaderWriter) WriteHeader(statusCode int) {
 
 var devReloaderScript = `
 if (!!window.EventSource) {
-	var source = new EventSource("http://localhost:8080/--dev-reload");
+	var source = new EventSource("/--dev-reload");
 
 	source.onmessage = e => {
 		console.log("message:", e.data);
