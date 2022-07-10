@@ -63,7 +63,6 @@ func main() {
 	// TODO(paulsmith): add a linkOnly flag and separate build step from
 	// buildAndRun. (or a releaseMode flag, alternatively?)
 	if !*compileOnly {
-		wait := make(chan struct{})
 		ctx0, cancel := context.WithCancel(context.Background())
 		ctx1, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		ctx := newCancellationSource(contextSource{ctx0, cancelSourceFileChange}, contextSource{ctx1, cancelSourceSignal})
@@ -71,7 +70,7 @@ func main() {
 		buildComplete := sync.NewCond(&mu)
 
 		if *devReload {
-			reload, err := watchForReload(cancel, wait, appDir)
+			reload, err := watchForReload(cancel, appDir)
 			if err != nil {
 				log.Fatalf("watching for reload: %v", err)
 			}
@@ -107,14 +106,12 @@ func main() {
 				if err := parseAndCompile(appDir, outDir, *parseOnly); err != nil {
 					log.Fatalf("parsing and compiling: %v", err)
 				}
-				wait = make(chan struct{})
 				ctx0, cancel = context.WithCancel(context.Background())
 				ctx1, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 				ctx = newCancellationSource(contextSource{ctx0, cancelSourceFileChange}, contextSource{ctx1, cancelSourceSignal})
 				if err := buildAndRun(ctx, stop, outDir, ln, buildComplete); err != nil {
 					log.Fatalf("building and running generated Go code: %v", err)
 				}
-				close(wait)
 			}
 		} else {
 			var err error
@@ -135,7 +132,6 @@ func main() {
 			if err := buildAndRun(ctx, stop, outDir, ln, buildComplete); err != nil {
 				log.Fatalf("building and running generated Go code: %v", err)
 			}
-			close(wait)
 		}
 	}
 }
@@ -215,7 +211,7 @@ func parseAndCompile(root string, outDir string, parseOnly bool) error {
 	return nil
 }
 
-func watchForReload(cancel context.CancelFunc, wait chan struct{}, root string) (chan struct{}, error) {
+func watchForReload(cancel context.CancelFunc, root string) (chan struct{}, error) {
 	reload := make(chan struct{})
 
 	watcher, err := fsnotify.NewWatcher()
@@ -264,18 +260,47 @@ func startReloadRevProxy(socketPath string, buildComplete *sync.Cond) error {
 			return net.Dial("unix", socketPath)
 		},
 	}
+	proxy.ModifyResponse = modifyResponseAddDevReload
 
 	reloadHandler := new(devReloader)
 	reloadHandler.complete = buildComplete
 
 	mux := http.NewServeMux()
-	mux.Handle("/", devReloaderMiddleware(proxy))
+	mux.Handle("/", proxy)
 	mux.Handle("/--dev-reload", reloadHandler)
 
 	srv := http.Server{Handler: mux}
 	// FIXME(paulsmith): shutdown
 	go srv.Serve(ln)
-	fmt.Fprintf(os.Stdout, "\x1b[1;36mPUSHUP DEV RELOADER ON http://%s\x1b[0m\n", addr)
+	fmt.Fprintf(os.Stdout, "\x1b[1;36m↑↑ PUSHUP DEV RELOADER ON http://%s ↑↑\x1b[0m\n", addr)
+	return nil
+}
+
+func modifyResponseAddDevReload(res *http.Response) error {
+	mediatype, _, err := mime.ParseMediaType(res.Header.Get("Content-Type"))
+	if err != nil {
+		return fmt.Errorf("parsing MIME type: %w", err)
+	}
+
+	if mediatype == "text/html" {
+		doc, err := appendDevReloaderScript(res.Body)
+		if err != nil {
+			return fmt.Errorf("appending dev reloading script: %w", err)
+		}
+		if err := res.Body.Close(); err != nil {
+			return fmt.Errorf("closing proxied response body: %w", err)
+		}
+
+		var buf bytes.Buffer
+		if err := html.Render(&buf, doc); err != nil {
+			return fmt.Errorf("rendering modified HTML doc: %w", err)
+		}
+
+		res.Body = io.NopCloser(&buf)
+		res.ContentLength = int64(buf.Len())
+		res.Header.Set("Content-Length", strconv.Itoa(buf.Len()))
+	}
+
 	return nil
 }
 
@@ -322,27 +347,6 @@ loop:
 			flusher.Flush()
 		}
 	}
-}
-
-type devReloaderWriter struct {
-	w    http.ResponseWriter
-	buf  bytes.Buffer
-	code int
-}
-
-func (d *devReloaderWriter) Header() http.Header {
-	return d.w.Header()
-}
-
-func (d *devReloaderWriter) Write(p []byte) (int, error) {
-	if d.code == 0 {
-		d.WriteHeader(http.StatusOK)
-	}
-	return d.buf.Write(p)
-}
-
-func (d *devReloaderWriter) WriteHeader(statusCode int) {
-	d.code = statusCode
 }
 
 var devReloaderScript = `
@@ -401,56 +405,6 @@ func appendDevReloaderScript(r io.Reader) (*html.Node, error) {
 	}
 	f(doc)
 	return doc, nil
-}
-
-func (d *devReloaderWriter) finish() error {
-	if d.code > 0 {
-		d.w.WriteHeader(d.code)
-	}
-
-	mediatype, _, err := mime.ParseMediaType(d.Header().Get("Content-Type"))
-	if err != nil {
-		return fmt.Errorf("parsing MIME type: %w", err)
-	}
-
-	var r io.Reader
-	if mediatype == "text/html" {
-		doc, err := appendDevReloaderScript(&d.buf)
-		if err != nil {
-			return fmt.Errorf("appending dev reloading script: %w", err)
-		}
-
-		var buf bytes.Buffer
-		if err := html.Render(&buf, doc); err != nil {
-			return fmt.Errorf("rendering modified HTML doc: %w", err)
-		}
-
-		d.w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
-
-		r = &buf
-		if _, err := io.Copy(d.w, &buf); err != nil {
-			return fmt.Errorf("copying modified rendered HTML to underlying writer: %w", err)
-		}
-	} else {
-		r = &d.buf
-	}
-
-	if _, err := io.Copy(d.w, r); err != nil {
-		return fmt.Errorf("copying modified rendered HTML to underlying writer: %w", err)
-	}
-
-	return nil
-}
-
-func devReloaderMiddleware(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		dw := new(devReloaderWriter)
-		dw.w = w
-		h.ServeHTTP(dw, r)
-		if err := dw.finish(); err != nil {
-			log.Printf("dev reloader middleware: %v", err)
-		}
-	})
 }
 
 func debounce[T any](interval time.Duration, input chan T, fn func(arg T)) {
