@@ -33,9 +33,13 @@ func TestPushup(t *testing.T) {
 		if strings.HasSuffix(entry.Name(), ".pushup") {
 			t.Run(entry.Name(), func(t *testing.T) {
 				basename, _ := splitExt(entry.Name())
+				// FIXME(paulsmith): add metadata to the samples files with the
+				// desired path to avoid these hacks
 				requestPath := "/samples/" + basename
 				if basename == "index" {
 					requestPath = "/samples"
+				} else if basename == "$name" {
+					requestPath = "/samples/world"
 				}
 				pushupFile := filepath.Join(samplesDir, entry.Name())
 				outFile := filepath.Join(samplesDir, basename+".out")
@@ -272,6 +276,16 @@ func TestRouteFromPath(t *testing.T) {
 			".",
 			"/samples/foo",
 		},
+		{
+			"app/pages/x/$name.pushup",
+			"app/pages",
+			"/x/:name",
+		},
+		{
+			"app/pages/$projectId/$productId",
+			"app/pages",
+			"/:projectId/:productId",
+		},
 	}
 
 	for _, test := range tests {
@@ -315,6 +329,34 @@ func TestGeneratedFilename(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			if got := generatedFilename(test.path, test.root, compilePushupPage); test.want != got {
 				t.Errorf("want %q, got %q", test.want, got)
+			}
+		})
+	}
+}
+
+func TestGenStructName(t *testing.T) {
+	tests := []struct {
+		basename string
+		strategy compilationStrategy
+		want     string
+	}{
+		{
+			"index",
+			compilePushupPage,
+			"Pushup__index__1",
+		},
+		{
+			"$name",
+			compilePushupPage,
+			"Pushup__DollarSign_name__2",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+			got := genStructName(test.basename, test.strategy)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("(-want, +got)\n%s", diff)
 			}
 		})
 	}

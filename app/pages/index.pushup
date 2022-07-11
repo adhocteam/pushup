@@ -22,4 +22,12 @@
     <li><a href="/alt-layout">Non-default layout</a></li>
     <li><a href="/no-layout">No layout</a></li>
     <li><a href="/x/sub">Subdirectory route (<tt>/x/sub</tt>)</a></li>
+    <li>Dynamic path components<br/>
+        Filesystem: <tt>&lt;project root&gt;/pages/dyn/$name.pushup</tt><br/>
+        Generated route: <tt>/dyn/([^/]+)</tt>
+        <ul>
+            <li><a href="/dyn/world"><tt>/dyn/world</tt></a></li>
+            <li><a href="/dyn/Pushup"><tt>/dyn/Pushup</tt></a></li>
+        </ul>
+    </li>
 </ul>

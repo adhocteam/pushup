@@ -734,11 +734,15 @@ func routeFromPath(path string, root string) string {
 	file := filepath.Base(path)
 	base := strings.TrimSuffix(file, filepath.Ext(file))
 	var route string
-	if base == "index" {
-		route = "/" + strings.Join(dirs, "/")
-	} else {
-		route = "/" + strings.Join(append(dirs, base), "/")
+	if base != "index" {
+		dirs = append(dirs, base)
 	}
+	for i := range dirs {
+		if strings.HasPrefix(dirs[i], "$") {
+			dirs[i] = ":" + dirs[i][1:]
+		}
+	}
+	route = "/" + strings.Join(dirs, "/")
 	return route
 }
 
@@ -1321,7 +1325,10 @@ var structNameIdx int
 func safeGoIdentFromFilename(filename string) string {
 	// FIXME(paulsmith): need to be more rigorous in mapping safely from
 	// filenames to legal Go identifiers
-	return strings.ReplaceAll(strings.ReplaceAll(filename, ".", ""), "-", "_")
+	filename = strings.ReplaceAll(filename, ".", "")
+	filename = strings.ReplaceAll(filename, "-", "_")
+	filename = strings.ReplaceAll(filename, "$", "DollarSign_")
+	return filename
 }
 
 func genStructName(basename string, strategy compilationStrategy) string {
