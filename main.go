@@ -219,7 +219,7 @@ func watchForReload(cancel context.CancelFunc, root string) (chan struct{}, erro
 		return nil, fmt.Errorf("creating new fsnotify watcher: %v", err)
 	}
 
-	go debounce(250*time.Millisecond, watcher.Events, func(event fsnotify.Event) {
+	go debounce(125*time.Millisecond, watcher.Events, func(event fsnotify.Event) {
 		if event.Op > 0 {
 			log.Printf("file changed in project directory, reloading")
 			cancel()
@@ -350,30 +350,30 @@ loop:
 }
 
 var devReloaderScript = `
-if (!!window.EventSource) {
-	var source = new EventSource("/--dev-reload");
-
-	source.onmessage = e => {
-		console.log("message:", e.data);
-	}
-
-	source.addEventListener("reload", () => {
-		console.log("Reloading");
-		//location.reload(true);
-		source.close();
-		htmx.ajax('GET', location.pathname, {target: "body", source: "body", swap: "outerHTML"});
-	}, false);
-
-	source.addEventListener("open", e => {
-		console.log("SSE connection was opened");
-	}, false);
-
-	source.onerror = err => {
-		console.error("SSE error:", err);
-	};
-} else {
-	// TODO(paulsmith): fallback to XHR polling
+if (!window.EventSource) {
+	throw "Server-sent events not supported by this browser, live reloading disabled";
 }
+
+var source = new EventSource("/--dev-reload");
+
+source.onmessage = e => {
+	console.log("message:", e.data);
+}
+
+source.addEventListener("reload", () => {
+	console.log("Reloading");
+	//location.reload(true);
+	source.close();
+	htmx.ajax('GET', location.pathname, {target: "body", source: "body", swap: "outerHTML"});
+}, false);
+
+source.addEventListener("open", e => {
+	console.log("SSE connection was opened");
+}, false);
+
+source.onerror = err => {
+	console.error("SSE error:", err);
+};
 `
 
 func appendDevReloaderScript(r io.Reader) (*html.Node, error) {
