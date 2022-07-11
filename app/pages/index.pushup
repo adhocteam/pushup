@@ -5,9 +5,9 @@
     var name = "Ad Hoc"
 }
 
-<h2>&lsquo;@title&rsquo;</h2>
+<h2>@title</h2>
 
-<h3 style="color: red">Pushup is a cool new web framework for Go. It's like if Go were PHP, but better.</h3>
+<h3 style="color: blue">Pushup is a cool new web framework for Go. It's like if Go were PHP, but better.</h3>
 
 <p>Welcome, @name! It is currently @(time.Now().Format(time.UnixDate)).</p>
 

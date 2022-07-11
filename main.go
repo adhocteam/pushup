@@ -63,14 +63,13 @@ func main() {
 	// TODO(paulsmith): add a linkOnly flag and separate build step from
 	// buildAndRun. (or a releaseMode flag, alternatively?)
 	if !*compileOnly {
-		ctx0, cancel := context.WithCancel(context.Background())
-		ctx1, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		ctx := newCancellationSource(contextSource{ctx0, cancelSourceFileChange}, contextSource{ctx1, cancelSourceSignal})
 		var mu sync.Mutex
 		buildComplete := sync.NewCond(&mu)
 
+		ctx := newPushupContext(context.Background())
+
 		if *devReload {
-			reload, err := watchForReload(cancel, appDir)
+			reload, err := watchForReload(ctx.fileChangeCancel, appDir)
 			if err != nil {
 				log.Fatalf("watching for reload: %v", err)
 			}
@@ -91,25 +90,25 @@ func main() {
 				for {
 					select {
 					case <-reload:
-						cancel()
-					case <-ctx1.Done():
+						ctx.fileChangeCancel()
+					case <-ctx.sigNotifyCtx.Done():
+						ctx.sigStop()
 						return
 					}
 				}
 			}()
 			for {
 				select {
-				case <-ctx1.Done():
+				case <-ctx.sigNotifyCtx.Done():
+					ctx.sigStop()
 					return
 				default:
 				}
 				if err := parseAndCompile(appDir, outDir, *parseOnly); err != nil {
 					log.Fatalf("parsing and compiling: %v", err)
 				}
-				ctx0, cancel = context.WithCancel(context.Background())
-				ctx1, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-				ctx = newCancellationSource(contextSource{ctx0, cancelSourceFileChange}, contextSource{ctx1, cancelSourceSignal})
-				if err := buildAndRun(ctx, stop, outDir, ln, buildComplete); err != nil {
+				ctx = newPushupContext(context.Background())
+				if err := buildAndRun(ctx, outDir, ln, buildComplete); err != nil {
 					log.Fatalf("building and running generated Go code: %v", err)
 				}
 			}
@@ -129,11 +128,30 @@ func main() {
 			}
 
 			// FIXME(paulsmith): separate build from run and move it in to compile step
-			if err := buildAndRun(ctx, stop, outDir, ln, buildComplete); err != nil {
+			if err := buildAndRun(ctx, outDir, ln, buildComplete); err != nil {
 				log.Fatalf("building and running generated Go code: %v", err)
 			}
 		}
 	}
+}
+
+type pushupContext struct {
+	*cancellationSource
+	fileChangeCtx    context.Context
+	fileChangeCancel context.CancelFunc
+	sigNotifyCtx     context.Context
+	sigStop          context.CancelFunc
+}
+
+func newPushupContext(parent context.Context) *pushupContext {
+	c := new(pushupContext)
+	c.fileChangeCtx, c.fileChangeCancel = context.WithCancel(parent)
+	c.sigNotifyCtx, c.sigStop = signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+	c.cancellationSource = newCancellationSource(
+		contextSource{c.fileChangeCtx, cancelSourceFileChange},
+		contextSource{c.sigNotifyCtx, cancelSourceSignal},
+	)
+	return c
 }
 
 func parseAndCompile(root string, outDir string, parseOnly bool) error {
@@ -322,6 +340,7 @@ func (d *devReloader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	built := make(chan struct{})
 	done := make(chan struct{})
 
+	// FIXME(paulsmith): this probably leaks goroutines
 	go func() {
 		d.complete.L.Lock()
 		d.complete.Wait()
@@ -502,7 +521,7 @@ func copyFile(dest, src string) error {
 	return os.Link(src, dest)
 }
 
-func buildAndRun(ctx context.Context, cancel context.CancelFunc, dir string, ln net.Listener, buildComplete *sync.Cond) error {
+func buildAndRun(ctx context.Context, dir string, ln net.Listener, buildComplete *sync.Cond) error {
 	mainExeDir := filepath.Join(dir, "cmd", "myproject")
 	if err := os.MkdirAll(mainExeDir, 0755); err != nil {
 		return fmt.Errorf("making directory for command: %w", err)
@@ -552,15 +571,14 @@ func buildAndRun(ctx context.Context, cancel context.CancelFunc, dir string, ln 
 		case <-done:
 			return nil
 		}
-		if ctx, ok := ctx.(*cancellationSource); ok {
+		// FIXME(paulsmith): don't like this interface
+		if ctx, ok := ctx.(*pushupContext); ok {
 			if ctx.final.source == cancelSourceFileChange {
 				log.Printf("\x1b[35mCONTEXT CANCEL: FILE CHANGED\x1b[0m")
 			} else if ctx.final.source == cancelSourceSignal {
 				log.Printf("\x1b[34mCONTEXT CANCEL: SIGNAL TRAPPED\x1b[0m")
 			}
 		}
-		//cancel()
-		//log.Printf("KILL SIGINT ON THE PROCESS GROUP %d", -cmd.Process.Pid)
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
 			return fmt.Errorf("syscall kill: %w", err)
 		}
@@ -577,11 +595,10 @@ func buildAndRun(ctx context.Context, cancel context.CancelFunc, dir string, ln 
 		// `done' channel in this function, to signal to the other goroutine
 		// waiting for context cancellation.
 		err := cmd.Wait()
-		//log.Printf("WAITED: %T %v %v", err, err, cmd.ProcessState)
 		if err != nil {
 			if err, ok := err.(*exec.ExitError); ok {
-				//log.Printf("parent:%t sig:%t", ctx.final == fileChangeCtx, ctx.final == sigCtx)
-				if _, ok := ctx.(*cancellationSource); !ok {
+				// FIXME(paulsmith): don't like this interface
+				if _, ok := ctx.(*pushupContext); !ok {
 					return fmt.Errorf("wait: %w", err)
 				}
 			} else {
