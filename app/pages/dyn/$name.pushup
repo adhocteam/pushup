@@ -1,4 +1,4 @@
-<h2>Dynamic path component</h2>
+<h2>Dynamic path segments</h2>
 
 <p>This page lives at <tt>dyn/$name.pushup</tt> in the project directory.</p>
 
@@ -11,9 +11,22 @@
     <tt>getParam()</tt>.
 </p>
 
-<hr>
+<p>This also works with directories named starting with a '$'. For example,
+    <tt>users/$userID/projects/$projectID.pushup</tt>
+</p>
 
-<p>Hello, @(getParam(req, "name"))!</p>
+<hr/>
+
+<dl>
+    <dd>Filesystem:</dd> <dt><tt>&lt;project root&gt;/pages/dyn/$name.pushup</tt></dt>
+    <dd>Generated route:</dd> <dt><tt>/dyn/([^/]+)</tt></dt>
+</dl>
+
+<hr/>
+
+<h3>Live example</h3>
+
+<p><code>Hello, @@(getParam(req, "name"))</code>: <b>Hello, @(getParam(req, "name"))!</b></p>
 <p>URL: <tt>@(req.URL.Path)</tt></p>
 @if getParam(req, "name") == "world" {
     <p><a href="/dyn/Pushup">/dyn/Pushup</a></p>
