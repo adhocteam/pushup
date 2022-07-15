@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"golang.org/x/net/html"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -203,7 +202,7 @@ func TestTagString(t *testing.T) {
 			"h1",
 		},
 		{
-			tag{name: "div", attr: []html.Attribute{{Key: "class", Val: "banner"}}},
+			tag{name: "div", attrs: []*attr{{name: stringPos{string: "class"}, value: stringPos{string: "banner"}}}},
 			"div class=\"banner\"",
 		},
 	}
@@ -356,6 +355,61 @@ func TestGenStructName(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			got := genStructName(test.basename, test.strategy)
 			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("(-want, +got)\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestOpenTagLexer(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []*attr
+	}{
+		{
+			"<div>",
+			nil,
+		},
+		{
+			"<div disabled>",
+			[]*attr{{name: stringPos{"disabled", pos(5)}}},
+		},
+		{
+			`<div class="foo">`,
+			[]*attr{{name: stringPos{"class", pos(5)}, value: stringPos{"foo", pos(12)}}},
+		},
+		{
+			`<p   data-@(name)="/foo/bar/@value"   thing="@(asd)"  >`,
+			[]*attr{
+				{
+					name: stringPos{
+						"data-@(name)",
+						pos(5),
+					},
+					value: stringPos{
+						"/foo/bar/@value",
+						pos(19),
+					},
+				},
+				{
+					name: stringPos{
+						"thing",
+						pos(38),
+					},
+					value: stringPos{
+						"@(asd)",
+						pos(45),
+					},
+				},
+			},
+		},
+	}
+	opts := cmp.AllowUnexported(attr{}, stringPos{})
+	for _, tt := range tests {
+		t.Run("", func(t *testing.T) {
+			l := newOpenTagLexer(tt.input)
+			got := l.scan()
+			if diff := cmp.Diff(tt.want, got, opts); diff != "" {
 				t.Errorf("(-want, +got)\n%s", diff)
 			}
 		})

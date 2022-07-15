@@ -26,7 +26,7 @@
                 font-size: 12px;
             }
         </style>
-        <script src="https://unpkg.com/htmx.org@1.7.0"></script>
+        <script src="https://unpkg.com/htmx.org@@1.7.0"></script>
     </head>
     <body>
         <nav>
@@ -43,6 +43,7 @@
             @contents
         </main>
         <footer>
+            <p><a href="/source?route=@(req.URL.Path)">view source</a></p>
             <p>&copy;2022 Ad Hoc</p>
         </footer>
     </body>

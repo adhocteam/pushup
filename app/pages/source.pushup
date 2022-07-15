@@ -1,0 +1,20 @@
+@import "log"
+@import "os"
+@import "path/filepath"
+
+
+@code {
+    path := req.FormValue("route")
+    route := getRouteFromPath(path)
+    b, err := os.ReadFile(filepath.Join("app", "pages", route.page.filePath()))
+    if err != nil {
+        log.Printf("reading file %s: %v", err)
+        //http.Error(w, http.StatusText(500), 500)
+        return err
+    }
+    source := string(b)
+}
+
+<p>Source code for Pushup page <a href="@path"><b>@path</b></a>:</p>
+
+<pre><code>@source</code></pre>

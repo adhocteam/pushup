@@ -249,9 +249,8 @@ func watchForReload(cancel context.CancelFunc, root string) (chan struct{}, erro
 		if d.IsDir() {
 			if err := watcher.Add(filepath.Join(root, path)); err != nil {
 				return fmt.Errorf("adding path %s to watch: %v", path, err)
-			} else {
-				log.Printf("added %s to watch for reloading", d.Name())
 			}
+			log.Printf("added %s to watch for reloading", d.Name())
 		}
 		return nil
 	}); err != nil {
@@ -453,13 +452,13 @@ type cancellationSource struct {
 
 type contextSource struct {
 	context.Context
-	source cancelSourceId
+	source cancelSourceID
 }
 
-type cancelSourceId int
+type cancelSourceID int
 
 const (
-	cancelSourceFileChange cancelSourceId = iota
+	cancelSourceFileChange cancelSourceID = iota
 	cancelSourceSignal
 )
 
@@ -574,9 +573,9 @@ func buildAndRun(ctx context.Context, dir string, ln net.Listener, buildComplete
 		// FIXME(paulsmith): don't like this interface
 		if ctx, ok := ctx.(*pushupContext); ok {
 			if ctx.final.source == cancelSourceFileChange {
-				log.Printf("\x1b[35mCONTEXT CANCEL: FILE CHANGED\x1b[0m")
+				log.Printf("\x1b[35mFILE CHANGED\x1b[0m")
 			} else if ctx.final.source == cancelSourceSignal {
-				log.Printf("\x1b[34mCONTEXT CANCEL: SIGNAL TRAPPED\x1b[0m")
+				log.Printf("\x1b[34mSIGNAL TRAPPED\x1b[0m")
 			}
 		}
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
@@ -596,13 +595,13 @@ func buildAndRun(ctx context.Context, dir string, ln net.Listener, buildComplete
 		// waiting for context cancellation.
 		err := cmd.Wait()
 		if err != nil {
-			if err, ok := err.(*exec.ExitError); ok {
+			if ee, ok := err.(*exec.ExitError); ok {
 				// FIXME(paulsmith): don't like this interface
 				if _, ok := ctx.(*pushupContext); !ok {
-					return fmt.Errorf("wait: %w", err)
+					return fmt.Errorf("wait: %w", ee)
 				}
 			} else {
-				return fmt.Errorf("wait: %w", err)
+				return fmt.Errorf("wait: %w", ee)
 			}
 		}
 		return nil
@@ -673,9 +672,9 @@ func compilePushup(sourcePath string, rootDir string, strategy compilationStrate
 			layoutName = ""
 		}
 		route := routeFromPath(sourcePath, rootDir)
-		c = &pageCodeGen{source: source, layout: layoutName, page: page, route: route}
+		c = &pageCodeGen{path: trimCommonPrefix(sourcePath, rootDir), source: source, layout: layoutName, page: page, route: route}
 	case compileLayout:
-		c = &layoutCodeGen{source: source, tree: tree}
+		c = &layoutCodeGen{path: trimCommonPrefix(sourcePath, rootDir), source: source, tree: tree}
 	default:
 		panic("")
 	}
@@ -750,9 +749,7 @@ func trimCommonPrefix(path string, prefix string) string {
 	path = filepath.Clean(path)
 	prefix = filepath.Clean(prefix)
 	stripped := strings.TrimPrefix(path, prefix)
-	if strings.HasPrefix(stripped, "/") {
-		stripped = strings.TrimPrefix(stripped, "/")
-	}
+	stripped = strings.TrimPrefix(stripped, "/")
 	return stripped
 }
 
@@ -806,10 +803,6 @@ func (e *nodeGoStrExpr) accept(v nodeVisitor) { v.visitGoStrExpr(e) }
 
 var _ node = (*nodeGoStrExpr)(nil)
 
-func newGoStrExpr(expr string, start, end int) *nodeGoStrExpr {
-	return &nodeGoStrExpr{expr, span{start, end}}
-}
-
 type nodeGoCode struct {
 	code string
 	pos  span
@@ -856,9 +849,10 @@ var _ node = (*nodeBlock)(nil)
 // nodeElement represents an HTML element, with a start tag, optional
 // attributes, optional children, and an end tag.
 type nodeElement struct {
-	tag      tag
-	children []node
-	pos      span
+	tag           tag
+	startTagNodes []node
+	children      []node
+	pos           span
 }
 
 func (e nodeElement) Pos() span             { return e.pos }
@@ -967,10 +961,9 @@ func coalesceLiterals(nodes []node) []node {
 }
 
 type page struct {
-	layout     string
-	imports    []importDecl
-	codeBlocks []string
-	nodes      []node
+	layout  string
+	imports []importDecl
+	nodes   []node
 }
 
 func postProcessTree(tree *syntaxTree) (*page, error) {
@@ -1016,16 +1009,24 @@ func generateCodeToFile(c codeGenUnit, basename string, outputPath string, strat
 	return nil
 }
 
+// TODO(paulsmith): probably can unify the two implementations of this and just
+// use the strategy type for discrimintating
 type codeGenUnit interface {
+	filePath() string
 	nodes() []node
 	lineNo(span) int
 }
 
 type pageCodeGen struct {
+	path   string
 	source string
 	layout string
 	page   *page
 	route  string
+}
+
+func (c *pageCodeGen) filePath() string {
+	return c.path
 }
 
 func (c *pageCodeGen) nodes() []node {
@@ -1041,16 +1042,21 @@ func lineCount(s string) int {
 }
 
 type layoutCodeGen struct {
+	path   string
 	source string
 	tree   *syntaxTree
 }
 
-func (l *layoutCodeGen) nodes() []node {
-	return l.tree.nodes
+func (c *layoutCodeGen) filePath() string {
+	return c.path
 }
 
-func (l *layoutCodeGen) lineNo(s span) int {
-	return lineCount(l.source[:s.start+1])
+func (c *layoutCodeGen) nodes() []node {
+	return c.tree.nodes
+}
+
+func (c *layoutCodeGen) lineNo(s span) int {
+	return lineCount(c.source[:s.start+1])
 }
 
 type codeGenerator struct {
@@ -1060,7 +1066,6 @@ type codeGenerator struct {
 	imports  map[importDecl]bool
 	outb     bytes.Buffer
 	bodyb    bytes.Buffer
-	importsb bytes.Buffer
 }
 
 func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrategy) *codeGenerator {
@@ -1110,7 +1115,9 @@ func (g *codeGenerator) visitLiteral(n *nodeLiteral) {
 func (g *codeGenerator) visitElement(n *nodeElement) {
 	g.used("io")
 	g.nodeLineNo(n)
-	g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.start()))
+	for _, e := range n.startTagNodes {
+		e.accept(g)
+	}
 	nodeList(n.children).accept(g)
 	g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.end()))
 }
@@ -1131,17 +1138,18 @@ func (g *codeGenerator) visitGoStrExpr(n *nodeGoStrExpr) {
 		g.used("io")
 		g.nodeLineNo(n)
 		g.bodyPrintf("{\n")
-		g.bodyPrintf("\tvar __x any = %s\n", n.expr)
-		g.bodyPrintf("\tswitch __val := __x.(type) {\n")
-		g.bodyPrintf("\t\tcase string:\n")
-		g.bodyPrintf("\t\t\tio.WriteString(w, template.HTMLEscapeString(__val))\n")
-		g.bodyPrintf("\t\tcase fmt.Stringer:\n")
-		g.bodyPrintf("\t\t\tio.WriteString(w, template.HTMLEscapeString(__val.String()))\n")
-		g.bodyPrintf("\t\tcase []byte:\n")
-		g.bodyPrintf("\t\t\ttemplate.HTMLEscape(w, __val)\n")
-		g.bodyPrintf("\t\tdefault:\n")
-		g.bodyPrintf("\t\t\tpanic(\"expected a string, []bytes, or fmt.Stringer expression\")\n")
-		g.bodyPrintf("\t}\n")
+		g.bodyPrintf("  var __x any = %s\n", n.expr)
+		g.bodyPrintf("  switch __val := __x.(type) {\n")
+		g.bodyPrintf("    case string:\n")
+		g.bodyPrintf("      io.WriteString(w, template.HTMLEscapeString(__val))\n")
+		g.bodyPrintf("    case fmt.Stringer:\n")
+		g.bodyPrintf("      io.WriteString(w, template.HTMLEscapeString(__val.String()))\n")
+		g.bodyPrintf("    case []byte:\n")
+		g.bodyPrintf("      template.HTMLEscape(w, __val)\n")
+		// FIXME(paulsmith): allow any expression %v-style
+		g.bodyPrintf("    default:\n")
+		g.bodyPrintf("      panic(\"expected a string, []bytes, or fmt.Stringer expression\")\n")
+		g.bodyPrintf("  }\n")
 		g.bodyPrintf("}\n")
 	}
 }
@@ -1212,7 +1220,9 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		typ  string
 	}
 
-	fields := []field{}
+	fields := []field{
+		{name: "pushupFilePath", typ: "string"},
+	}
 
 	g.bodyPrintf("type %s struct {\n", typeName)
 	for _, field := range fields {
@@ -1222,18 +1232,28 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 
 	switch strategy {
 	case compilePushupPage:
+		p := c.(*pageCodeGen)
 		g.bodyPrintf("func (t *%s) register() {\n", typeName)
-		g.bodyPrintf("routes.add(\"%s\", t)\n", c.(*pageCodeGen).route)
+		g.bodyPrintf("  routes.add(\"%s\", t)\n", p.route)
 		g.bodyPrintf("}\n\n")
 
 		g.bodyPrintf("func init() {\n")
-		g.bodyPrintf("(&%s{}).register()\n", typeName)
+		g.bodyPrintf("  page := new(%s)\n", typeName)
+		g.bodyPrintf("  page.pushupFilePath = %s\n", strconv.Quote(c.filePath()))
+		g.bodyPrintf("  page.register()\n")
 		g.bodyPrintf("}\n\n")
 	case compileLayout:
 		g.bodyPrintf("func init() {\n")
-		g.bodyPrintf("layouts[\"%s\"] = &%s{}\n", basename, typeName)
+		g.bodyPrintf("  layout := new(%s)\n", typeName)
+		g.bodyPrintf("  layout.pushupFilePath = %s\n", strconv.Quote(c.filePath()))
+		g.bodyPrintf("  layouts[\"%s\"] = layout\n", basename)
 		g.bodyPrintf("}\n\n")
 	}
+
+	// FIXME(paulsmith): feels a bit hacky to have this method in the page interface
+	g.bodyPrintf("func (t *%s) filePath() string {\n", typeName)
+	g.bodyPrintf("  return t.pushupFilePath\n")
+	g.bodyPrintf("}\n")
 
 	g.used("io")
 	g.used("net/http")
@@ -1356,11 +1376,7 @@ func init() {
 }
 
 func parse(source string) (*syntaxTree, error) {
-	var p parser
-	p.src = source
-	p.offset = 0
-	p.htmlParser = &htmlParser{parser: &p}
-	p.codeParser = &codeParser{parser: &p}
+	p := newParser(source)
 	tree := p.htmlParser.parseDocument()
 	if len(p.errs) > 0 {
 		return nil, p.errs[0]
@@ -1374,6 +1390,15 @@ type parser struct {
 	errs       []error
 	htmlParser *htmlParser
 	codeParser *codeParser
+}
+
+func newParser(source string) *parser {
+	p := new(parser)
+	p.src = source
+	p.offset = 0
+	p.htmlParser = &htmlParser{parser: p}
+	p.codeParser = &codeParser{parser: p}
+	return p
 }
 
 func (p *parser) source() string {
@@ -1393,9 +1418,12 @@ type htmlParser struct {
 	parser *parser
 
 	// current token
-	tok html.Token
-	err error
-	raw string
+	toktyp  html.TokenType
+	tagname []byte
+	err     error
+	raw     string
+	attrs   []*attr
+
 	// the global parser offset at the beginning of a new token
 	start int
 }
@@ -1412,10 +1440,15 @@ func (p *htmlParser) advance() {
 	// impact the runtime web application.
 	tokenizer := html.NewTokenizer(strings.NewReader(p.parser.source()))
 	tokenizer.SetMaxBuf(0) // unlimited buffer size
-	tokenizer.Next()
+	p.toktyp = tokenizer.Next()
 	p.err = tokenizer.Err()
 	p.raw = string(tokenizer.Raw())
-	p.tok = tokenizer.Token()
+	p.attrs = nil
+	var hasAttr bool
+	p.tagname, hasAttr = tokenizer.TagName()
+	if hasAttr {
+		p.attrs = scanAttrs(p.raw)
+	}
 	p.start = p.parser.offset
 	p.parser.offset += len(p.raw)
 }
@@ -1434,7 +1467,7 @@ func isAllWhitespace(s string) bool {
 func (p *htmlParser) skipWhitespace() []*nodeLiteral {
 	var result []*nodeLiteral
 	for {
-		if p.tok.Type == html.TextToken && isAllWhitespace(p.raw) {
+		if p.toktyp == html.TextToken && isAllWhitespace(p.raw) {
 			n := nodeLiteral{str: p.raw, pos: span{start: p.start, end: p.parser.offset}}
 			result = append(result, &n)
 			p.advance()
@@ -1445,109 +1478,207 @@ func (p *htmlParser) skipWhitespace() []*nodeLiteral {
 	return result
 }
 
+func (p *htmlParser) parseAttributeNameOrValue(nameOrValue string, nameOrValueStartPos, nameOrValueEndPos int, pos int) ([]node, int) {
+	var nodes []node
+	if strings.ContainsRune(nameOrValue, '@') {
+		for pos < nameOrValueEndPos && strings.ContainsRune(nameOrValue, '@') {
+			if idx := strings.IndexRune(nameOrValue, '@'); idx > 0 {
+				nodes = append(nodes, p.parseRawSpan(pos, pos+idx))
+				pos += idx
+				nameOrValue = nameOrValue[idx:]
+			}
+			if strings.HasPrefix(nameOrValue, "@@") {
+				nodes = append(nodes, p.parseRawSpan(pos, pos+1))
+				pos += 2
+				nameOrValue = nameOrValue[2:]
+			} else {
+				pos++
+				saveParser := p.parser
+				p.parser = newParser(nameOrValue[1:])
+				nodes = append(nodes, p.transition())
+				n := p.parser.offset
+				pos += n
+				p.parser = saveParser
+				nameOrValue = nameOrValue[n:]
+			}
+		}
+	} else {
+		nodes = append(nodes, p.parseRawSpan(nameOrValueStartPos, nameOrValueEndPos))
+		pos = nameOrValueEndPos
+	}
+	return nodes, pos
+}
+
+func (p *htmlParser) parseRawSpan(start, end int) node {
+	e := new(nodeLiteral)
+	e.str = p.raw[start:end]
+	e.pos.start = p.start + start
+	e.pos.end = p.start + end
+	return e
+}
+
+func (p *htmlParser) parseStartTag() []node {
+	var nodes []node
+
+	if len(p.attrs) == 0 {
+		nodes = append(nodes, p.parseRawSpan(0, len(p.raw)))
+	} else {
+		// pos keeps track of how far we've parsed into this p.raw string
+		pos := 0
+
+		for _, attr := range p.attrs {
+			name := attr.name.string
+			value := attr.value.string
+			nameStartPos := int(attr.name.start)
+			valStartPos := int(attr.value.start)
+			nameEndPos := nameStartPos + len(name)
+			valEndPos := valStartPos + len(value)
+
+			// emit raw chars between tag name or last attribute and this
+			// attribute
+			if n := nameStartPos - pos; n > 0 {
+				nodes = append(nodes, p.parseRawSpan(pos, pos+n))
+				pos += n
+			}
+
+			// emit attribute name
+			nameNodes, newPos := p.parseAttributeNameOrValue(name, nameStartPos, nameEndPos, pos)
+			nodes = append(nodes, nameNodes...)
+			pos = newPos
+
+			if valStartPos > pos {
+				// emit any chars, including equals and quotes, between
+				// attribute name and attribute value, if any
+				nodes = append(nodes, p.parseRawSpan(pos, valStartPos))
+				pos = valStartPos
+
+				// emit attribute value
+				valNodes, newPos := p.parseAttributeNameOrValue(value, valStartPos, valEndPos, pos)
+				nodes = append(nodes, valNodes...)
+				pos = newPos
+			}
+		}
+
+		// emit anything from the last attribute to the close of the tag
+		nodes = append(nodes, p.parseRawSpan(pos, len(p.raw)))
+	}
+
+	return nodes
+}
+
+func (p *htmlParser) parseRawLiteral() node {
+	e := new(nodeLiteral)
+	e.pos.start = p.start
+	e.pos.end = p.parser.offset
+	e.str = p.raw
+	return e
+}
+
 func (p *htmlParser) parseDocument() *syntaxTree {
 	tree := new(syntaxTree)
+
 tokenLoop:
 	for {
 		p.advance()
-		if p.tok.Type == html.ErrorToken {
+		if p.toktyp == html.ErrorToken {
 			if p.err == io.EOF {
 				break tokenLoop
 			} else {
 				p.parser.errorf("HTML tokenizer: %w", p.err)
 			}
 		}
-		// FIXME(paulsmith): allow @ transition in an attribute
-		if idx := strings.IndexRune(p.raw, '@'); idx >= 0 && p.tok.Type != html.StartTagToken {
-			if escapedAt := strings.Index(p.raw, "@@"); escapedAt >= 0 {
-				// it's an escaped @
-				if escapedAt > 0 {
-					// emit the leading text before the "@@"
-					e := new(nodeLiteral)
-					e.pos.start = p.start
-					e.pos.end = p.start + escapedAt
-					e.str = p.raw[:escapedAt]
-					tree.nodes = append(tree.nodes, e)
-				}
-				e := new(nodeLiteral)
-				e.pos.start = p.start + escapedAt
-				e.pos.end = p.start + escapedAt + 2
-				e.str = "@"
-				tree.nodes = append(tree.nodes, e)
-				p.parser.offset = p.start + escapedAt + 2
-			} else {
-				// TODO(paulsmith): check for an email address
-				// FIXME(paulsmith): clean this up!
-				if strings.HasPrefix(p.raw[idx+1:], "layout") {
-					s := p.raw[idx+1+len("layout"):]
-					n := 0
-					if len(s) < 1 || s[0] != ' ' {
-						p.parser.errorf("@layout must be followed by a space")
-						break tokenLoop
-					}
-					s = s[1:]
-					n++
-					e := new(nodeLayout)
-					if len(s) > 0 && s[0] == '!' {
-						e.name = "!"
-						n++
-					} else {
-						var name []rune
-						for {
-							r, size := utf8.DecodeRuneInString(s)
-							if r == 0 {
-								break
-							}
-							if unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' || r == '-' || r == '.' {
-								name = append(name, r)
-								s = s[size:]
-								n += size
-							} else {
-								break
-							}
-						}
-						e.name = string(name)
-					}
-					e.pos.start = p.start + idx + 1
-					newOffset := e.pos.start + len("layout") + n
-					e.pos.end = newOffset
-					p.parser.offset = newOffset
-					tree.nodes = append(tree.nodes, e)
-				} else {
-					newOffset := p.start + idx + 1
-					p.parser.offset = newOffset
-					leading := p.raw[:idx]
-					if idx > 0 {
-						var htmlNode nodeLiteral
-						htmlNode.pos.start = p.start
-						htmlNode.pos.end = p.start + len(leading)
-						htmlNode.str = leading
-						tree.nodes = append(tree.nodes, &htmlNode)
-					}
-					e := p.transition()
-					// NOTE(paulsmith): this bubbles up nil due to parseImportKeyword,
-					// the result of which we don't treat as a node in the syntax tree
-					if e != nil {
+		switch p.toktyp {
+		case html.StartTagToken, html.SelfClosingTagToken:
+			tree.nodes = append(tree.nodes, p.parseStartTag()...)
+		case html.EndTagToken, html.DoctypeToken, html.CommentToken:
+			tree.nodes = append(tree.nodes, p.parseRawLiteral())
+		case html.TextToken:
+			if idx := strings.IndexRune(p.raw, '@'); idx >= 0 {
+				if escapedAt := strings.Index(p.raw, "@@"); escapedAt >= 0 {
+					// it's an escaped @
+					if escapedAt > 0 {
+						// emit the leading text before the "@@"
+						e := new(nodeLiteral)
+						e.pos.start = p.start
+						e.pos.end = p.start + escapedAt
+						e.str = p.raw[:escapedAt]
 						tree.nodes = append(tree.nodes, e)
 					}
+					e := new(nodeLiteral)
+					e.pos.start = p.start + escapedAt
+					e.pos.end = p.start + escapedAt + 2
+					e.str = "@"
+					tree.nodes = append(tree.nodes, e)
+					p.parser.offset = p.start + escapedAt + 2
+				} else {
+					// TODO(paulsmith): check for an email address
+					// FIXME(paulsmith): clean this up!
+					if strings.HasPrefix(p.raw[idx+1:], "layout") {
+						s := p.raw[idx+1+len("layout"):]
+						n := 0
+						if len(s) < 1 || s[0] != ' ' {
+							p.parser.errorf("@layout must be followed by a space")
+							break tokenLoop
+						}
+						s = s[1:]
+						n++
+						e := new(nodeLayout)
+						if len(s) > 0 && s[0] == '!' {
+							e.name = "!"
+							n++
+						} else {
+							var name []rune
+							for {
+								r, size := utf8.DecodeRuneInString(s)
+								if r == 0 {
+									break
+								}
+								if unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' || r == '-' || r == '.' {
+									name = append(name, r)
+									s = s[size:]
+									n += size
+								} else {
+									break
+								}
+							}
+							e.name = string(name)
+						}
+						e.pos.start = p.start + idx + 1
+						newOffset := e.pos.start + len("layout") + n
+						e.pos.end = newOffset
+						p.parser.offset = newOffset
+						tree.nodes = append(tree.nodes, e)
+					} else {
+						newOffset := p.start + idx + 1
+						p.parser.offset = newOffset
+						leading := p.raw[:idx]
+						if idx > 0 {
+							var htmlNode nodeLiteral
+							htmlNode.pos.start = p.start
+							htmlNode.pos.end = p.start + len(leading)
+							htmlNode.str = leading
+							tree.nodes = append(tree.nodes, &htmlNode)
+						}
+						e := p.transition()
+						// NOTE(paulsmith): this bubbles up nil due to parseImportKeyword,
+						// the result of which we don't treat as a node in the syntax tree
+						if e != nil {
+							tree.nodes = append(tree.nodes, e)
+						}
+					}
 				}
+			} else {
+				tree.nodes = append(tree.nodes, p.parseRawLiteral())
 			}
-		} else {
-			e := new(nodeLiteral)
-			e.pos.start = p.start
-			e.pos.end = p.parser.offset
-			e.str = p.raw
-			tree.nodes = append(tree.nodes, e)
+		default:
+			panic("")
 		}
 	}
+
 	return tree
 }
 
 func (p *htmlParser) transition() node {
-	preview := p.parser.source()
-	if len(preview) > 40 {
-		preview = preview[:40]
-	}
 	codeParser := p.parser.codeParser
 	codeParser.reset()
 	e := codeParser.parseCodeBlock()
@@ -1555,20 +1686,20 @@ func (p *htmlParser) transition() node {
 }
 
 type tag struct {
-	name string
-	attr []html.Attribute
+	name  string
+	attrs []*attr
 }
 
 func (t tag) String() string {
-	if len(t.attr) == 0 {
+	if len(t.attrs) == 0 {
 		return t.name
 	}
 	buf := bytes.NewBufferString(t.name)
-	for _, a := range t.attr {
+	for _, a := range t.attrs {
 		buf.WriteByte(' ')
-		buf.WriteString(a.Key)
+		buf.WriteString(a.name.string)
 		buf.WriteString(`="`)
-		buf.WriteString(html.EscapeString(a.Val))
+		buf.WriteString(html.EscapeString(a.value.string))
 		buf.WriteByte('"')
 	}
 	return buf.String()
@@ -1582,71 +1713,42 @@ func (t tag) end() string {
 	return "</" + t.String() + ">"
 }
 
-func tok2tag(tok html.Token) tag {
-	return tag{name: tok.Data, attr: tok.Attr}
+func newTag(tagname []byte, attrs []*attr) tag {
+	return tag{name: string(tagname), attrs: attrs}
 }
 
 func (p *htmlParser) match(typ html.TokenType) bool {
-	return p.tok.Type == typ
+	return p.toktyp == typ
 }
 
 func (p *htmlParser) parseElement() *nodeElement {
 	var result *nodeElement
 
+	// FIXME(paulsmith): handle self-closing elements
 	if !p.match(html.StartTagToken) {
-		p.parser.errorf("expected an HTML element start tag, got %s", p.tok.Type)
+		p.parser.errorf("expected an HTML element start tag, got %s", p.toktyp)
 		return result
 	}
 
 	result = new(nodeElement)
-	result.tag = tok2tag(p.tok)
+	result.tag = newTag(p.tagname, p.attrs)
 	result.pos.start = p.parser.offset - len(p.raw)
 	result.pos.end = p.parser.offset
+	result.startTagNodes = p.parseStartTag()
 	p.advance()
 
 	result.children = p.parseChildren()
 
 	if !p.match(html.EndTagToken) {
-		p.parser.errorf("expected an HTML element end tag, got %q", p.tok.Type)
+		p.parser.errorf("expected an HTML element end tag, got %q", p.toktyp)
 		return result
 	}
 
-	if result.tag.name != p.tok.Data {
-		p.parser.errorf("expected </%s> end tag, got </%s>", result.tag.name, p.tok.Data)
+	if result.tag.name != string(p.tagname) {
+		p.parser.errorf("expected </%s> end tag, got </%s>", result.tag.name, p.tagname)
 	}
 
 	return result
-}
-
-func sprintStartTag(elems []*nodeElement) string {
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "[")
-	for i, e := range elems {
-		fmt.Fprintf(&buf, "%s", e.tag.name)
-		if i < len(elems)-1 {
-			fmt.Fprintf(&buf, " ")
-		}
-	}
-	fmt.Fprintf(&buf, "]")
-	return buf.String()
-}
-
-func sprintNodes(nodes []node) string {
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "[")
-	for i, n := range nodes {
-		switch n := n.(type) {
-		case *nodeLiteral:
-			fmt.Fprintf(&buf, "%q", n.str)
-		case *nodeElement:
-			fmt.Fprintf(&buf, "%s", n.tag.name)
-		}
-		if i < len(nodes)-1 {
-			fmt.Fprintf(&buf, " ")
-		}
-	}
-	fmt.Fprintf(&buf, "]")
-	return buf.String()
 }
 
 func (p *htmlParser) parseChildren() []node {
@@ -1654,7 +1756,7 @@ func (p *htmlParser) parseChildren() []node {
 	var elemStack []*nodeElement
 loop:
 	for {
-		switch p.tok.Type {
+		switch p.toktyp {
 		case html.ErrorToken:
 			if p.err == io.EOF {
 				break loop
@@ -1662,11 +1764,13 @@ loop:
 				p.parser.errorf("HTML tokenizer: %w", p.err)
 			}
 		// FIXME(paulsmith): handle self-closing tags/elements
+		// FIXME(paulsmith): allow transition in attribute
 		case html.StartTagToken:
 			elem := new(nodeElement)
-			elem.tag = tok2tag(p.tok)
+			elem.tag = newTag(p.tagname, p.attrs)
 			elem.pos.start = p.parser.offset - len(p.raw)
 			elem.pos.end = p.parser.offset
+			elem.startTagNodes = p.parseStartTag()
 			p.advance()
 			elem.children = p.parseChildren()
 			result = append(result, elem)
@@ -1676,11 +1780,11 @@ loop:
 				return result
 			}
 			elem := elemStack[len(elemStack)-1]
-			if elem.tag.name == p.tok.Data {
+			if elem.tag.name == string(p.tagname) {
 				elemStack = elemStack[:len(elemStack)-1]
 				p.advance()
 			} else {
-				p.parser.errorf("mismatch end tag, expected </%s>, got </%s>", elem.tag.name, p.tok.Data)
+				p.parser.errorf("mismatch end tag, expected </%s>, got </%s>", elem.tag.name, p.tagname)
 				return result
 			}
 		case html.TextToken:
@@ -1705,11 +1809,7 @@ loop:
 					result = append(result, e)
 				}
 			} else {
-				var htmlNode nodeLiteral
-				htmlNode.pos.start = p.start
-				htmlNode.pos.end = p.parser.offset
-				htmlNode.str = p.raw
-				result = append(result, &htmlNode)
+				result = append(result, p.parseRawLiteral())
 			}
 			p.advance()
 		case html.CommentToken:
@@ -1742,10 +1842,6 @@ func (p *codeParser) reset() {
 	p.scanner.Init(p.file, []byte(source), p.handleGoScanErr, scanner.ScanComments)
 	p.acceptedToken = goToken{}
 	p.lookaheadToken = goToken{}
-}
-
-func (p *codeParser) source() string {
-	return p.parser.sourceFrom(p.baseOffset)
 }
 
 func (p *codeParser) sourceFrom(pos token.Pos) string {
@@ -2146,4 +2242,465 @@ func (p *debugPrettyPrinter) visitImport(n *nodeImport) {
 func (p *debugPrettyPrinter) visitLayout(n *nodeLayout) {
 	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
 	fmt.Fprintf(p.w, "LAYOUT %s\n", n.name)
+}
+
+// implement the HTML5 spec lexing algorithm for open tags. this is necessary
+// because in order to switch safely between HTML and Go code parsing in
+// the Pushup parser, we need to precisely track the read character position
+// internally to start (or self-closing) tags, because the transition character
+// may appear inside HTML attributes. the golang.org/x/net/html tokenizer
+// that forms the basis of the Pushup HTML parser, while it precisely tracks
+// character position for token types indirectly via its Raw() method, does
+// not help us inside a start (or self-closing) tag, including attributes. So,
+// yes, we're doing extra work, re-tokenizing the tag. But it's not expensive
+// work (just open and self-closing tags, not the whole doc) and there's not an
+// alternative with golang.org/x/net/html.
+//
+// we start in the data state
+//
+// https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
+
+func scanAttrs(openTag string) []*attr {
+	l := newOpenTagLexer(openTag)
+	result := l.scan()
+	return result
+}
+
+type openTagLexer struct {
+	raw         string
+	pos         int
+	state       openTagLexState
+	returnState openTagLexState
+	charRefBuf  bytes.Buffer
+	attrs       []*attr
+	currAttr    *attr
+}
+
+type attr struct {
+	name  stringPos
+	value stringPos
+}
+
+type stringPos struct {
+	string
+	start pos
+}
+
+type pos int
+
+func newOpenTagLexer(source string) *openTagLexer {
+	l := new(openTagLexer)
+	l.raw = source
+	l.state = openTagLexData
+	return l
+}
+
+type openTagLexState int
+
+// NOTE(paulsmith): we only consider a subset of the HTML5 tokenization states,
+// because we rely on the golang.org/x/net/html tokenizer to produce a valid
+// start tag token that we scan here for attributes. so certain states are not
+// considered, or are considered assertion errors if they would ordinarily be
+// entered into.
+const (
+	openTagLexData openTagLexState = iota
+	openTagLexTagOpen
+	openTagLexTagName
+	openTagLexBeforeAttrName
+	openTagLexAttrName
+	openTagLexAfterAttrName
+	openTagLexBeforeAttrVal
+	openTagLexAttrValDoubleQuote
+	openTagLexAttrValSingleQuote
+	openTagLexAttrValUnquoted
+	openTagLexAfterAttrValQuoted
+	openTagLexCharRef
+	openTagLexNamedCharRef
+	openTagLexNumericCharRef
+	openTagLexSelfClosingStartTag
+)
+
+func (s openTagLexState) String() string {
+	switch s {
+	case openTagLexData:
+		return "Data"
+	case openTagLexTagOpen:
+		return "TagOpen"
+	case openTagLexTagName:
+		return "TagName"
+	case openTagLexBeforeAttrName:
+		return "BeforeAttrName"
+	case openTagLexAttrName:
+		return "AttrName"
+	case openTagLexAfterAttrName:
+		return "AfterAttrName"
+	case openTagLexBeforeAttrVal:
+		return "BeforeAttrVal"
+	case openTagLexAttrValDoubleQuote:
+		return "AttrValDoubleQuote"
+	case openTagLexAttrValSingleQuote:
+		return "AttrValSingleQuote"
+	case openTagLexAttrValUnquoted:
+		return "AttrValUnquoted"
+	case openTagLexAfterAttrValQuoted:
+		return "AfterAttrValQuoted"
+	case openTagLexCharRef:
+		return "CharRef"
+	case openTagLexNamedCharRef:
+		return "NamedCharRef"
+	case openTagLexNumericCharRef:
+		return "NumericCharRef"
+	case openTagLexSelfClosingStartTag:
+		return "SelfClosingStartTag"
+	default:
+		panic("")
+	}
+}
+
+const eof = -1
+
+func (l *openTagLexer) scan() []*attr {
+loop:
+	for {
+		switch l.state {
+		// 13.2.5.1 Data state
+		// https://html.spec.whatwg.org/multipage/parsing.html#data-state
+		case openTagLexData:
+			ch := l.consumeNextChar()
+			switch {
+			case ch == '<':
+				l.switchState(openTagLexTagOpen)
+			default:
+				l.assertionFailure("found '%c' in data state, expected '<'", ch)
+			}
+		// 13.2.5.6 Tag open state
+		// https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
+		case openTagLexTagOpen:
+			ch := l.consumeNextChar()
+			switch {
+			case ch == '!':
+				l.assertionFailure("input '%c' switch to markup declaration open state", ch)
+			case ch == '/':
+				l.assertionFailure("input '%c' switch to end tag open state", ch)
+			case isASCIIAlpha(ch):
+				l.reconsumeIn(openTagLexTagName)
+			case ch == '?':
+				l.assertionFailure("input '%c' parse error", ch)
+			case ch == eof:
+				l.assertionFailure("eof before tag name parse error")
+			default:
+				l.assertionFailure("found '%c' in tag open state", ch)
+			}
+		// 13.2.5.8 Tag name state
+		// https://html.spec.whatwg.org/multipage/parsing.html#tag-name-state
+		case openTagLexTagName:
+			ch := l.consumeNextChar()
+			switch {
+			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+				l.switchState(openTagLexBeforeAttrName)
+			case ch == '/':
+				l.switchState(openTagLexSelfClosingStartTag)
+			case ch == '>':
+				break loop
+			case isASCIIUpper(ch):
+				// append lowercase version of current input char to current tag token's tag name
+				// not needed, we know the tag name from the golang.org/x/net/html tokenizer
+			case ch == 0:
+				l.assertionFailure("found null in tag name state")
+			case ch == eof:
+				l.assertionFailure("found eof in tag name state")
+			default:
+				// append current input char to current tag token's tag name
+			}
+		// 13.2.5.32 Before attribute name state
+		// https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-name-state
+		case openTagLexBeforeAttrName:
+			ch := l.consumeNextChar()
+			switch {
+			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+				// ignore
+			case ch == '/' || ch == '>' || ch == eof:
+				l.reconsumeIn(openTagLexAfterAttrName)
+			case ch == '=':
+				l.assertionFailure("found '%c' in before attribute name state", ch)
+			default:
+				l.newAttr()
+				l.reconsumeIn(openTagLexAttrName)
+			}
+		// 13.2.5.33 Attribute name state
+		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-name-state
+		case openTagLexAttrName:
+			ch := l.consumeNextChar()
+			switch {
+			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ' || ch == '/' || ch == '>' || ch == eof:
+				defer l.cmpAttrName()
+				l.reconsumeIn(openTagLexAfterAttrName)
+			case ch == '=':
+				defer l.cmpAttrName()
+				l.switchState(openTagLexBeforeAttrVal)
+			case isASCIIUpper(ch):
+				// append lowercase version (add 0x20) of current input character to current attr's name
+				l.appendCurrName(byte(ch + 0x20))
+			case ch == 0:
+				l.assertionFailure("found null in attribute name state")
+			case ch == '"' || ch == '\'' || ch == '<':
+				l.parseError("unexpected-character-in-attribute-name")
+				// append current input character to current attribute's name
+				l.appendCurrName(byte(ch))
+			default:
+				// append current input character to current attribute's name
+				l.appendCurrName(byte(ch))
+			}
+		// 13.2.5.34 After attribute name state
+		// https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-name-state
+		case openTagLexAfterAttrName:
+			ch := l.consumeNextChar()
+			switch {
+			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+				// ignore
+			case ch == '/':
+				l.switchState(openTagLexSelfClosingStartTag)
+			case ch == '=':
+				l.switchState(openTagLexBeforeAttrVal)
+			case ch == '>':
+				break loop
+			case ch == eof:
+				l.assertionFailure("found EOF in after attribute name state")
+			default:
+				l.newAttr()
+				l.reconsumeIn(openTagLexAttrName)
+			}
+		// 13.2.5.35 Before attribute value state
+		// https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-value-state
+		case openTagLexBeforeAttrVal:
+			ch := l.consumeNextChar()
+			switch {
+			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+				// ignore
+			case ch == '"':
+				l.switchState(openTagLexAttrValDoubleQuote)
+			case ch == '\'':
+				l.switchState(openTagLexAttrValSingleQuote)
+			case ch == '>':
+				l.parseError("missing-attribute-value")
+				break loop
+			default:
+				l.reconsumeIn(openTagLexAttrValUnquoted)
+			}
+		// 13.2.5.36 Attribute value (double-quoted) state
+		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(double-quoted)-state
+		case openTagLexAttrValDoubleQuote:
+			ch := l.consumeNextChar()
+			switch {
+			case ch == '"':
+				l.switchState(openTagLexAfterAttrValQuoted)
+			case ch == '&':
+				l.returnState = openTagLexAttrValDoubleQuote
+				l.switchState(openTagLexCharRef)
+			case ch == 0:
+				l.assertionFailure("found null in attribute value (double-quoted) state")
+			case ch == eof:
+				l.assertionFailure("found EOF in tag")
+			default:
+				l.appendCurrVal(byte(ch))
+			}
+		// 13.2.5.37 Attribute value (single-quoted) state
+		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(single-quoted)-state
+		case openTagLexAttrValSingleQuote:
+			ch := l.consumeNextChar()
+			switch {
+			case ch == '"':
+				l.switchState(openTagLexAfterAttrValQuoted)
+			case ch == '&':
+				l.returnState = openTagLexAttrValSingleQuote
+				l.switchState(openTagLexCharRef)
+			case ch == 0:
+				l.assertionFailure("found null in attribute value (single-quoted) state")
+			case ch == eof:
+				l.assertionFailure("found EOF in tag")
+			default:
+				l.appendCurrVal(byte(ch))
+			}
+		// 13.2.5.39 After attribute value (quoted) state
+		// https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-value-(quoted)-state
+		case openTagLexAfterAttrValQuoted:
+			ch := l.consumeNextChar()
+			switch {
+			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+				l.switchState(openTagLexBeforeAttrName)
+			case ch == '/':
+				l.switchState(openTagLexSelfClosingStartTag)
+			case ch == '>':
+				break loop
+			case ch == eof:
+				l.assertionFailure("found EOF in tag")
+			default:
+				l.parseError("missing-whitespace-between-attributes")
+				l.reconsumeIn(openTagLexBeforeAttrName)
+			}
+		// 13.2.5.72 Character reference state
+		// https://html.spec.whatwg.org/multipage/parsing.html#character-reference-state
+		case openTagLexCharRef:
+			l.charRefBuf = bytes.Buffer{}
+			l.charRefBuf.WriteByte('&')
+			ch := l.consumeNextChar()
+			switch {
+			case isASCIIAlphanum(ch):
+				l.reconsumeIn(openTagLexNamedCharRef)
+			case ch == '#':
+				l.charRefBuf.WriteByte(byte(ch))
+				l.switchState(openTagLexNumericCharRef)
+			default:
+				l.flushCharRef()
+				l.reconsumeIn(l.returnState)
+			}
+		// 13.2.5.40 Self-closing start tag state
+		// https://html.spec.whatwg.org/multipage/parsing.html#self-closing-start-tag-state
+		case openTagLexSelfClosingStartTag:
+			ch := l.consumeNextChar()
+			switch {
+			case ch == '>':
+				break loop
+			case ch == eof:
+				l.assertionFailure("found EOF in tag")
+			default:
+				l.parseError("unexpected-solidus-in-tag")
+				l.reconsumeIn(openTagLexBeforeAttrName)
+			}
+		default:
+			panic("")
+		}
+	}
+
+	return l.attrs
+}
+
+func (l *openTagLexer) consumeNextChar() int {
+	var ch int
+	if l.pos < len(l.raw) {
+		ch = int(l.raw[l.pos])
+		l.pos++
+	} else {
+		ch = eof
+	}
+	return ch
+}
+
+func (l *openTagLexer) flushCharRef() {
+	b := l.charRefBuf.Bytes()
+	for _, bb := range b {
+		l.appendCurrVal(bb)
+	}
+}
+
+func (l *openTagLexer) newAttr() {
+	a := new(attr)
+	l.attrs = append(l.attrs, a)
+	l.currAttr = a
+}
+
+func (l *openTagLexer) appendCurrName(ch byte) {
+	if l.currAttr.name.start == 0 {
+		l.currAttr.name.start = pos(l.pos - 1)
+	}
+	l.currAttr.name.string += string(ch)
+}
+
+func (l *openTagLexer) appendCurrVal(ch byte) {
+	if l.currAttr.value.start == 0 {
+		l.currAttr.value.start = pos(l.pos - 1)
+	}
+	l.currAttr.value.string += string(ch)
+}
+
+func (l *openTagLexer) assertionFailure(format string, args ...any) {
+	err := fmt.Errorf(format, args...)
+	// FIXME(paulsmith): handle in regular control flow
+	panic(err)
+}
+
+func (l *openTagLexer) parseError(name string) {
+	switch name {
+	case "unexpected-character-in-attribute-name":
+		// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-unexpected-character-in-attribute-name
+	case "duplicate-attribute":
+		// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-duplicate-attribute
+		// This error occurs if the parser encounters an attribute in a tag that
+		// already has an attribute with the same name. The parser ignores all such
+		// duplicate occurrences of the attribute.
+	case "missing-attribute-value":
+		// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-missing-attribute-value
+		// This error occurs if the parser encounters a U+003E (>) code point where
+		// an attribute value is expected (e.g., <div id=>). The parser treats the
+		// attribute as having an empty value.
+	case "missing-whitespace-between-attributes":
+		// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-missing-whitespace-between-attributes
+	case "unexpected-solidus-in-tag":
+		// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-unexpected-solidus-in-tag
+		// This error occurs if the parser encounters a U+002F (/) code point
+		// that is not a part of a quoted attribute value and not immediately
+		// followed by a U+003E (>) code point in a tag (e.g., <div / id="foo">).
+		// In this case the parser behaves as if it encountered ASCII whitespace.
+	default:
+		log.Printf("parse error: %s", name)
+	}
+}
+
+func (l *openTagLexer) reconsumeIn(state openTagLexState) {
+	l.backup()
+	l.switchState(state)
+}
+
+func (l *openTagLexer) backup() {
+	if l.pos > 1 {
+		l.pos--
+	} else {
+		panic("underflowed")
+	}
+}
+
+func (l *openTagLexer) exitingState(state openTagLexState) {
+	//log.Printf("<- %s", state)
+}
+
+func (l *openTagLexer) enteringState(state openTagLexState) {
+	//log.Printf("-> %s", state)
+}
+
+func (l *openTagLexer) switchState(state openTagLexState) {
+	l.exitingState(l.state)
+	l.enteringState(state)
+	l.state = state
+}
+
+func (l *openTagLexer) cmpAttrName() {
+	for i := range l.attrs {
+		if l.currAttr.name == l.attrs[i].name {
+			l.parseError("duplicate-attribute")
+			// we're supposed to ignore this per the spec but the
+			// golang.org/x/net/html tokenizer doesn't, so we follow that
+			// TODO(paulsmith): open issue with ^^
+		}
+	}
+}
+
+func isASCIIUpper(ch int) bool {
+	if ch >= 'A' && ch <= 'Z' {
+		return true
+	}
+	return false
+}
+
+func isASCIIAlpha(ch int) bool {
+	if isASCIIUpper(ch) || (ch >= 'a' && ch <= 'z') {
+		return true
+	}
+	return false
+}
+
+func isASCIIAlphanum(ch int) bool {
+	if isASCIIAlpha(ch) || (ch >= '0' && ch <= '9') {
+		return true
+	}
+	return false
 }

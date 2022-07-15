@@ -1,11 +1,12 @@
 @code {
     name := req.FormValue("name")
+    bladeRunner := "Deckard"
 }
 
 @if name == "" {
     <div>
         <h1>Hello, world!</h1>
-        <a href="/if?name=Deckard">add <tt>name</tt> to URL query params</a>
+        <a href="/if?name=@bladeRunner">add <tt>name</tt> to URL query params</a>
     </div>
 } else {
     <div>

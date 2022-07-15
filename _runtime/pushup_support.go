@@ -13,6 +13,7 @@ import (
 type page interface {
 	// FIXME(paulsmith): return a pushup.Response object instead and don't take a writer
 	Render(io.Writer, *http.Request) error
+	filePath() string
 }
 
 // FIXME(paulsmith): add a wrapper type for easily going between a component and a http.Handler
@@ -89,6 +90,15 @@ func Render(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	return NotFound
+}
+
+func getRouteFromPath(path string) *route {
+	for _, route := range routes {
+		if route.regex.MatchString(path) {
+			return &route
+		}
+	}
+	return nil
 }
 
 func getParam(r *http.Request, slug string) string {
