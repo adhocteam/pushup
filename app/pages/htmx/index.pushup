@@ -1,0 +1,6 @@
+<h1>htmx examples</h1>
+
+<ul>
+    <li><a href="/htmx/click-to-load">Click to load</a></li>
+    <li><a href="/htmx/value-select">Value select</a></li>
+</ul>

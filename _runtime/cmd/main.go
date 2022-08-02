@@ -101,6 +101,9 @@ func main() {
 
 func pushupHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Response", "true")
+	}
 	if err := build.Render(w, r); err != nil {
 		logger.Printf("rendering route: %v", err)
 		if errors.Is(err, build.NotFound) {

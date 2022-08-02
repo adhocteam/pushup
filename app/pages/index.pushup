@@ -1,15 +1,19 @@
 @import "time"
 
 @code {
-    var title = "Welcome to Pushup"
-    var name = "Ad Hoc"
+    title := "Examples of Pushup"
+    greeting := "Hello"
+    name := "world"
 }
 
 <h2>@title</h2>
 
-<h3 style="color: blue">Pushup is a cool new web framework for Go. It's like if Go were PHP, but better.</h3>
+<h2 style="color: green">@greeting, @name!</h2>
+
+<h3 style="color: orange">Pushup is a cool new web framework for Go. It's like if Go were PHP, but better.</h3>
 
 <h4>Features</h4>
+
 <ul>
     <li>Compiled</li>
     <li>Modern hypertext</li>
@@ -18,10 +22,7 @@
     <li>Builds on Go <tt>net/http</tt></li>
 </ul>
 
-<p>Welcome, @name!</p>
 <p>It is currently @(time.Now().Format(time.UnixDate)).</p>
-
-<p style="color: green">This is <strong>some cool text</strong>.</p>
 
 <ul>
     <li><a href="/about">About</a></li>
@@ -33,4 +34,5 @@
     <li><a href="/no-layout">No layout</a></li>
     <li><a href="/x/sub">Subdirectory route (<tt>/x/sub</tt>)</a></li>
     <li><a href="/dyn/world">Dynamic path segments</a></li>
+    <li><a href="/htmx">htmx examples</a></li>
 </ul>

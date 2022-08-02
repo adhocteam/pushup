@@ -1,0 +1,20 @@
+<h1>htmx example: Value select</h1>
+
+<h2>Pick a make and model</h2>
+
+<div>
+    <label>Make</label>
+    <select name="make" hx-get="./models" hx-target="#models">
+        <option value="Apple silicon">Apple silicon</option>
+        <option value="Intel">Intel</option>
+        <option value="AMD">AMD</option>
+    </select>
+</div>
+
+<div>
+    <label>Model</label>
+    <select id="models" name="model">
+        <option value="M1">M1</option>
+        <option value="M2">M2</option>
+    </select>
+</div>

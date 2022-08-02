@@ -1,0 +1,40 @@
+@layout !
+
+@import "math/rand"
+@import "strconv"
+
+@code {
+    pageQuery := req.FormValue("page")
+    if pageQuery == "" {
+        pageQuery = "1"
+    }
+
+    page, err := strconv.Atoi(pageQuery)
+    if err != nil {
+        return err
+    }
+
+    var alphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+    uid := func() string{
+        b := make([]rune, 16)
+        for i := range b {
+            b[i] = alphabet[rand.Intn(len(alphabet))]
+        }
+        return string(b)
+    }
+}
+
+@for i := 0; i < 5; i++ {
+<tr>
+    <td>Agent Smith</td>
+    <td>void@(page * 5 + i)&#x40;pizza.null</td>
+    <td>@(uid())</td>
+</tr>
+}
+<tr id="replace-me">
+    <td colspan=3>
+        <button hx-get="./contacts?page=@(page + 1)" hx-target="#replace-me" hx-swap="outerHTML">
+            Load more agents
+        </button>
+    </td>
+</tr>

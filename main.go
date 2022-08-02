@@ -238,6 +238,8 @@ func watchForReload(cancel context.CancelFunc, root string) (chan struct{}, erro
 	}
 
 	go debounce(125*time.Millisecond, watcher.Events, func(event fsnotify.Event) {
+		// FIXME(paulsmith): we should also detect new directories and add them
+		// to the watcher
 		if event.Op > 0 {
 			log.Printf("file changed in project directory, reloading")
 			cancel()
@@ -299,7 +301,7 @@ func modifyResponseAddDevReload(res *http.Response) error {
 		return fmt.Errorf("parsing MIME type: %w", err)
 	}
 
-	if mediatype == "text/html" {
+	if mediatype == "text/html" && res.Header.Get("HX-Response") != "true" {
 		doc, err := appendDevReloaderScript(res.Body)
 		if err != nil {
 			return fmt.Errorf("appending dev reloading script: %w", err)
@@ -380,9 +382,9 @@ source.onmessage = e => {
 
 source.addEventListener("reload", () => {
 	console.log("Reloading");
-	//location.reload(true);
-	source.close();
-	htmx.ajax('GET', location.pathname, {target: "body", source: "body", swap: "outerHTML"});
+	location.reload(true);
+	//source.close();
+	//htmx.ajax('GET', location.pathname, {target: "body", : "body", swap: "outerHTML"});
 }, false);
 
 source.addEventListener("open", e => {
@@ -1136,6 +1138,7 @@ func (g *codeGenerator) visitGoStrExpr(n *nodeGoStrExpr) {
 		g.used("html/template")
 		g.used("fmt")
 		g.used("io")
+		g.used("strconv")
 		g.nodeLineNo(n)
 		g.bodyPrintf("{\n")
 		g.bodyPrintf("  var __x any = %s\n", n.expr)
@@ -1146,6 +1149,8 @@ func (g *codeGenerator) visitGoStrExpr(n *nodeGoStrExpr) {
 		g.bodyPrintf("      io.WriteString(w, template.HTMLEscapeString(__val.String()))\n")
 		g.bodyPrintf("    case []byte:\n")
 		g.bodyPrintf("      template.HTMLEscape(w, __val)\n")
+		g.bodyPrintf("    case int:\n")
+		g.bodyPrintf("      io.WriteString(w, strconv.Itoa(__val))\n")
 		// FIXME(paulsmith): allow any expression %v-style
 		g.bodyPrintf("    default:\n")
 		g.bodyPrintf("      panic(\"expected a string, []bytes, or fmt.Stringer expression\")\n")
@@ -1273,7 +1278,8 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 			// of the layout could go - maybe a special header in request object?
 			g.used("golang.org/x/sync/errgroup")
 			g.bodyPrintf(
-				`g := new(errgroup.Group)
+				`
+				g := new(errgroup.Group)
 				yield := make(chan struct{})
 				layout := getLayout("%s")
 				g.Go(func() error {
@@ -1300,7 +1306,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		if comp.layout != "" {
 			g.bodyPrintf(
 				`yield <- struct{}{}
-				if err := g.Wait(); err != nil {
+				 if err := g.Wait(); err != nil {
 					return err
 				}
 			`)
@@ -1881,11 +1887,16 @@ func (p *codeParser) prev() goToken {
 	return p.acceptedToken
 }
 
-func (p *codeParser) advance() {
+func (p *codeParser) sync() goToken {
 	t := p.peek()
+	p.parser.offset = p.baseOffset + p.file.Offset(t.pos) + len(t.String())
+	return t
+}
+
+func (p *codeParser) advance() {
 	// the Go scanner skips over whitespace so we need to be careful about the
 	// logic for advancing the main parser internal source offset.
-	p.parser.offset = p.baseOffset + p.file.Offset(t.pos) + len(t.String())
+	t := p.sync()
 	p.acceptedToken = t
 	p.lookaheadToken = p.lookahead()
 }
@@ -2115,7 +2126,7 @@ loop:
 	if p.peek().tok != token.RPAREN {
 		panic("")
 	}
-	p.advance()
+	_ = p.sync()
 	result.expr = p.sourceFrom(start)[:n]
 	result.pos.end = result.pos.start + n
 	if _, err := goparser.ParseExpr(result.expr); err != nil {
@@ -2521,6 +2532,28 @@ loop:
 			default:
 				l.appendCurrVal(byte(ch))
 			}
+		// 13.2.5.38 Attribute value (unquoted) state
+		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(unquoted)-state
+		case openTagLexAttrValUnquoted:
+			ch := l.consumeNextChar()
+			switch {
+			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+				l.switchState(openTagLexBeforeAttrName)
+			case ch == '&':
+				l.returnState = openTagLexAttrValUnquoted
+				l.switchState(openTagLexCharRef)
+			case ch == '>':
+				break loop
+			case ch == 0:
+				l.assertionFailure("found null in attribute value (unquoted) state")
+			case ch == '"' || ch == '\'' || ch == '<' || ch == '=' || ch == '`':
+				l.parseError("unexpected-null-character")
+				l.appendCurrVal(byte(ch))
+			case ch == eof:
+				l.assertionFailure("found EOF in tag")
+			default:
+				l.appendCurrVal(byte(ch))
+			}
 		// 13.2.5.39 After attribute value (quoted) state
 		// https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-value-(quoted)-state
 		case openTagLexAfterAttrValQuoted:
@@ -2568,7 +2601,7 @@ loop:
 				l.reconsumeIn(openTagLexBeforeAttrName)
 			}
 		default:
-			panic("")
+			panic("open tag lex state " + l.state.String())
 		}
 	}
 
@@ -2641,6 +2674,12 @@ func (l *openTagLexer) parseError(name string) {
 		// that is not a part of a quoted attribute value and not immediately
 		// followed by a U+003E (>) code point in a tag (e.g., <div / id="foo">).
 		// In this case the parser behaves as if it encountered ASCII whitespace.
+	case "unexpected-null-character":
+		// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-unexpected-null-character
+		// This error occurs if the parser encounters a U+0000 NULL code point
+		// in the input stream in certain positions. In general, such code
+		// points are either ignored or, for security reasons, replaced with a
+		// U+FFFD REPLACEMENT CHARACTER.
 	default:
 		log.Printf("parse error: %s", name)
 	}
