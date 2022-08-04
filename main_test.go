@@ -23,6 +23,10 @@ import (
 )
 
 func TestPushup(t *testing.T) {
+	os.RemoveAll("./build")
+	t.Cleanup(func() {
+		os.RemoveAll("./build")
+	})
 	samplesDir := "./samples"
 	entries, err := os.ReadDir(samplesDir)
 	if err != nil {
@@ -305,22 +309,22 @@ func TestGeneratedFilename(t *testing.T) {
 		{
 			"app/pages/index.pushup",
 			"app/pages",
-			"index.go",
+			"index__gen.go",
 		},
 		{
 			"app/pages/about.pushup",
 			"app/pages",
-			"about.go",
+			"about__gen.go",
 		},
 		{
 			"app/pages/x/sub.pushup",
 			"app/pages",
-			"x__sub.go",
+			"x__sub__gen.go",
 		},
 		{
 			"samples/foo.pushup",
 			".",
-			"samples__foo.go",
+			"samples__foo__gen.go",
 		},
 	}
 

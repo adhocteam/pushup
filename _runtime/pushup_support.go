@@ -4,15 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
 type page interface {
 	// FIXME(paulsmith): return a pushup.Response object instead and don't take a writer
-	Render(io.Writer, *http.Request) error
+	Respond(http.ResponseWriter, *http.Request) error
 	filePath() string
 }
 
@@ -21,7 +23,7 @@ type page interface {
 
 // NOTE(paulsmith): routing inspired by https://benhoyt.com/writings/go-routing/
 
-type routeList []route
+type routeList []*route
 
 var routes routeList
 
@@ -36,9 +38,9 @@ type route struct {
 	page  page
 }
 
-func newRoute(path string, c page) route {
+func newRoute(path string, c page) *route {
 	p := regexPatFromRoute(path)
-	var result route
+	result := new(route)
 	result.path = path
 	result.regex = regexp.MustCompile("^" + p.pat + "$")
 	result.slugs = p.slugs
@@ -74,31 +76,54 @@ var NotFound = errors.New("page not found")
 
 type ctxKey struct{}
 
-func Render(w http.ResponseWriter, r *http.Request) error {
-	for _, route := range routes {
-		matches := route.regex.FindStringSubmatch(r.URL.Path)
-		if len(matches) > 0 {
-			params := zipMap(route.slugs, matches[1:])
-			// NOTE(paulsmith): since we totally control the Render() method on
-			// the component interface, we probably should pass the params to
-			// Render instead of wrapping the request object with context values.
-			ctx := context.WithValue(r.Context(), ctxKey{}, params)
-			if err := route.page.Render(w, r.WithContext(ctx)); err != nil {
-				return err
-			}
-			return nil
+func Respond(w http.ResponseWriter, r *http.Request) error {
+	route := getRouteFromPath(r.URL.Path)
+	if route == nil {
+		return NotFound
+	}
+	matches := route.regex.FindStringSubmatch(r.URL.Path)
+	params := zipMap(route.slugs, matches[1:])
+	// NOTE(paulsmith): since we totally control the Respond() method on
+	// the component interface, we probably should pass the params to
+	// Respond instead of wrapping the request object with context values.
+	ctx := context.WithValue(r.Context(), ctxKey{}, params)
+	if err := route.page.Respond(w, r.WithContext(ctx)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func mostSpecificMatch(routes []*route, path string) *route {
+	if len(routes) == 1 {
+		return routes[0]
+	}
+
+	most := routes[0]
+
+	for _, route := range routes[1:] {
+		if len(route.slugs) < len(most.slugs) {
+			most = route
 		}
 	}
-	return NotFound
+
+	return most
 }
 
 func getRouteFromPath(path string) *route {
+	var matchedRoutes []*route
+
 	for _, route := range routes {
 		if route.regex.MatchString(path) {
-			return &route
+			matchedRoutes = append(matchedRoutes, route)
 		}
 	}
-	return nil
+
+	if len(matchedRoutes) == 0 {
+		return nil
+	}
+
+	return mostSpecificMatch(matchedRoutes, path)
 }
 
 func getParam(r *http.Request, slug string) string {
@@ -107,7 +132,7 @@ func getParam(r *http.Request, slug string) string {
 }
 
 type layout interface {
-	Render(yield chan struct{}, w io.Writer, req *http.Request) error
+	Respond(yield chan struct{}, w http.ResponseWriter, req *http.Request) error
 }
 
 var layouts = make(map[string]layout)
@@ -135,4 +160,19 @@ func zipMap[K comparable, V any](ks []K, vs []V) map[K]V {
 		m[ks[i]] = vs[i]
 	}
 	return m
+}
+
+func printEscaped(w io.Writer, val any) {
+	switch val := val.(type) {
+	case string:
+		io.WriteString(w, template.HTMLEscapeString(val))
+	case fmt.Stringer:
+		io.WriteString(w, template.HTMLEscapeString(val.String()))
+	case []byte:
+		template.HTMLEscape(w, val)
+	case int:
+		io.WriteString(w, strconv.Itoa(val))
+	default:
+		io.WriteString(w, template.HTMLEscapeString(fmt.Sprint(val)))
+	}
 }

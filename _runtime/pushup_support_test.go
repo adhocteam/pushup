@@ -51,3 +51,44 @@ func TestRegexPatFromRoute(t *testing.T) {
 		})
 	}
 }
+
+func TestMostSpecificMatch(t *testing.T) {
+	tests := []struct {
+		routes []*route
+		path   string
+		want   int
+	}{
+		{
+			[]*route{
+				newRoute("/", nil),
+			},
+			"/",
+			0,
+		},
+		{
+			[]*route{
+				newRoute("/:id", nil),
+				newRoute("/new", nil),
+			},
+			"/new",
+			1,
+		},
+		{
+			[]*route{
+				newRoute("/:name/:thing1/:thing2", nil),
+				newRoute("/:name/foo/baz", nil),
+			},
+			"/foo/bar/baz",
+			1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+			got := mostSpecificMatch(test.routes, test.path)
+			if want := test.routes[test.want]; want != got {
+				t.Errorf("want %v, got %v", want, got)
+			}
+		})
+	}
+}

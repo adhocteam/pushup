@@ -36,7 +36,7 @@ func TestParse(t *testing.T) {
 		},
 		{
 			`<p>Hello, @name!</p>
-@code {
+@{
 	name := "world"
 }
 `,
@@ -48,8 +48,8 @@ func TestParse(t *testing.T) {
 					&nodeLiteral{str: "!", pos: span{start: 15, end: 16}},
 					&nodeLiteral{str: "</p>", pos: span{start: 16, end: 20}},
 					&nodeLiteral{str: "\n", pos: span{start: 20, end: 21}},
-					&nodeGoCode{code: "name := \"world\"\n", pos: span{start: 28, end: 44}},
-					&nodeLiteral{str: "\n", pos: span{start: 47, end: 48}},
+					&nodeGoCode{code: "name := \"world\"\n", pos: span{start: 23, end: 39}},
+					&nodeLiteral{str: "\n", pos: span{start: 42, end: 43}},
 				}},
 		},
 		{
@@ -163,7 +163,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			`@code {
+			`@{
 	type product struct {
 		name string
 		price float32
@@ -181,7 +181,7 @@ func TestParse(t *testing.T) {
 
 	products := []product{{name: "Widget", price: 9.49}}
 `,
-						pos: span{start: 7, end: 117},
+						pos: span{start: 2, end: 112},
 					},
 				},
 			},

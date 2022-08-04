@@ -1,0 +1,121 @@
+@import "log"
+@import "strconv"
+@import "strings"
+@import "time"
+
+@handler {
+    id, err := strconv.Atoi(getParam(req, "id"))
+    if err != nil {
+        return err
+    }
+
+    album, err := getAlbumById(DB, id)
+    if err != nil {
+        return err
+    }
+
+    isNumber := func(val string) (int, bool) {
+        n, err := strconv.Atoi(val) 
+        if err != nil {
+            return 0, false
+        }
+        return n, true
+    }
+
+    errors := make(map[string]string)
+
+    if req.Method == "POST" {
+        album.artist = strings.TrimSpace(req.FormValue("artist"))
+        album.title = strings.TrimSpace(req.FormValue("title"))
+        releasedRaw := strings.TrimSpace(req.FormValue("released"))
+        lengthRaw := strings.TrimSpace(req.FormValue("length"))
+
+        if album.artist == "" {
+            errors["artist"] = "artist name is required"
+        }
+        if album.title == "" {
+            errors["title"] = "title is required"
+        }
+        var releasedIsNum bool
+        album.released, releasedIsNum = isNumber(releasedRaw)
+        if releasedRaw == "" {
+            errors["released"] = "release year is required"
+        } else if !releasedIsNum || !(album.released >= 1900 && album.released <= time.Now().Year()) {
+            errors["released"] = "release year must be between 1900 and this year"
+        }
+        var lengthIsNum bool
+        album.length, lengthIsNum = isNumber(lengthRaw)
+        if lengthRaw == "" {
+            errors["length"] = "length is required"
+        } else if !lengthIsNum || !(album.length > 0) {
+            errors["length"] = "length must be a number greater than 0"
+        }
+
+        if len(errors) == 0 {
+            if err := editAlbum(DB, id, album); err != nil {
+                log.Printf("error: %v", err)
+                http.Error(w, http.StatusText(500), 500)
+                return nil
+            }
+            http.Redirect(w, req, "/crud", 301)
+        }
+    }
+}
+
+<h1>Edit @album.title</h1>
+
+<p><a href="/crud/album/@album.id">Cancel</a></p>
+
+<style>
+form { border: 1px solid #ddd; background: #f3f4f0; padding: 2rem; }
+form h2, form h3 { margin: 0 0 0.5rem 0; }
+form section { margin: 0 0 1rem 0; }
+.form-element { display: flex; justify-content: align-items: center; flex-end; padding: 1em 0; }
+.form-element > label { flex: 1; }
+.form-element > input { flex: 2; padding: 0.5rem; }
+form button { font-size: 1.5rem; padding: 1rem; }
+</style>
+
+<form method="post">
+    @if len(errors) > 0 {
+        <section style="color: red">
+            <h3>Errors</h3>
+            <ul>
+                @for _, message := range errors {
+                    <li>@message</li>
+                }
+            </ul>
+        </section>
+    }
+    <section>
+        <h2>Artist</h2>
+        <div class="form-element">
+            <label for="artist">Artist name</label>
+            <input type="text" name="artist" id="artist" value="@album.artist">
+        </div>
+    </section>
+
+    <section>
+        <h2>Album info</h2>
+        <div class="form-element">
+            <label for="title">Title</label>
+            <input type="text" name="title" id="title" value="@album.title">
+        </div>
+        <div class="form-element">
+            <label for="released">Year released</label>
+            <input type="text" name="released" id="released" value="@album.released">
+        </div>
+        <div class="form-element">
+            <label for="length">Length (minutes)</label>
+            <input type="number" name="length" id="length" value="@album.length">
+        </div>
+    </section>
+
+    <section>
+        <div>
+            <button type="submit">Update album</button>
+            <input type="hidden" name="id" value="@album.id">
+        </div>
+    </section>
+</form>
+

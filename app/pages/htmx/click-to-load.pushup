@@ -1,5 +1,4 @@
 @import "math/rand"
-@import "strconv"
 
 <style>
 table { width: 100%; border-collapse: collapse; }
@@ -8,7 +7,7 @@ thead tr { border-bottom: 2px solid #ccc; }
 tbody tr { border-bottom: 1px solid #ccc; }
 </style>
 
-@code {
+@{
     var alphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
     uid := func() string{
         b := make([]rune, 16)

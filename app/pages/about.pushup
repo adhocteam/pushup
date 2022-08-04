@@ -1,4 +1,4 @@
-@code {
+@{
     title := "About Pushup"
     var remoteAddr string
     if req.Header.Get("X-Real-Ip") != "" {

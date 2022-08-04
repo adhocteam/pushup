@@ -1,0 +1,115 @@
+@import "log"
+@import "strconv"
+@import "strings"
+@import "time"
+
+@handler {
+    isNumber := func(val string) (int, bool) {
+        n, err := strconv.Atoi(val) 
+        if err != nil {
+            return 0, false
+        }
+        return n, true
+    }
+
+    errors := make(map[string]string)
+
+    if req.Method == "POST" {
+        artist := strings.TrimSpace(req.FormValue("artist"))
+        title := strings.TrimSpace(req.FormValue("title"))
+        releasedRaw := strings.TrimSpace(req.FormValue("released"))
+        lengthRaw := strings.TrimSpace(req.FormValue("length"))
+
+        if artist == "" {
+            errors["artist"] = "artist name is required"
+        }
+        if title == "" {
+            errors["title"] = "title is required"
+        }
+        released, releasedIsNum := isNumber(releasedRaw)
+        if releasedRaw == "" {
+            errors["released"] = "release year is required"
+        } else if !releasedIsNum || !(released >= 1900 && released <= time.Now().Year()) {
+            errors["released"] = "release year must be between 1900 and this year"
+        }
+        length, lengthIsNum := isNumber(lengthRaw)
+        if lengthRaw == "" {
+            errors["length"] = "length is required"
+        } else if !lengthIsNum || !(length > 0) {
+            errors["length"] = "length must be a number greater than 0"
+        }
+
+        if len(errors) == 0 {
+            a := &album{artist: artist, title: title, released: released, length: length}
+            if err := addAlbum(DB, a); err != nil {
+                log.Printf("error: %v", err)
+                http.Error(w, http.StatusText(500), 500)
+                return nil
+            }
+            http.Redirect(w, req, "/crud", 301)
+        }
+    }
+}
+
+<h1>Add new album</h1>
+
+<p><a href="/crud">Cancel</a></p>
+
+<style>
+form { border: 1px solid #ddd; background: #f3f4f0; padding: 2rem; }
+form h2, form h3 { margin: 0 0 0.5rem 0; }
+form section { margin: 0 0 1rem 0; }
+.form-element { display: flex; justify-content: align-items: center; flex-end; padding: 1em 0; }
+.form-element > label { flex: 1; }
+.form-element > input { flex: 2; padding: 0.5rem; }
+form button { font-size: 1.5rem; padding: 1rem; }
+</style>
+
+<form method="post">
+    @if len(errors) > 0 {
+        <section style="color: red">
+            <h3>Errors</h3>
+            <ul>
+                @for _, message := range errors {
+                    <li>@message</li>
+                }
+            </ul>
+        </section>
+    }
+    <section>
+        <h2>Artist</h2>
+        <div class="form-element">
+            <label for="artist">Artist name</label>
+            <!-- NOTE there is a workaround for a parsing issue -- if you refer to Go strings
+                 inside a double-quoted HTML attribute, then the Go string must use the backquote
+                 or raw literal style, not the double-quoted style. (or use single-quoted HTML
+                 attributes.) arguably, Pushup should emit quoted wrapped attributes to avoid
+                 potential quote escaping issue of the Go code having quotes that inadvertently
+                 prematurely close the rendered HTML attribute. -->
+            <input type="text" name="artist" id="artist" value="@(req.FormValue(`artist`))">
+        </div>
+    </section>
+
+    <section>
+        <h2>Album info</h2>
+        <div class="form-element">
+            <label for="title">Title</label>
+            <input type="text" name="title" id="title" value="@(req.FormValue(`title`))">
+        </div>
+        <div class="form-element">
+            <label for="released">Year released</label>
+            <input type="text" name="released" id="released" value="@(req.FormValue(`released`))">
+        </div>
+        <div class="form-element">
+            <label for="length">Length (minutes)</label>
+            <input type="number" name="length" id="length" value="@(req.FormValue(`length`))">
+        </div>
+    </section>
+
+    <section>
+        <div>
+            <button type="submit">Add album</button>
+        </div>
+    </section>
+</form>
+

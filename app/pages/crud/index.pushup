@@ -1,0 +1,36 @@
+@handler {
+    albums, err := getAlbums(DB, 0, 0)
+    if err != nil {
+        return err
+    }
+}
+
+<h1>CRUD example</h1>
+
+<h2>Album collection</h2>
+
+<p><a href="/crud/album/new">Add album</a></p>
+
+<style>
+ul.albums {
+    display: flex;
+    justify-content: space-evenly;
+    flex-flow: row wrap;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.albums li {
+    height: 10vh;
+    width: 140px;
+    border: 1px solid #ddd;
+    margin: 1em 0;
+}
+</style>
+
+<ul class="albums">
+    @for _, album := range albums {
+        <li><a href="/crud/album/@album.id"><b>@album.title</b><br/>@album.artist</a></li>
+    }
+</ul>
+

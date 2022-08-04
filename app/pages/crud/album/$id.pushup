@@ -1,0 +1,39 @@
+@import "strconv"
+
+@handler {
+    id, err := strconv.Atoi(getParam(req, "id"))
+    if err != nil {
+        return err
+    }
+
+    album, err := getAlbumById(DB, id)
+    if err != nil {
+        return err
+    }
+}
+
+<h1>Album</h1>
+
+<p><a href="/crud">Back to album list</a></p>
+
+<style>
+dl { display: flex; flex-flow: row wrap; }
+dt { font-weight: bold; flex-basis: 20%; padding: 0.1em; }
+dd { font-weight: normal; flex-basis: 70%; flex-grow: 1; padding: 0.1em; }
+</style>
+
+<dl>
+    <dt>Artist</dt>
+    <dd>@album.artist</dd>
+
+    <dt>Title</dt>
+    <dd>@album.title</dd>
+
+    <dt>Released</dt>
+    <dd>@album.released</dd>
+
+    <dt>Length</dt>
+    <dd>@album.length minutes</dd>
+</dl>
+
+<p><a href="./edit/@album.id">Edit</a>, <a href="./delete/@album.id">Delete &hellip;</a></p>

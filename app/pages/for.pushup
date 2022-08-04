@@ -1,4 +1,6 @@
-@code {
+@import "fmt"
+
+@{
     type product struct {
         name string
         price float32

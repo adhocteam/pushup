@@ -2,19 +2,29 @@
 @import "os"
 @import "path/filepath"
 
-
-@code {
+@handler {
     path := req.FormValue("route")
     route := getRouteFromPath(path)
+    if route == nil {
+        http.Error(w, http.StatusText(404), 404)
+        return nil
+    }
     b, err := os.ReadFile(filepath.Join("app", "pages", route.page.filePath()))
     if err != nil {
         log.Printf("reading file %s: %v", err)
-        //http.Error(w, http.StatusText(500), 500)
         return err
     }
     source := string(b)
 }
 
 <p>Source code for Pushup page <a href="@path"><b>@path</b></a>:</p>
+
+<style>
+pre {
+    padding: 1em;
+    background: #f3f4f0;
+    overflow-x: scroll;
+}
+</style>
 
 <pre><code>@source</code></pre>

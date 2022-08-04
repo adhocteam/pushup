@@ -1,4 +1,4 @@
-@code {
+@{
     name := "fnord"
     val := "quux"
 }

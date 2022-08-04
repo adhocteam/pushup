@@ -157,9 +157,11 @@ func newPushupContext(parent context.Context) *pushupContext {
 func parseAndCompile(root string, outDir string, parseOnly bool) error {
 	var layoutsDir string
 	var pagesDir string
+	var pkgDir string
 
 	var layoutFiles []string
 	var pushupFiles []string
+	var pkgFiles []string
 
 	os.RemoveAll(outDir)
 
@@ -174,7 +176,7 @@ func parseAndCompile(root string, outDir string, parseOnly bool) error {
 
 			entries, err := os.ReadDir(layoutsDir)
 			if err != nil {
-				return fmt.Errorf("reading app directory: %w", err)
+				return fmt.Errorf("reading app layouts directory: %w", err)
 			}
 
 			for _, entry := range entries {
@@ -192,6 +194,25 @@ func parseAndCompile(root string, outDir string, parseOnly bool) error {
 			}
 
 			pushupFiles = getPushupPagePaths(pagesDir)
+		}
+
+		pkgDir = filepath.Join(root, "pkg")
+		{
+			if !dirExists(pkgDir) {
+				return fmt.Errorf("invalid Pushup project directory structure: couldn't find `pkg` subdir")
+			}
+
+			entries, err := os.ReadDir(pkgDir)
+			if err != nil {
+				return fmt.Errorf("reading app pkg directory: %w", err)
+			}
+
+			for _, entry := range entries {
+				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
+					path := filepath.Join(pkgDir, entry.Name())
+					pkgFiles = append(pkgFiles, path)
+				}
+			}
 		}
 	}
 
@@ -222,6 +243,13 @@ func parseAndCompile(root string, outDir string, parseOnly bool) error {
 		}
 	}
 
+	//log.Printf("PKG FILES: %v", pkgFiles)
+	for _, path := range pkgFiles {
+		if err := copyFile(filepath.Join(outDir, filepath.Base(path)), path); err != nil {
+			return fmt.Errorf("copying Go package file %s: %w", path, err)
+		}
+	}
+
 	if err := copyFile(filepath.Join(outDir, "pushup_support.go"), filepath.Join("_runtime", "pushup_support.go")); err != nil {
 		return fmt.Errorf("copying runtime file: %w", err)
 	}
@@ -238,28 +266,53 @@ func watchForReload(cancel context.CancelFunc, root string) (chan struct{}, erro
 	}
 
 	go debounce(125*time.Millisecond, watcher.Events, func(event fsnotify.Event) {
-		// FIXME(paulsmith): we should also detect new directories and add them
-		// to the watcher
 		if event.Op > 0 {
-			log.Printf("file changed in project directory, reloading")
+			switch event.Op {
+			case fsnotify.Create:
+				if isDir(event.Name) {
+					if err := watchDirRecursively(watcher, event.Name); err != nil {
+						panic(err)
+					}
+					return
+				}
+			case fsnotify.Remove:
+				if err := watcher.Remove(event.Name); err != nil {
+					panic(err)
+				}
+			}
+			log.Printf("change detected in project directory, reloading")
 			cancel()
 			reload <- struct{}{}
 		}
 	})
 
-	if err := fs.WalkDir(os.DirFS(root), ".", func(path string, d fs.DirEntry, err error) error {
-		if d.IsDir() {
-			if err := watcher.Add(filepath.Join(root, path)); err != nil {
-				return fmt.Errorf("adding path %s to watch: %v", path, err)
-			}
-			log.Printf("added %s to watch for reloading", d.Name())
-		}
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("walking project for dirs to watch: %v", err)
+	if err := watchDirRecursively(watcher, root); err != nil {
+		return nil, fmt.Errorf("adding dir to watch: %w", err)
 	}
 
 	return reload, nil
+}
+
+func isDir(path string) bool {
+	fi, err := os.Stat(path)
+	if err != nil {
+		panic(err)
+	}
+	return fi.IsDir()
+}
+
+func watchDirRecursively(watcher *fsnotify.Watcher, root string) error {
+	err := fs.WalkDir(os.DirFS(root), ".", func(path string, d fs.DirEntry, err error) error {
+		if d.IsDir() {
+			path := filepath.Join(root, path)
+			if err := watcher.Add(path); err != nil {
+				return fmt.Errorf("adding path %s to watch: %w", path, err)
+			}
+			log.Printf("adding %s to watch", path)
+		}
+		return nil
+	})
+	return err
 }
 
 func startReloadRevProxy(socketPath string, buildComplete *sync.Cond) error {
@@ -708,9 +761,9 @@ func generatedFilename(path string, root string, strategy compilationStrategy) s
 	var suffix string
 	switch strategy {
 	case compileLayout:
-		suffix = "_layout"
+		suffix = "__layout-gen"
 	case compilePushupPage:
-		suffix = ""
+		suffix = "__gen"
 	default:
 		panic("")
 	}
@@ -805,9 +858,17 @@ func (e *nodeGoStrExpr) accept(v nodeVisitor) { v.visitGoStrExpr(e) }
 
 var _ node = (*nodeGoStrExpr)(nil)
 
+type goCodeContext int
+
+const (
+	inlineGoCode goCodeContext = iota
+	handlerGoCode
+)
+
 type nodeGoCode struct {
-	code string
-	pos  span
+	context goCodeContext
+	code    string
+	pos     span
 }
 
 func (e nodeGoCode) Pos() span             { return e.pos }
@@ -965,15 +1026,14 @@ func coalesceLiterals(nodes []node) []node {
 type page struct {
 	layout  string
 	imports []importDecl
+	handler *nodeGoCode
 	nodes   []node
 }
 
 func postProcessTree(tree *syntaxTree) (*page, error) {
 	// FIXME(paulsmith): recurse down into child nodes
-	// FIXME(paulsmith): handle nodeGoCode nodes
 	layoutSet := false
-	page := new(page)
-	page.layout = "default"
+	page := &page{layout: "default"}
 	n := 0
 	for _, e := range tree.nodes {
 		switch e := e.(type) {
@@ -989,6 +1049,16 @@ func postProcessTree(tree *syntaxTree) (*page, error) {
 				page.layout = e.name
 			}
 			layoutSet = true
+		case *nodeGoCode:
+			if e.context == handlerGoCode {
+				if page.handler != nil {
+					return nil, fmt.Errorf("only one handler per page can be defined")
+				}
+				page.handler = e
+			} else {
+				tree.nodes[n] = e
+				n++
+			}
 		default:
 			tree.nodes[n] = e
 			n++
@@ -1076,8 +1146,8 @@ func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrate
 	g.strategy = strategy
 	g.basename = basename
 	g.imports = make(map[importDecl]bool)
-	if c, ok := c.(*pageCodeGen); ok {
-		for _, decl := range c.page.imports {
+	if p, ok := c.(*pageCodeGen); ok {
+		for _, decl := range p.page.imports {
 			g.imports[decl] = true
 		}
 	}
@@ -1135,31 +1205,15 @@ func (g *codeGenerator) visitGoStrExpr(n *nodeGoStrExpr) {
 		g.bodyPrintf("yield <- struct{}{}\n")
 		g.bodyPrintf("<-yield\n")
 	} else {
-		g.used("html/template")
-		g.used("fmt")
-		g.used("io")
-		g.used("strconv")
 		g.nodeLineNo(n)
-		g.bodyPrintf("{\n")
-		g.bodyPrintf("  var __x any = %s\n", n.expr)
-		g.bodyPrintf("  switch __val := __x.(type) {\n")
-		g.bodyPrintf("    case string:\n")
-		g.bodyPrintf("      io.WriteString(w, template.HTMLEscapeString(__val))\n")
-		g.bodyPrintf("    case fmt.Stringer:\n")
-		g.bodyPrintf("      io.WriteString(w, template.HTMLEscapeString(__val.String()))\n")
-		g.bodyPrintf("    case []byte:\n")
-		g.bodyPrintf("      template.HTMLEscape(w, __val)\n")
-		g.bodyPrintf("    case int:\n")
-		g.bodyPrintf("      io.WriteString(w, strconv.Itoa(__val))\n")
-		// FIXME(paulsmith): allow any expression %v-style
-		g.bodyPrintf("    default:\n")
-		g.bodyPrintf("      panic(\"expected a string, []bytes, or fmt.Stringer expression\")\n")
-		g.bodyPrintf("  }\n")
-		g.bodyPrintf("}\n")
+		g.bodyPrintf("printEscaped(w, %s)\n", n.expr)
 	}
 }
 
 func (g *codeGenerator) visitGoCode(n *nodeGoCode) {
+	if n.context != inlineGoCode {
+		panic(fmt.Sprintf("assertion failure: expected inlineGoCode, got %v", n.context))
+	}
 	srcLineNo := g.c.lineNo(n.Pos())
 	lines := strings.Split(n.code, "\n")
 	for _, line := range lines {
@@ -1258,22 +1312,37 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	// FIXME(paulsmith): feels a bit hacky to have this method in the page interface
 	g.bodyPrintf("func (t *%s) filePath() string {\n", typeName)
 	g.bodyPrintf("  return t.pushupFilePath\n")
-	g.bodyPrintf("}\n")
+	g.bodyPrintf("}\n\n")
 
 	g.used("io")
 	g.used("net/http")
 	switch strategy {
 	case compilePushupPage:
-		g.bodyPrintf("func (t *%s) Render(w io.Writer, req *http.Request) error {\n", typeName)
+		g.bodyPrintf("func (t *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", typeName)
 	case compileLayout:
-		g.bodyPrintf("func (t *%s) Render(yield chan struct{}, w io.Writer, req *http.Request) error {\n", typeName)
+		g.bodyPrintf("func (t *%s) Respond(yield chan struct{}, w http.ResponseWriter, req *http.Request) error {\n", typeName)
 	default:
 		panic("")
 	}
 
 	if strategy == compilePushupPage {
-		comp := c.(*pageCodeGen)
-		if comp.layout != "" {
+		p := c.(*pageCodeGen)
+
+		// NOTE(paulsmith): we might want to encapsulate this in its own
+		// function/method, but would have to figure out the interplay between
+		// user code and control flow, i.e., return an error if the handler
+		// wants to skip rendering, redirect, etc.
+		if h := p.page.handler; h != nil {
+			srcLineNo := g.c.lineNo(h.Pos())
+			lines := strings.Split(h.code, "\n")
+			for _, line := range lines {
+				g.lineNo(srcLineNo)
+				g.bodyPrintf("  %s\n", line)
+				srcLineNo++
+			}
+		}
+
+		if p.layout != "" {
 			// TODO(paulsmith): this is where a flag that could conditionally toggle the rendering
 			// of the layout could go - maybe a special header in request object?
 			g.used("golang.org/x/sync/errgroup")
@@ -1283,14 +1352,14 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 				yield := make(chan struct{})
 				layout := getLayout("%s")
 				g.Go(func() error {
-					if err := layout.Render(yield, w, req); err != nil {
+					if err := layout.Respond(yield, w, req); err != nil {
 						return err
 					}
 					return nil
 				})
 				// Let layout render run until its @contents is encountered
 				<-yield
-			`, comp.layout)
+			`, p.layout)
 		}
 	}
 
@@ -1302,8 +1371,8 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	g.generate()
 
 	if strategy == compilePushupPage {
-		comp := c.(*pageCodeGen)
-		if comp.layout != "" {
+		p := c.(*pageCodeGen)
+		if p.layout != "" {
 			g.bodyPrintf(
 				`yield <- struct{}{}
 				 if err := g.Wait(); err != nil {
@@ -1687,7 +1756,7 @@ tokenLoop:
 func (p *htmlParser) transition() node {
 	codeParser := p.parser.codeParser
 	codeParser.reset()
-	e := codeParser.parseCodeBlock()
+	e := codeParser.parseCode()
 	return e
 }
 
@@ -1769,8 +1838,13 @@ loop:
 			} else {
 				p.parser.errorf("HTML tokenizer: %w", p.err)
 			}
-		// FIXME(paulsmith): handle self-closing tags/elements
-		// FIXME(paulsmith): allow transition in attribute
+		case html.SelfClosingTagToken:
+			elem := new(nodeElement)
+			elem.tag = newTag(p.tagname, p.attrs)
+			elem.pos.start = p.parser.offset - len(p.raw)
+			elem.pos.end = p.parser.offset
+			p.advance()
+			result = append(result, elem)
 		case html.StartTagToken:
 			elem := new(nodeElement)
 			elem.tag = newTag(p.tagname, p.attrs)
@@ -1843,6 +1917,7 @@ func (p *codeParser) reset() {
 	p.baseOffset = p.parser.offset
 	fset := token.NewFileSet()
 	source := p.parser.source()
+	//log.Printf("SOURCE: %q", source)
 	p.file = fset.AddFile("", fset.Base(), len(source))
 	p.scanner = new(scanner.Scanner)
 	p.scanner.Init(p.file, []byte(source), p.handleGoScanErr, scanner.ScanComments)
@@ -1856,6 +1931,7 @@ func (p *codeParser) sourceFrom(pos token.Pos) string {
 
 func (p *codeParser) lookahead() (t goToken) {
 	t.pos, t.tok, t.lit = p.scanner.Scan()
+	//log.Printf("POS: %d\tTOK: %v\tLIT: %q", t.pos, t.tok, t.lit)
 	return t
 }
 
@@ -1915,16 +1991,30 @@ func (p *codeParser) transition() *nodeBlock {
 	return &stmtBlock
 }
 
-func (p *codeParser) parseCodeBlock() node {
+func (p *codeParser) parseCode() node {
 	// starting at the token just past the '@' indicating a transition from HTML
 	// parsing to Go code parsing
 	var e node
 	if p.peek().tok == token.IF {
 		p.advance()
 		e = p.parseIfStmt()
-	} else if p.peek().tok == token.IDENT && p.peek().lit == "code" {
+	} else if p.peek().tok == token.IDENT && p.peek().lit == "handler" {
 		p.advance()
-		e = p.parseCodeKeyword()
+		e = p.parseHandlerKeyword()
+		// NOTE(paulsmith): there is a tricky bit here were an implicit
+		// expression in the form of an identifier token is next and we would
+		// not be able to distinguish it from a keyword. this is also a problem
+		// for name collisions because a user could create a variable named the
+		// same as a keyword and then later try to use it in an implicit
+		// expression, but it would be parsed with the keyword parsing flow
+		// (which probably would lead to an infinite loop because it wouldn't
+		// terminate and the user would be left with an unresponsive Pushup
+		// compiler). a fix could be to have a notion of allowed contexts in
+		// which a keyword block or an implicit expression could be used in the
+		// surrounding markup, and only parse for either depending on which
+		// context is current.
+	} else if p.peek().tok == token.LBRACE {
+		e = p.parseCodeBlock()
 	} else if p.peek().tok == token.IMPORT {
 		p.advance()
 		e = p.parseImportKeyword()
@@ -2018,8 +2108,8 @@ func (p *codeParser) parseStmtBlock() *nodeBlock {
 			p.scanner.ErrorCount--
 			p.advance()
 			// we can just stay in the code parser
-			codeBlock := p.parseCodeBlock()
-			block = &nodeBlock{nodes: []node{codeBlock}}
+			code := p.parseCode()
+			block = &nodeBlock{nodes: []node{code}}
 		}
 	case token.EOF:
 		p.parser.errorf("premature end of block in IF statement")
@@ -2028,15 +2118,20 @@ func (p *codeParser) parseStmtBlock() *nodeBlock {
 	}
 	// we should be at the closing '}' token here
 	if p.peek().tok != token.RBRACE {
-		p.parser.errorf("expected closing '}', got %v", p.peek())
+		if p.peek().tok == token.LSS {
+			p.parser.errorf("there must be a single HTML element inside a Go code block, try wrapping them")
+		} else {
+			p.parser.errorf("expected closing '}', got %v", p.peek())
+		}
 	}
 	p.advance()
 	return block
 }
 
-func (p *codeParser) parseCodeKeyword() *nodeGoCode {
-	var result nodeGoCode
-	// we are one token past the 'code' keyword
+// TODO(paulsmith): extract a common function with parseCodeKeyword
+func (p *codeParser) parseHandlerKeyword() *nodeGoCode {
+	result := &nodeGoCode{context: handlerGoCode}
+	// we are one token past the 'handler' keyword
 	if p.peek().tok != token.LBRACE {
 		p.parser.errorf("expected '{', got '%s'", p.peek().tok)
 	}
@@ -2064,7 +2159,39 @@ loop:
 	p.advance()
 	result.code = p.sourceFrom(start)[:n]
 	result.pos.end = result.pos.start + n
-	return &result
+	return result
+}
+
+func (p *codeParser) parseCodeBlock() *nodeGoCode {
+	result := &nodeGoCode{context: inlineGoCode}
+	if p.peek().tok != token.LBRACE {
+		p.parser.errorf("expected '{', got '%s'", p.peek().tok)
+	}
+	depth := 1
+	p.advance()
+	result.pos.start = p.parser.offset
+	start := p.peek().pos
+loop:
+	for {
+		switch p.peek().tok {
+		case token.LBRACE:
+			depth++
+		case token.RBRACE:
+			depth--
+			if depth == 0 {
+				break loop
+			}
+		}
+		p.advance()
+	}
+	n := (p.file.Offset(p.prev().pos) - p.file.Offset(start)) + len(p.prev().String())
+	if p.peek().tok != token.RBRACE {
+		panic("")
+	}
+	p.advance()
+	result.code = p.sourceFrom(start)[:n]
+	result.pos.end = result.pos.start + n
+	return result
 }
 
 func (p *codeParser) parseImportKeyword() *nodeImport {
@@ -2104,7 +2231,7 @@ func (p *codeParser) parseImportKeyword() *nodeImport {
 
 func (p *codeParser) parseExplicitExpression() *nodeGoStrExpr {
 	// one token past the opening '('
-	var result nodeGoStrExpr
+	result := new(nodeGoStrExpr)
 	result.pos.start = p.parser.offset
 	start := p.peek().pos
 	depth := 1
@@ -2132,14 +2259,14 @@ loop:
 	if _, err := goparser.ParseExpr(result.expr); err != nil {
 		p.parser.errorf("illegal Go expression: %w", err)
 	}
-	return &result
+	return result
 }
 
 func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 	if p.peek().tok != token.IDENT {
 		panic("")
 	}
-	var result nodeGoStrExpr
+	result := new(nodeGoStrExpr)
 	result.pos.start = p.parser.offset
 	start := p.peek().pos
 	n := len(p.peek().String())
@@ -2163,7 +2290,7 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 	if _, err := goparser.ParseExpr(result.expr); err != nil {
 		p.parser.errorf("illegal Go expression: %w", err)
 	}
-	return &result
+	return result
 }
 
 type debugPrettyPrinter struct {
