@@ -275,10 +275,6 @@ func watchForReload(cancel context.CancelFunc, root string) (chan struct{}, erro
 					}
 					return
 				}
-			case fsnotify.Remove:
-				if err := watcher.Remove(event.Name); err != nil {
-					panic(err)
-				}
 			}
 			log.Printf("change detected in project directory, reloading")
 			cancel()
@@ -299,6 +295,11 @@ func isDir(path string) bool {
 		panic(err)
 	}
 	return fi.IsDir()
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return !errors.Is(err, fs.ErrNotExist)
 }
 
 func watchDirRecursively(watcher *fsnotify.Watcher, root string) error {
@@ -1006,19 +1007,21 @@ var _ nodeVisitor = (*optimizer)(nil)
 // nodes together by concatenating their strings together in a single node.
 func coalesceLiterals(nodes []node) []node {
 	//before := len(nodes)
-	n := 0
-	for range nodes[:len(nodes)-1] {
-		this, thisOk := nodes[n].(*nodeLiteral)
-		next, nextOk := nodes[n+1].(*nodeLiteral)
-		if thisOk && nextOk && len(this.str) < 512 {
-			this.str += next.str
-			this.pos.end = next.pos.end
-			nodes = append(nodes[:n+1], nodes[n+2:]...)
-		} else {
-			n++
+	if len(nodes) > 0 {
+		n := 0
+		for range nodes[:len(nodes)-1] {
+			this, thisOk := nodes[n].(*nodeLiteral)
+			next, nextOk := nodes[n+1].(*nodeLiteral)
+			if thisOk && nextOk && len(this.str) < 512 {
+				this.str += next.str
+				this.pos.end = next.pos.end
+				nodes = append(nodes[:n+1], nodes[n+2:]...)
+			} else {
+				n++
+			}
 		}
+		nodes = nodes[:n+1]
 	}
-	nodes = nodes[:n+1]
 	//log.Printf("SAVED %d NODES", before-len(nodes))
 	return nodes
 }
