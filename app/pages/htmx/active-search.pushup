@@ -1,0 +1,54 @@
+@import "strings"
+
+@handler {
+    var results []string
+    search := strings.TrimSpace(strings.ToLower(req.FormValue("search")))
+    if search != "" {
+        for _, name := range fakeNames {
+            if strings.Contains(strings.ToLower(name), search) {
+                results = append(results, name)
+            }
+        }
+    }
+
+    if req.Header.Get("HX-Request") == "true" {
+        renderLayout = false
+    }
+}
+
+@if req.Header.Get("HX-Request") == "true" {
+    <text>
+        @for _, result := range results {
+            <tr>
+                <td>@result</td>
+            </tr>
+        }
+    </text>
+} else {
+    <text>
+        <h1>htmx example: Active search</h1>
+
+        <input class="form-control" type="search"
+               name="search" placeholder="Begin Typing To Search Users..."
+               hx-get="/htmx/active-search"
+               hx-push-url="true"
+               hx-trigger="keyup changed delay:500ms, search"
+               hx-target="#search-results"
+               hx-indicator=".htmx-indicator" />
+
+        <table class="table">
+            <thead>
+            <tr>
+              <th>Name</th>
+            </tr>
+            </thead>
+            <tbody id="search-results">
+                @for _, result := range results {
+                    <tr>
+                        <td>@result</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </text>
+}

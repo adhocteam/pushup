@@ -3,4 +3,5 @@
 <ul>
     <li><a href="/htmx/click-to-load">Click to load</a></li>
     <li><a href="/htmx/value-select">Value select</a></li>
+    <li><a href="/htmx/active-search">Active search</a></li>
 </ul>

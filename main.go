@@ -1327,6 +1327,9 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 
 	if strategy == compilePushupPage {
 		p := c.(*pageCodeGen)
+		if p.layout != "" {
+			g.bodyPrintf("  renderLayout := true\n")
+		}
 
 		// NOTE(paulsmith): we might want to encapsulate this in its own
 		// function/method, but would have to figure out the interplay between
@@ -1348,17 +1351,19 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 			g.used("golang.org/x/sync/errgroup")
 			g.bodyPrintf(
 				`
-				g := new(errgroup.Group)
 				yield := make(chan struct{})
-				layout := getLayout("%s")
-				g.Go(func() error {
-					if err := layout.Respond(yield, w, req); err != nil {
-						return err
-					}
-					return nil
-				})
-				// Let layout render run until its @contents is encountered
-				<-yield
+				g := new(errgroup.Group)
+				if renderLayout {
+					layout := getLayout("%s")
+					g.Go(func() error {
+						if err := layout.Respond(yield, w, req); err != nil {
+							return err
+						}
+						return nil
+					})
+					// Let layout render run until its @contents is encountered
+					<-yield
+				}
 			`, p.layout)
 		}
 	}
@@ -1374,9 +1379,12 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		p := c.(*pageCodeGen)
 		if p.layout != "" {
 			g.bodyPrintf(
-				`yield <- struct{}{}
-				 if err := g.Wait(); err != nil {
-					return err
+				`
+				if renderLayout {
+					yield <- struct{}{}
+					if err := g.Wait(); err != nil {
+						return err
+					}
 				}
 			`)
 		}
@@ -1796,7 +1804,7 @@ func (p *htmlParser) match(typ html.TokenType) bool {
 	return p.toktyp == typ
 }
 
-func (p *htmlParser) parseElement() *nodeElement {
+func (p *htmlParser) parseElement() node {
 	var result *nodeElement
 
 	// FIXME(paulsmith): handle self-closing elements
@@ -1823,6 +1831,11 @@ func (p *htmlParser) parseElement() *nodeElement {
 		p.parser.errorf("expected </%s> end tag, got </%s>", result.tag.name, p.tagname)
 	}
 
+	// <text></text> elements are just for parsing
+	if string(p.tagname) == "text" {
+		return nodeList(result.children)
+	}
+
 	return result
 }
 
@@ -1843,6 +1856,7 @@ loop:
 			elem.tag = newTag(p.tagname, p.attrs)
 			elem.pos.start = p.parser.offset - len(p.raw)
 			elem.pos.end = p.parser.offset
+			elem.startTagNodes = p.parseStartTag()
 			p.advance()
 			result = append(result, elem)
 		case html.StartTagToken:
