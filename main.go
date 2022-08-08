@@ -1364,7 +1364,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 						}
 						return nil
 					})
-					// Let layout render run until its @contents is encountered
+					// Let layout render run until its `+transSymStr+`contents is encountered
 					<-yield
 				}
 			`, p.layout)
@@ -1564,16 +1564,20 @@ func (p *htmlParser) skipWhitespace() []*nodeLiteral {
 	return result
 }
 
+const transSym = '^'
+const transSymStr = "^"
+const transSymEsc = transSymStr + transSymStr
+
 func (p *htmlParser) parseAttributeNameOrValue(nameOrValue string, nameOrValueStartPos, nameOrValueEndPos int, pos int) ([]node, int) {
 	var nodes []node
-	if strings.ContainsRune(nameOrValue, '@') {
-		for pos < nameOrValueEndPos && strings.ContainsRune(nameOrValue, '@') {
-			if idx := strings.IndexRune(nameOrValue, '@'); idx > 0 {
+	if strings.ContainsRune(nameOrValue, transSym) {
+		for pos < nameOrValueEndPos && strings.ContainsRune(nameOrValue, transSym) {
+			if idx := strings.IndexRune(nameOrValue, transSym); idx > 0 {
 				nodes = append(nodes, p.parseRawSpan(pos, pos+idx))
 				pos += idx
 				nameOrValue = nameOrValue[idx:]
 			}
-			if strings.HasPrefix(nameOrValue, "@@") {
+			if strings.HasPrefix(nameOrValue, transSymStr+transSymStr) {
 				nodes = append(nodes, p.parseRawSpan(pos, pos+1))
 				pos += 2
 				nameOrValue = nameOrValue[2:]
@@ -1679,23 +1683,23 @@ tokenLoop:
 		case html.EndTagToken, html.DoctypeToken, html.CommentToken:
 			tree.nodes = append(tree.nodes, p.parseRawLiteral())
 		case html.TextToken:
-			if idx := strings.IndexRune(p.raw, '@'); idx >= 0 {
-				if escapedAt := strings.Index(p.raw, "@@"); escapedAt >= 0 {
-					// it's an escaped @
-					if escapedAt > 0 {
-						// emit the leading text before the "@@"
+			if idx := strings.IndexRune(p.raw, transSym); idx >= 0 {
+				if escaped := strings.Index(p.raw, transSymEsc); escaped >= 0 {
+					// it's an escaped transition symbol
+					if escaped > 0 {
+						// emit the leading text before the doubled escape
 						e := new(nodeLiteral)
 						e.pos.start = p.start
-						e.pos.end = p.start + escapedAt
-						e.str = p.raw[:escapedAt]
+						e.pos.end = p.start + escaped
+						e.str = p.raw[:escaped]
 						tree.nodes = append(tree.nodes, e)
 					}
 					e := new(nodeLiteral)
-					e.pos.start = p.start + escapedAt
-					e.pos.end = p.start + escapedAt + 2
-					e.str = "@"
+					e.pos.start = p.start + escaped
+					e.pos.end = p.start + escaped + 2
+					e.str = transSymStr
 					tree.nodes = append(tree.nodes, e)
-					p.parser.offset = p.start + escapedAt + 2
+					p.parser.offset = p.start + escaped + 2
 				} else {
 					// TODO(paulsmith): check for an email address
 					// FIXME(paulsmith): clean this up!
@@ -1703,7 +1707,7 @@ tokenLoop:
 						s := p.raw[idx+1+len("layout"):]
 						n := 0
 						if len(s) < 1 || s[0] != ' ' {
-							p.parser.errorf("@layout must be followed by a space")
+							p.parser.errorf(transSymStr + "layout must be followed by a space")
 							break tokenLoop
 						}
 						s = s[1:]
@@ -1886,12 +1890,11 @@ loop:
 			}
 		case html.TextToken:
 			// TODO(paulsmith): de-dupe this logic
-			if idx := strings.IndexRune(p.raw, '@'); idx >= 0 {
-				if idx < len(p.raw)-1 && p.raw[idx+1] == '@' {
-					// it's an escaped @
-					// TODO(paulsmith): emit '@' literal text expression
+			if idx := strings.IndexRune(p.raw, transSym); idx >= 0 {
+				if idx < len(p.raw)-1 && p.raw[idx+1] == transSym {
+					// it's an escaped transition sym
+					// TODO(paulsmith): emit transSym literal text expression
 				} else {
-					// TODO(paulsmith): check for an email address
 					newOffset := p.start + idx + 1
 					p.parser.offset = newOffset
 					leading := p.raw[:idx]
@@ -2009,7 +2012,7 @@ func (p *codeParser) transition() *nodeBlock {
 }
 
 func (p *codeParser) parseCode() node {
-	// starting at the token just past the '@' indicating a transition from HTML
+	// starting at the token just past the transSym indicating a transition from HTML
 	// parsing to Go code parsing
 	var e node
 	if p.peek().tok == token.IF {
@@ -2121,7 +2124,7 @@ func (p *codeParser) parseStmtBlock() *nodeBlock {
 	// it is likely non-Go code (i.e., HTML, or HTML and a transition)
 	switch p.peek().tok {
 	case token.ILLEGAL:
-		if p.peek().lit == "@" {
+		if p.peek().lit == transSymStr {
 			p.scanner.ErrorCount--
 			p.advance()
 			// we can just stay in the code parser
@@ -2213,10 +2216,10 @@ loop:
 
 func (p *codeParser) parseImportKeyword() *nodeImport {
 	/*
-		examples
-		@import   "lib/math"         math.Sin
-		@import m "lib/math"         m.Sin
-		@import . "lib/math"         Sin
+		examples:
+		TRANS_SYMimport   "lib/math"         math.Sin
+		TRANS_SYMimport m "lib/math"         m.Sin
+		TRANS_SYMimport . "lib/math"         Sin
 	*/
 	e := new(nodeImport)
 	// we are one token past the 'code' keyword
@@ -2241,7 +2244,7 @@ func (p *codeParser) parseImportKeyword() *nodeImport {
 		}
 		e.decl.path = p.peek().lit
 	default:
-		p.parser.errorf("unexpected token type after @import: %s", p.peek().tok)
+		p.parser.errorf("unexpected token type after "+transSymStr+"import: %s", p.peek().tok)
 	}
 	return e
 }

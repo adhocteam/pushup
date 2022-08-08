@@ -1,6 +1,6 @@
-@import "strings"
+^import "strings"
 
-@handler {
+^handler {
     var results []string
     search := strings.TrimSpace(strings.ToLower(req.FormValue("search")))
     if search != "" {
@@ -16,11 +16,11 @@
     }
 }
 
-@if req.Header.Get("HX-Request") == "true" {
+^if req.Header.Get("HX-Request") == "true" {
     <text>
-        @for _, result := range results {
+        ^for _, result := range results {
             <tr>
-                <td>@result</td>
+                <td>^result</td>
             </tr>
         }
     </text>
@@ -43,9 +43,9 @@
             </tr>
             </thead>
             <tbody id="search-results">
-                @for _, result := range results {
+                ^for _, result := range results {
                     <tr>
-                        <td>@result</td>
+                        <td>^result</td>
                     </tr>
                 }
             </tbody>

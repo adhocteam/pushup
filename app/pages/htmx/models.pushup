@@ -1,8 +1,8 @@
-@import "log"
+^import "log"
 
-@layout !
+^layout !
 
-@{
+^{
     type model struct {
         value string
         label string
@@ -31,6 +31,6 @@
     }
 }
 
-@for _, model := range models {
-    <option value="@model.value">@model.label</option>
+^for _, model := range models {
+    <option value="^model.value">^model.label</option>
 }

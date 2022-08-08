@@ -1,9 +1,9 @@
-@layout !
+^layout !
 
-@import "math/rand"
-@import "strconv"
+^import "math/rand"
+^import "strconv"
 
-@{
+^{
     pageQuery := req.FormValue("page")
     if pageQuery == "" {
         pageQuery = "1"
@@ -24,16 +24,16 @@
     }
 }
 
-@for i := 0; i < 5; i++ {
+^for i := 0; i < 5; i++ {
 <tr>
     <td>Agent Smith</td>
-    <td>void@(page * 5 + i)&#x40;pizza.null</td>
-    <td>@(uid())</td>
+    <td>void^(page * 5 + i)&#x40;pizza.null</td>
+    <td>^(uid())</td>
 </tr>
 }
 <tr id="replace-me">
     <td colspan=3>
-        <button hx-get="./contacts?page=@(page + 1)" hx-target="#replace-me" hx-swap="outerHTML">
+        <button hx-get="./contacts?page=^(page + 1)" hx-target="#replace-me" hx-swap="outerHTML">
             Load more agents
         </button>
     </td>

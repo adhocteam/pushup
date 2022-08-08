@@ -1,6 +1,6 @@
-@import "strconv"
+^import "strconv"
 
-@handler {
+^handler {
     id, err := strconv.Atoi(getParam(req, "id"))
     if err != nil {
         return err
@@ -24,16 +24,16 @@ dd { font-weight: normal; flex-basis: 70%; flex-grow: 1; padding: 0.1em; }
 
 <dl>
     <dt>Artist</dt>
-    <dd>@album.artist</dd>
+    <dd>^album.artist</dd>
 
     <dt>Title</dt>
-    <dd>@album.title</dd>
+    <dd>^album.title</dd>
 
     <dt>Released</dt>
-    <dd>@album.released</dd>
+    <dd>^album.released</dd>
 
     <dt>Length</dt>
-    <dd>@album.length minutes</dd>
+    <dd>^album.length minutes</dd>
 </dl>
 
-<p><a href="./edit/@album.id">Edit</a>, <a href="./delete/@album.id">Delete &hellip;</a></p>
+<p><a href="./edit/^album.id">Edit</a>, <a href="./delete/^album.id">Delete &hellip;</a></p>

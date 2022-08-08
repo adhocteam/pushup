@@ -1,5 +1,5 @@
-@{
+^{
     name := "fnord"
     val := "quux"
 }
-<a href="/foo/bar/@val" data-@name></a>
+<a href="/foo/bar/^val" data-^name></a>

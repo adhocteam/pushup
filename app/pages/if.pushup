@@ -1,16 +1,16 @@
-@{
+^{
     name := req.FormValue("name")
     bladeRunner := "Deckard"
 }
 
-@if name == "" {
+^if name == "" {
     <div>
         <h1>Hello, world!</h1>
-        <a href="/if?name=@bladeRunner">add <tt>name</tt> to URL query params</a>
+        <a href="/if?name=^bladeRunner">add <tt>name</tt> to URL query params</a>
     </div>
 } else {
     <div>
-        <h1>Hello, @name!</h1>
+        <h1>Hello, ^name!</h1>
         <a href="/if">remove <tt>name</tt> from URL query params</a>
     </div>
 }

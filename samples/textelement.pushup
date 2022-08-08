@@ -1,4 +1,4 @@
-@if true {
+^if true {
     <text>
         <p>Foo</p>
         <p>Bar</p>

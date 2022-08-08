@@ -1,4 +1,4 @@
-@import "math/rand"
+^import "math/rand"
 
 <style>
 table { width: 100%; border-collapse: collapse; }
@@ -7,7 +7,7 @@ thead tr { border-bottom: 2px solid #ccc; }
 tbody tr { border-bottom: 1px solid #ccc; }
 </style>
 
-@{
+^{
     var alphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
     uid := func() string{
         b := make([]rune, 16)
@@ -29,11 +29,11 @@ tbody tr { border-bottom: 1px solid #ccc; }
         </tr>
     </thead>
     <tbody>
-        @for i := 0; i < 5; i++ {
+        ^for i := 0; i < 5; i++ {
             <tr>
                 <td>Agent Smith</td>
-                <td>void@(i)&#x40;pizza.null</td>
-                <td>@(uid())</td>
+                <td>void^(i)&#x40;pizza.null</td>
+                <td>^(uid())</td>
             </tr>
         }
         <tr id="replace-me">

@@ -1,6 +1,6 @@
-@import "fmt"
+^import "fmt"
 
-@{
+^{
     type product struct {
         name string
         price float32
@@ -13,7 +13,7 @@
 }
 
 <ul>
-@for _, p := range products {
-    <li>@p.name ($@(fmt.Sprintf("%.2f", p.price)))</li>
+^for _, p := range products {
+    <li>^p.name ($^(fmt.Sprintf("%.2f", p.price)))</li>
 }
 </ul>

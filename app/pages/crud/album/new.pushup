@@ -1,9 +1,9 @@
-@import "log"
-@import "strconv"
-@import "strings"
-@import "time"
+^import "log"
+^import "strconv"
+^import "strings"
+^import "time"
 
-@handler {
+^handler {
     isNumber := func(val string) (int, bool) {
         n, err := strconv.Atoi(val) 
         if err != nil {
@@ -66,12 +66,12 @@ form button { font-size: 1.5rem; padding: 1rem; }
 </style>
 
 <form method="post">
-    @if len(errors) > 0 {
+    ^if len(errors) > 0 {
         <section style="color: red">
             <h3>Errors</h3>
             <ul>
-                @for _, message := range errors {
-                    <li>@message</li>
+                ^for _, message := range errors {
+                    <li>^message</li>
                 }
             </ul>
         </section>
@@ -86,7 +86,7 @@ form button { font-size: 1.5rem; padding: 1rem; }
                  attributes.) arguably, Pushup should emit quoted wrapped attributes to avoid
                  potential quote escaping issue of the Go code having quotes that inadvertently
                  prematurely close the rendered HTML attribute. -->
-            <input type="text" name="artist" id="artist" value="@(req.FormValue(`artist`))">
+            <input type="text" name="artist" id="artist" value="^(req.FormValue(`artist`))">
         </div>
     </section>
 
@@ -94,15 +94,15 @@ form button { font-size: 1.5rem; padding: 1rem; }
         <h2>Album info</h2>
         <div class="form-element">
             <label for="title">Title</label>
-            <input type="text" name="title" id="title" value="@(req.FormValue(`title`))">
+            <input type="text" name="title" id="title" value="^(req.FormValue(`title`))">
         </div>
         <div class="form-element">
             <label for="released">Year released</label>
-            <input type="text" name="released" id="released" value="@(req.FormValue(`released`))">
+            <input type="text" name="released" id="released" value="^(req.FormValue(`released`))">
         </div>
         <div class="form-element">
             <label for="length">Length (minutes)</label>
-            <input type="number" name="length" id="length" value="@(req.FormValue(`length`))">
+            <input type="number" name="length" id="length" value="^(req.FormValue(`length`))">
         </div>
     </section>
 

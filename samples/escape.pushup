@@ -1,5 +1,5 @@
-@{
+^{
 	emotion := "<em><3</em> & <strong>blue circle</strong>"
 }
 
-<p class="greeting">I @emotion Chicago!</p>
+<p class="greeting">I ^emotion Chicago!</p>

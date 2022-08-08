@@ -19,16 +19,16 @@
 
 <dl>
     <dd>Filesystem:</dd> <dt><tt>&lt;project root&gt;/pages/dyn/$name.pushup</tt></dt>
-    <dd>Generated route:</dd> <dt><tt>/dyn/([^/]+)</tt></dt>
+    <dd>Generated route:</dd> <dt><tt>/dyn/([^^/]+)</tt></dt>
 </dl>
 
 <hr/>
 
 <h3>Live example</h3>
 
-<p><code>Hello, @@(getParam(req, "name"))</code>: <b>Hello, @(getParam(req, "name"))!</b></p>
-<p>URL: <tt>@(req.URL.Path)</tt></p>
-@if getParam(req, "name") == "world" {
+<p><code>Hello, ^^(getParam(req, "name"))</code>: <b>Hello, ^(getParam(req, "name"))!</b></p>
+<p>URL: <tt>^(req.URL.Path)</tt></p>
+^if getParam(req, "name") == "world" {
     <p><a href="/dyn/Pushup">/dyn/Pushup</a></p>
 } else {
     <p><a href="/dyn/world">/dyn/world</a></p>

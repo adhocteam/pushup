@@ -383,15 +383,15 @@ func TestOpenTagLexer(t *testing.T) {
 			[]*attr{{name: stringPos{"class", pos(5)}, value: stringPos{"foo", pos(12)}}},
 		},
 		{
-			`<p   data-@(name)="/foo/bar/@value"   thing="@(asd)"  >`,
+			`<p   data-^(name)="/foo/bar/^value"   thing="^(asd)"  >`,
 			[]*attr{
 				{
 					name: stringPos{
-						"data-@(name)",
+						"data-^(name)",
 						pos(5),
 					},
 					value: stringPos{
-						"/foo/bar/@value",
+						"/foo/bar/^value",
 						pos(19),
 					},
 				},
@@ -401,7 +401,7 @@ func TestOpenTagLexer(t *testing.T) {
 						pos(38),
 					},
 					value: stringPos{
-						"@(asd)",
+						"^(asd)",
 						pos(45),
 					},
 				},

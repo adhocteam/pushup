@@ -1,6 +1,6 @@
-@import "strconv"
+^import "strconv"
 
-@handler {
+^handler {
     id, err := strconv.Atoi(getParam(req, "id"))
     if err != nil {
         return err
@@ -20,13 +20,13 @@
     }
 }
 
-<h1>Delete @(album.title)?</h1>
+<h1>Delete ^(album.title)?</h1>
 
 <p>Are you sure?</p>
 
-<p><a href="/crud/album/@album.id">No, get me out of here</a></p>
+<p><a href="/crud/album/^album.id">No, get me out of here</a></p>
 <form method="post">
     <input type="hidden" name="_method" value="delete">
-    <input type="hidden" name="id" value="@album.id">
+    <input type="hidden" name="id" value="^album.id">
     <button>Yes, delete</button>
 </form>

@@ -11,32 +11,32 @@ func TestParse(t *testing.T) {
 		input string
 		want  *syntaxTree
 	}{
-		// escaped '@'
+		// escaped transition symbol
 		{
-			`@@foo`,
+			`^^foo`,
 			&syntaxTree{
 				nodes: []node{
-					&nodeLiteral{str: "@", pos: span{start: 0, end: 2}},
+					&nodeLiteral{str: "^", pos: span{start: 0, end: 2}},
 					&nodeLiteral{str: "foo", pos: span{start: 2, end: 5}},
 				},
 			},
 		},
 		{
-			`<a href="@@foo"></a>`,
+			`<a href="^^foo"></a>`,
 			&syntaxTree{
 				nodes: []node{
 					&nodeLiteral{str: "<a ", pos: span{end: 3}},
 					&nodeLiteral{str: "href", pos: span{start: 3, end: 7}},
 					&nodeLiteral{str: `="`, pos: span{start: 7, end: 9}},
-					&nodeLiteral{str: "@", pos: span{start: 9, end: 10}},
+					&nodeLiteral{str: "^", pos: span{start: 9, end: 10}},
 					&nodeLiteral{str: `foo">`, pos: span{start: 11, end: 16}},
 					&nodeLiteral{str: "</a>", pos: span{start: 16, end: 20}},
 				},
 			},
 		},
 		{
-			`<p>Hello, @name!</p>
-@{
+			`<p>Hello, ^name!</p>
+^{
 	name := "world"
 }
 `,
@@ -53,8 +53,8 @@ func TestParse(t *testing.T) {
 				}},
 		},
 		{
-			`@if name != "" {
-	<h1>Hello, @name!</h1>
+			`^if name != "" {
+	<h1>Hello, ^name!</h1>
 } else {
 	<h1>Hello, world!</h1>
 }`,
@@ -96,13 +96,13 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			`@if name == "" {
+			`^if name == "" {
     <div>
         <h1>Hello, world!</h1>
     </div>
 } else {
     <div>
-        <h1>Hello, @name!</h1>
+        <h1>Hello, ^name!</h1>
     </div>
 }`,
 			&syntaxTree{
@@ -163,7 +163,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			`@{
+			`^{
 	type product struct {
 		name string
 		price float32
@@ -187,7 +187,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			`@layout !`,
+			`^layout !`,
 			&syntaxTree{
 				nodes: []node{
 					&nodeLayout{name: "!", pos: span{start: 1, end: 9}},
@@ -195,7 +195,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			`@import "time"`,
+			`^import "time"`,
 			&syntaxTree{
 				nodes: []node{
 					&nodeImport{
@@ -208,7 +208,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			`<a href="@url">x</a>`,
+			`<a href="^url">x</a>`,
 			&syntaxTree{
 				nodes: []node{
 					&nodeLiteral{str: "<a ", pos: span{start: 0, end: 3}},
@@ -222,7 +222,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			`@if true { <a href="@url"><div data-@foo="bar"></div></a> }`,
+			`^if true { <a href="^url"><div data-^foo="bar"></div></a> }`,
 			&syntaxTree{
 				nodes: []node{
 					&nodeIf{
@@ -236,7 +236,7 @@ func TestParse(t *testing.T) {
 										attrs: []*attr{
 											{
 												name:  stringPos{string: "href", start: pos(3)},
-												value: stringPos{string: "@url", start: pos(9)},
+												value: stringPos{string: "^url", start: pos(9)},
 											},
 										},
 									},
@@ -253,7 +253,7 @@ func TestParse(t *testing.T) {
 												name: "div",
 												attrs: []*attr{
 													{
-														name:  stringPos{string: "data-@foo", start: pos(5)},
+														name:  stringPos{string: "data-^foo", start: pos(5)},
 														value: stringPos{string: "bar", start: pos(16)},
 													},
 												},

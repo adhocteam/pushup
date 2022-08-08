@@ -1,4 +1,4 @@
-@handler {
+^handler {
     albums, err := getAlbums(DB, 0, 0)
     if err != nil {
         return err
@@ -29,8 +29,8 @@ ul.albums {
 </style>
 
 <ul class="albums">
-    @for _, album := range albums {
-        <li><a href="/crud/album/@album.id"><b>@album.title</b><br/>@album.artist</a></li>
+    ^for _, album := range albums {
+        <li><a href="/crud/album/^album.id"><b>^album.title</b><br/>^album.artist</a></li>
     }
 </ul>
 

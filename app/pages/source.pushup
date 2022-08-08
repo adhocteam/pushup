@@ -1,8 +1,8 @@
-@import "log"
-@import "os"
-@import "path/filepath"
+^import "log"
+^import "os"
+^import "path/filepath"
 
-@handler {
+^handler {
     path := req.FormValue("route")
     route := getRouteFromPath(path)
     if route == nil {
@@ -17,7 +17,7 @@
     source := string(b)
 }
 
-<p>Source code for Pushup page <a href="@path"><b>@path</b></a>:</p>
+<p>Source code for Pushup page <a href="^path"><b>^path</b></a>:</p>
 
 <style>
 pre {
@@ -27,4 +27,4 @@ pre {
 }
 </style>
 
-<pre><code>@source</code></pre>
+<pre><code>^source</code></pre>
