@@ -9,9 +9,10 @@
         http.Error(w, http.StatusText(404), 404)
         return nil
     }
-    b, err := os.ReadFile(filepath.Join("app", "pages", route.page.filePath()))
+    fpath := filepath.Join("app", "pages", route.page.filePath())
+    b, err := os.ReadFile(fpath)
     if err != nil {
-        log.Printf("reading file %s: %v", err)
+        log.Printf("reading file %s: %v", fpath, err)
         return err
     }
     source := string(b)
