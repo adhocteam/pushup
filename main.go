@@ -1565,7 +1565,7 @@ func (p *htmlParser) skipWhitespace() []*nodeLiteral {
 }
 
 const transSym = '^'
-const transSymStr = "^"
+const transSymStr = string(transSym)
 const transSymEsc = transSymStr + transSymStr
 
 func (p *htmlParser) parseAttributeNameOrValue(nameOrValue string, nameOrValueStartPos, nameOrValueEndPos int, pos int) ([]node, int) {
