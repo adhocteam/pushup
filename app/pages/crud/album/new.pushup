@@ -1,3 +1,5 @@
+^layout default
+
 ^import "log"
 ^import "strconv"
 ^import "strings"
@@ -80,7 +82,7 @@ form button { font-size: 1.5rem; padding: 1rem; }
         <h2>Artist</h2>
         <div class="form-element">
             <label for="artist">Artist name</label>
-            <!-- NOTE there is a workaround for a parsing issue -- if you refer to Go strings
+            <!-- NOTE there is a workaround for a parsing issue: if you refer to Go strings
                  inside a double-quoted HTML attribute, then the Go string must use the backquote
                  or raw literal style, not the double-quoted style. (or use single-quoted HTML
                  attributes.) arguably, Pushup should emit quoted wrapped attributes to avoid
