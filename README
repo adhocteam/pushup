@@ -7,23 +7,21 @@ Let's make Go the best full-stack web language. Let's recapture the best
 of past web development eras, like PHP's ease of deployment, updated with
 today's tech and user expectations, like great client-side interactivity,
 avoiding the things that haven't been so good, like complexity and bloat,
-combined with everything that makes Go great, like performance and fast builds.
+combined with everything that makes Go great, like performance, compile-time
+type safety, and fast builds.
 
 It's a server-side web app framework first and foremost, let's just get that
 clear from the get-go.
 
-Modern key features
--------------------
+Key features
+------------
 
-  * Components - individual files that combine templated HTML and Go code that
-    compile down to Go packages
-  * File-based routing by default
-  * WebSockets & SSE integration
-  * Enhanced hypermedia (think htmx)
-  * SQLite by default (plus Litestream??)
-  * sqlc-like data access layer
-  * Blend the distinction between server and client code
-  * WASM (run (some) Go code in the browser)
+  * Pages - individual files that combine Go code and HTML markup which
+    compile down to Go packages, sort of like components
+  * File-based routing by default, with dynamic parameters
+  * Server-sent events integration
+  * Enhanced hypertext/hypermedia (think [htmx](https://htmx.org/))
+  * Compiled - single static deployable artifact contains the entire app
 
 Table stakes functionality
 --------------------------
@@ -31,15 +29,23 @@ Table stakes functionality
   * Form submission & struct validation
   * a11y - good defaults
   * i18n/l10n - hooks for easy translation
-  * HTML escaping
+  * Safe HTML generation, escaping by default
   * Web security protection - CSRF, XSS
-  * Healthchecks
+  * Health checks
   * Metrics and monitoring hooks
+
+ Aspirational features
+ ---------------------
+
+  * Blend the distinction between server and client code
+  * WASM (run (some) Go code in the browser)
+  * SQLite by default
+  * sqlc-like data access layer
 
 Also includes nice-to-haves
 ---------------------------
 
-  * Hot-reloading dev environment
+  * Live-reloading dev environment
   * Great debugging and visualization tools
 
 Trends
@@ -48,9 +54,9 @@ Trends
 A number of things are driving this.
 
   * Return to server-side web dev
-  * Rejection of too much JavaScript, especially build complexity
+  * Feeling of too much JavaScript, especially build complexity and laggy UX
   * Frustration with SPAs, especially bloat and UI complexity
-  * Client interactivity expections
+  * Greater expectations of client interactivity
   * Mobile app competition to the web
   * Maturation of SQLite as a lightweight server-side alternative RDBMS
 
@@ -61,7 +67,7 @@ A few projects come to mind, providing inspiration, ideas and implementations
 to lift from.
 
   * Phoenix (Elixir)
-  * Blazor (C# .NET)
+  * Razor (C# ASP.NET)
   * Hyperfiddle/Photon (Clojure)
   * Remix (JavaScript)
 
@@ -78,9 +84,11 @@ Similar Go projects
 How?
 ----
 
-  * HATEOAS - htmx-style HTML-over-the-wire, server-side state centralization
-  * Mapping HTML attributes to Go parameters, HTML child elements to ???
-  * Components compiled down to Go structs in separate package, wired together
+  * [HATEOAS](https://htmx.org/essays/hateoas/) - HTML-over-the-wire,
+    server-side state centralization
+  * Blend Go control flow and imperative "view controller" code with HTML
+    markup
+  * Components compile down to Go structs in separate package, wired together
     at the top-level for routing and HTTP serving
 
 To anticipate some questions:
@@ -98,8 +106,8 @@ To anticipate some questions:
     .razor file format/syntax here. The key is to have a compilation step that
     produces Go code from a project directory layout.
   * What about `net/http`? This will all be built on `net/http` ultimately
-    for the runtime, but my thought is that components will compile down to
-    methods on a type that implements the ServeHTTP interface.
+    for the runtime, pages compile down to methods on a type that implements
+    the ServeHTTP interface.
 
 Inspirations
 ------------
