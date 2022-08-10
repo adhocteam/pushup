@@ -1,4 +1,4 @@
-# samples
+# testdata
 
 This directory contains samples of Pushup pages that test various aspects or
 features of the framework. They are intended to be somewhat of end-to-end

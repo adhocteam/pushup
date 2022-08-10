@@ -27,25 +27,25 @@ func TestPushup(t *testing.T) {
 	t.Cleanup(func() {
 		os.RemoveAll("./build")
 	})
-	samplesDir := "./samples"
-	entries, err := os.ReadDir(samplesDir)
+	testdataDir := "./testdata"
+	entries, err := os.ReadDir(testdataDir)
 	if err != nil {
-		t.Fatalf("reading samples dir: %v", err)
+		t.Fatalf("reading testdata dir: %v", err)
 	}
 	for _, entry := range entries {
 		if strings.HasSuffix(entry.Name(), ".pushup") {
 			t.Run(entry.Name(), func(t *testing.T) {
 				basename, _ := splitExt(entry.Name())
-				// FIXME(paulsmith): add metadata to the samples files with the
+				// FIXME(paulsmith): add metadata to the testdata files with the
 				// desired path to avoid these hacks
-				requestPath := "/samples/" + basename
+				requestPath := "/testdata/" + basename
 				if basename == "index" {
-					requestPath = "/samples"
+					requestPath = "/testdata"
 				} else if basename == "$name" {
-					requestPath = "/samples/world"
+					requestPath = "/testdata/world"
 				}
-				pushupFile := filepath.Join(samplesDir, entry.Name())
-				outFile := filepath.Join(samplesDir, basename+".out")
+				pushupFile := filepath.Join(testdataDir, entry.Name())
+				outFile := filepath.Join(testdataDir, basename+".out")
 				if _, err := os.Stat(outFile); err != nil {
 					if errors.Is(err, fs.ErrNotExist) {
 						t.Fatalf("no matching output file %s", outFile)
@@ -275,9 +275,9 @@ func TestRouteFromPath(t *testing.T) {
 			"/x/sub",
 		},
 		{
-			"samples/foo.pushup",
+			"testdata/foo.pushup",
 			".",
-			"/samples/foo",
+			"/testdata/foo",
 		},
 		{
 			"app/pages/x/$name.pushup",
@@ -322,9 +322,9 @@ func TestGeneratedFilename(t *testing.T) {
 			"x__sub__gen.go",
 		},
 		{
-			"samples/foo.pushup",
+			"testdata/foo.pushup",
 			".",
-			"samples__foo__gen.go",
+			"testdata__foo__gen.go",
 		},
 	}
 
