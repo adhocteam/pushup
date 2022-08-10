@@ -1,5 +1,5 @@
 {
-    description = "Experiments and research for a web forms language";
+    description = "Pushup is a new web framework for Go";
 
     inputs.nixpkgs.url = "nixpkgs/nixos-unstable";
     inputs.flake-utils.url = "github:numtide/flake-utils";
