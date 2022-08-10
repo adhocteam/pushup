@@ -1,0 +1,47 @@
+^import "time"
+
+^handler {
+    var devReloadFlagSet bool
+    for _, arg := range t.buildCliArgs() {
+        if arg == "-dev" {
+            devReloadFlagSet = true
+            break
+        }
+    }
+}
+
+^{
+    title := "Welcome to Pushup!"
+    greeting := "Hello"
+    name := "world"
+}
+
+<h1>^title</h1>
+
+<h2 style="color: green">^greeting, ^name!</h2>
+
+<h3 style="color: orange">Pushup is a modern web framework for Go with an old-school PHP vibe.</h3>
+
+<h4>Features</h4>
+
+<ul>
+    <li>Compiled</li>
+    <li>Modern hypertext</li>
+    <li>File-based routing</li>
+    <li>Builds on Go <tt>net/http</tt></li>
+    <li>Live-reloading dev mode</li>
+</ul>
+
+<p>It is currently ^(time.Now().Format(time.UnixDate)).</p>
+
+<h4>What to do next?</h4>
+<ul>
+    <li>Design the layout template at <tt>app/layouts/default.pushup</tt></li>
+    <li>Override this file at <tt>app/pages/index.pushup</tt></li>
+    ^if !devReloadFlagSet {
+        <li>Check out the live reloading mode with the CLI flag <tt>-dev</tt></li>
+    } else {
+        <li>Great, you set the <tt>-dev</tt> flag for live reloading!</li>
+    }
+    <li><a href="#" onclick="javascript:alert('Soon!')">Read the docs</a></li>
+</ul>

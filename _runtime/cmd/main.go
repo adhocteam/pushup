@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AdHocRandD/pushup/build"
+	"{{.BuildPkg}}"
 )
 
 var logger *log.Logger
@@ -78,10 +78,6 @@ func main() {
 	fmt.Fprintf(os.Stdout, "\x1b[32m↑↑ Pushup ready and listening on %s ↑↑\x1b[0m\n", ln.Addr().String())
 
 	go srv.Serve(ln)
-
-	//<-time.After(1 * time.Second)
-	//logger.Printf("SOME ERROR!")
-	//os.Exit(0x55)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	<-ctx.Done()
