@@ -64,8 +64,7 @@ try to get the module from one of the central module services, but directly
 from GitHub.
 
 The command will install the `pushup` executable locally. Make sure the
-directory where the go tool installs to is in your \$PATH, which is \$(go
-env GOPATH)/bin. You can check if this is the case with:
+directory where the go tool installs to is in your `$PATH`, which is `$(go env GOPATH)/bin`. You can check if this is the case with:
 
 ```shell
 echo $PATH | grep $(go env GOPATH)/bin > /dev/null && echo yes || echo no
