@@ -86,11 +86,12 @@ func main() {
 				compileOnly := flags.Bool("compile-only", false, "compile only, don't start web server after")
 				outDir := flags.String("out-dir", "./build", "path to output build directory")
 				// run flags
+				host := flags.String("host", "0.0.0.0", "host to listen on")
 				port := flags.String("port", "8080", "port to listen on with TCP IPv4")
 				unixSocket := flags.String("unix-socket", "", "path to listen on with Unix socket")
 				devReload := flags.Bool("dev", false, "compile and run the Pushup app and reload on changes")
 				flags.Parse(flag.Args()[1:])
-				run := runCmdFromFlags(port, unixSocket, devReload)
+				run := runCmdFromFlags(host, port, unixSocket, devReload)
 				run.buildCmd = buildCmdFromFlags(projectName.String(), *buildPkg, singleFlag, applyOptimizations, parseOnly, compileOnly, outDir)
 				if err := run.do(); err != nil {
 					log.Fatalf("'run' command error: %v", err)
@@ -205,12 +206,14 @@ func (b *buildCmd) do() error {
 type runCmd struct {
 	*buildCmd
 	port       string
+	host       string
 	unixSocket string
 	devReload  bool
 }
 
-func runCmdFromFlags(port *string, unixSocket *string, devReload *bool) *runCmd {
+func runCmdFromFlags(host, port, unixSocket *string, devReload *bool) *runCmd {
 	return &runCmd{
+		host:       *host,
 		port:       *port,
 		unixSocket: *unixSocket,
 		devReload:  *devReload,
@@ -286,7 +289,8 @@ func (r *runCmd) do() error {
 					return fmt.Errorf("listening on Unix socket: %v", err)
 				}
 			} else {
-				ln, err = net.Listen("tcp4", "0.0.0.0:"+r.port)
+				addr := fmt.Sprintf("%s:%s", r.host, r.port)
+				ln, err = net.Listen("tcp4", addr)
 				if err != nil {
 					return fmt.Errorf("listening on TCP socket: %v", err)
 				}
