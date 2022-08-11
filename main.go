@@ -437,7 +437,7 @@ func parseAndCompile(root string, outDir string, parseOnly bool, singleFile stri
 		}
 	}
 
-	//log.Printf("PKG FILES: %v", pkgFiles)
+	// log.Printf("PKG FILES: %v", pkgFiles)
 	for _, path := range pkgFiles {
 		if err := copyFile(filepath.Join(outDir, filepath.Base(path)), path); err != nil {
 			return fmt.Errorf("copying Go package file %s: %w", path, err)
@@ -829,10 +829,7 @@ func buildAndRun(ctx context.Context, projectName string, buildPkg string, srcDi
 	cmd := exec.Command("go", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid:   true,
-		Pdeathsig: syscall.SIGINT,
-	}
+	sysProcAttr(cmd)
 	cmd.ExtraFiles = []*os.File{file}
 	cmd.Env = append(os.Environ(), "PUSHUP_LISTENER_FD=3")
 	if err := cmd.Start(); err != nil {
@@ -914,7 +911,8 @@ const (
 )
 
 func compilePushup(sourcePath string, rootDir string, strategy compilationStrategy, targetDir string,
-	applyOptimizations bool, singleFile string) error {
+	applyOptimizations bool, singleFile string,
+) error {
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("creating output directory %s: %w", targetDir, err)
 	}
@@ -1178,8 +1176,8 @@ type span struct {
 }
 
 func optimize(tree *syntaxTree) *syntaxTree {
-	//opt := optimizer{}
-	//opt.visitNodes(nodeList(tree.nodes))
+	// opt := optimizer{}
+	// opt.visitNodes(nodeList(tree.nodes))
 	tree.nodes = coalesceLiterals(tree.nodes)
 	return tree
 }
@@ -1232,7 +1230,7 @@ var _ nodeVisitor = (*optimizer)(nil)
 // coalesceLiterals is an optimization that coalesces consecutive HTML literal
 // nodes together by concatenating their strings together in a single node.
 func coalesceLiterals(nodes []node) []node {
-	//before := len(nodes)
+	// before := len(nodes)
 	if len(nodes) > 0 {
 		n := 0
 		for range nodes[:len(nodes)-1] {
@@ -1248,7 +1246,7 @@ func coalesceLiterals(nodes []node) []node {
 		}
 		nodes = nodes[:n+1]
 	}
-	//log.Printf("SAVED %d NODES", before-len(nodes))
+	// log.Printf("SAVED %d NODES", before-len(nodes))
 	return nodes
 }
 
@@ -1647,7 +1645,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		return nil, fmt.Errorf("reading all buffers: %w", err)
 	}
 
-	//fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
+	// fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
 
 	formatted, err := format.Source(raw)
 	if err != nil {
@@ -1795,9 +1793,11 @@ func (p *htmlParser) skipWhitespace() []*nodeLiteral {
 	return result
 }
 
-const transSym = '^'
-const transSymStr = string(transSym)
-const transSymEsc = transSymStr + transSymStr
+const (
+	transSym    = '^'
+	transSymStr = string(transSym)
+	transSymEsc = transSymStr + transSymStr
+)
 
 func (p *htmlParser) parseAttributeNameOrValue(nameOrValue string, nameOrValueStartPos, nameOrValueEndPos int, pos int) ([]node, int) {
 	var nodes []node
@@ -2168,7 +2168,7 @@ func (p *codeParser) reset() {
 	p.baseOffset = p.parser.offset
 	fset := token.NewFileSet()
 	source := p.parser.source()
-	//log.Printf("SOURCE: %q", source)
+	// log.Printf("SOURCE: %q", source)
 	p.file = fset.AddFile("", fset.Base(), len(source))
 	p.scanner = new(scanner.Scanner)
 	p.scanner.Init(p.file, []byte(source), p.handleGoScanErr, scanner.ScanComments)
@@ -2182,7 +2182,7 @@ func (p *codeParser) sourceFrom(pos token.Pos) string {
 
 func (p *codeParser) lookahead() (t goToken) {
 	t.pos, t.tok, t.lit = p.scanner.Scan()
-	//log.Printf("POS: %d\tTOK: %v\tLIT: %q", t.pos, t.tok, t.lit)
+	// log.Printf("POS: %d\tTOK: %v\tLIT: %q", t.pos, t.tok, t.lit)
 	return t
 }
 
@@ -3077,11 +3077,11 @@ func (l *openTagLexer) backup() {
 }
 
 func (l *openTagLexer) exitingState(state openTagLexState) {
-	//log.Printf("<- %s", state)
+	// log.Printf("<- %s", state)
 }
 
 func (l *openTagLexer) enteringState(state openTagLexState) {
-	//log.Printf("-> %s", state)
+	// log.Printf("-> %s", state)
 }
 
 func (l *openTagLexer) switchState(state openTagLexState) {
