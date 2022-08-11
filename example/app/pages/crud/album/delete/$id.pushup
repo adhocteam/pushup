@@ -11,11 +11,11 @@
         return err
     }
 
-    if req.Method == "POST" && req.FormValue("_method") == "delete" {
+    if req.Method == "DELETE" || (req.Method == "POST" && req.FormValue("_method") == "delete") {
         if err := deleteAlbum(DB, id); err != nil {
             return err
         }
-        http.Redirect(w, req, "/crud", 301)
+        http.Redirect(w, req, "/crud", http.StatusSeeOther)
         return nil
     }
 }

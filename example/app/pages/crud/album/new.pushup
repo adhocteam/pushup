@@ -48,7 +48,7 @@
                 http.Error(w, http.StatusText(500), 500)
                 return nil
             }
-            http.Redirect(w, req, "/crud", 301)
+            http.Redirect(w, req, "/crud", http.StatusSeeOther)
         }
     }
 }
