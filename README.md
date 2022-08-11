@@ -1,5 +1,7 @@
 # Pushup - a modern web framework for Go
 
+![workflow status](https://github.com/AdHocRandD/pushup/actions/workflows/go.yml/badge.svg)
+
 Pushup is an experimental new project that is exploring the viability of a new
 approach to web frameworks in Go.
 
