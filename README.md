@@ -141,9 +141,10 @@ plain HTML in a file and that's a valid Pushup page.
 
 When the parser encounters a '^' character (caret, ASCII 0x5e) while in
 HTML mode, it switches to parsing Pushup syntax, which consists of simple
-directives, control flow statements, and block delimiters. It then switches
-to the Go code parser. Once it detects the end of the directive or statement,
-it switches back to HTML mode, and parsing continues in a similar fashion.
+directives, control flow statements, block delimiters, and Go expressions. It
+then switches to the Go code parser. Once it detects the end of the directive
+or statement, it switches back to HTML mode, and parsing continues in a
+similar fashion.
 
 Pushup uses the tokenizers from the [go/scanner][scannerpkg] and
 [golang.org/x/net/html][htmlpkg] packages, so it should be able to handle
@@ -168,6 +169,61 @@ Docs TKTK
 #### `^handler`
 
 Docs TKTK
+
+### Expressions
+
+#### Simple expressions
+
+Simple Go expressions can be written with just `^` followed by the expression.
+"Simple" means variable names, and dotted field name access of structs.
+
+Example:
+
+```pushup
+^{ name := "Paul" }
+<p>Hello, ^name!</p>
+```
+
+Renders:
+
+```html
+<p>Hello, Paul!</p>
+```
+
+Notice that the parser stops on the "!" because it knows it is not part of the
+variable name.
+
+Example:
+
+```pushup
+<p>The URL path: ^req.URL.Path</p>
+```
+
+Renders:
+
+```html
+<p>The URL path: /foo/bar</p>
+```
+
+#### Explicit expressions
+
+Explicit expressions are written with `^` and the followed by any valid Go
+expression surrounded by parentheses.
+
+This is a good way to make function/method calls.
+
+Example:
+
+```pushup
+^import "strings"
+<p>^(strings.Repeat("Hello", 3))</p>
+```
+
+Renders:
+
+```html
+<p>HelloHelloHello</p>
+```
 
 [token]: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
 [scannerpkg]: https://pkg.go.dev/go/scanner#Scanner
