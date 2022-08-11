@@ -1,115 +1,175 @@
-Let's party like it's 1999 and make a new server-side-first web framework.
+# Pushup - a modern web framework for Go
 
-Pushup - a modern web framework for the Go programming language
-===============================================================
+Pushup is an experimental new project that is exploring the viability of a new
+approach to web frameworks in Go.
 
-Let's make Go the best full-stack web language. Let's recapture the best
-of past web development eras, like PHP's ease of deployment, updated with
-today's tech and user expectations, like great client-side interactivity,
-avoiding the things that haven't been so good, like complexity and bloat,
-combined with everything that makes Go great, like performance, compile-time
-type safety, and fast builds.
+Pushup seeks to make building page-oriented, server-side web apps using Go
+easy. It embraces the server, while acknowledging the reality of modern web
+apps and their improvements to UI interactivity over previous generations.
 
-It's a server-side web app framework first and foremost, let's just get that
-clear from the get-go.
+## What is Pushup?
 
-Key features
-------------
+There are three main aspects to Pushup:
 
-  * Pages - individual files that combine Go code and HTML markup which
-    compile down to Go packages, sort of like components
-  * File-based routing by default, with dynamic parameters
-  * Server-sent events integration
-  * Enhanced hypertext/hypermedia (think [htmx](https://htmx.org/))
-  * Compiled - single static deployable artifact contains the entire app
+1. An opinionated project/app directory structure that enables **file-based
+   routing**,
+1. A **lightweight syntax** alternative to traditional web framework templates
+   that combines Go code for control flow and imperative, view-controller-like
+   code with HTML markup, and
+1. A **compiler** that parses that syntax and generates pure Go code,
+   building standalone web apps on top of the Go stdlib `net/http` package.
 
-Table stakes functionality
---------------------------
+The syntax looks like this:
 
-  * Form submission & struct validation
-  * a11y - good defaults
-  * i18n/l10n - hooks for easy translation
-  * Safe HTML generation, escaping by default
-  * Web security protection - CSRF, XSS
-  * Health checks
-  * Metrics and monitoring hooks
+```pushup
 
- Aspirational features
- ---------------------
+^import "time"
 
-  * Blend the distinction between server and client code
-  * WASM (run (some) Go code in the browser)
-  * SQLite by default
-  * sqlc-like data access layer
+^{
+    title := "Hello, from Pushup!"
+}
 
-Also includes nice-to-haves
----------------------------
+<h1>^title</h1>
 
-  * Live-reloading dev environment
-  * Great debugging and visualization tools
+<p>The time is now ^(time.Now().String()).</p>
 
-Trends
-------
+^if time.Now().Weekday() == time.Friday {
+    <p>It's Friday! Enjoy the start to your weekend.</p>
+} else {
+    <p>Have a great day, we're glad you're here.</p>
+}
 
-A number of things are driving this.
+```
 
-  * Return to server-side web dev
-  * Feeling of too much JavaScript, especially build complexity and laggy UX
-  * Frustration with SPAs, especially bloat and UI complexity
-  * Greater expectations of client interactivity
-  * Mobile app competition to the web
-  * Maturation of SQLite as a lightweight server-side alternative RDBMS
+You would then place this code in a file somewhere in your `app/pages`
+directory, like `hello.pushup`. The `.pushup` extension is important and tells
+the compiler that it is a Pushup page. Once you build and run your Pushup app,
+that page is automatically mapped to the URL path `/hello`.
 
-Precedent
----------
+## Getting started
 
-A few projects come to mind, providing inspiration, ideas and implementations
-to lift from.
+To make a new Pushup app, first install the main Pushup executable.
 
-  * Phoenix (Elixir)
-  * Razor (C# ASP.NET)
-  * Hyperfiddle/Photon (Clojure)
-  * Remix (JavaScript)
+Because Pushup does not (yet) have a public repository, you need to [create a
+personal access token][token] on GitHub, and configure your ~/.netrc file.
 
-Similar Go projects
--------------------
+Make sure you have Go installed (at least version 1.18), and type:
 
-  * Vugu - Vugu looks good and seems to work based on my kicking the tires if
-    you want the experience of writing Go code as components for frontend
-    browser behavior. But it seems fairly limited to that SPA-like style of
-    interaction. Pushup wants to move things to the server.
-  * Vecty
-  * [gox](https://github.com/8byt/gox)
+```shell
+GOPRIVATE=github.com/AdHocRandD/pushup go install github.com/AdHocRandD/pushup@latest
+```
 
-How?
-----
+The `GOPRIVATE` environment variable is necessary to tell the go tool not to
+try to get the module from one of the central module services, but directly
+from GitHub.
 
-  * [HATEOAS](https://htmx.org/essays/hateoas/) - HTML-over-the-wire,
-    server-side state centralization
-  * Blend Go control flow and imperative "view controller" code with HTML
-    markup
-  * Components compile down to Go structs in separate package, wired together
-    at the top-level for routing and HTTP serving
+The command will install the `pushup` executable locally. Make sure the
+directory where the go tool installs to is in your \$PATH, which is \$(go
+env GOPATH)/bin. You can check if this is the case with:
 
-To anticipate some questions:
------------------------------
+```shell
+echo $PATH | grep $(go env GOPATH)/bin > /dev/null && echo yes || echo no
+```
 
-  * What about `html/template`? It's a great template package, but for what I
-    want to achieve, which are server-side components, I think the simplest
-    and best thing is to use Go code for the dynamic bits and inline it with
-    HTML. While I'm building this out and exploring the design, I think it's
-    best if I can focus on the things I can control and not be distracted
-    by making a different package fit what I'm trying to do. (It's entirely
-    possible though that I abandon this approach and make a wrapper over
-    `html/template` with a pre-processing step, I'm reserving the right
-    to change my mind.) I'm inspired by what C# is doing in Blazor and the
-    .razor file format/syntax here. The key is to have a compilation step that
-    produces Go code from a project directory layout.
-  * What about `net/http`? This will all be built on `net/http` ultimately
-    for the runtime, pages compile down to methods on a type that implements
-    the ServeHTTP interface.
+### Creating a new Pushup project
 
-Inspirations
-------------
+To create a new Pushup project, use the `pushup new` command.
 
-  * [Ben Hoyt's article on routing in Go](https://benhoyt.com/writings/go-routing/)
+```shell
+pushup new
+```
+
+Without any additional arguments, it will attempt to create a scaffolded new
+project in the current directory. However, the directory must be completely
+empty, or the command will abort. To simulataneously make a new directory
+and generate a scaffolded project, pass a relative path as argument:
+
+```shell
+pushup new myproject
+```
+
+The scaffolded new project directory consists of a directory structure for
+.pushup files and auxiliary project Go code, and a go.mod file.
+
+Change to the new project directory if necessary, then do a `pushup run`,
+which compiles the Pushup project to Go code, builds the app, and starts up
+the server.
+
+```shell
+pushup run
+```
+
+If all goes well, you should see a message on the terminal that the Pushup app
+is running and listening on a port:
+
+```
+↑↑ Pushup ready and listening on 0.0.0.0:8080 ↑↑
+```
+
+By default it listens on port 8080, but with the `-port` or `-unix-socket`
+flags you can pick your own listener.
+
+Open [http://localhost:8080/](http://localhost:8080/) in your browser to see
+the default layout and a welcome index page.
+
+## Example demo app
+
+See the [example](./example) directory for a demo Pushup app that demonstrates
+many of the concepts in Pushup and implements a few small common patterns like
+some HTMX examples and a simple CRUD app.
+
+Click on "view source" at the bottom of any page in the example app to see the
+source of the .pushup page for that route, including the source of the "view
+source" .pushup page itself. This is a good way to see how to write Pushup
+syntax.
+
+## Go modules and Pushup projects
+
+Pushup treats projects as their own self-contained Go module. The build
+process assumes this is the case by default. But it is possible to include a
+Pushup project as part of a parent Go module. See the the `-module` option to
+`pushup new`, and the `-build-pkg` option to the `pushup run` command.
+
+## Pushup syntax
+
+### How it works
+
+Pushup is a mix of a new syntax consisting of Pushup directives and keywords,
+Go code, and HTML markup.
+
+Parsing a .pushup file always starts out in HTML mode, so you can just put
+plain HTML in a file and that's a valid Pushup page.
+
+When the parser encounters a '^' character (caret, ASCII 0x5e) while in
+HTML mode, it switches to parsing Pushup syntax, which consists of simple
+directives, control flow statements, and block delimiters. It then switches
+to the Go code parser. Once it detects the end of the directive or statement,
+it switches back to HTML mode, and parsing continues in a similar fashion.
+
+Pushup uses the tokenizers from the [go/scanner][scannerpkg] and
+[golang.org/x/net/html][htmlpkg] packages, so it should be able to handle
+any valid syntax from either language.
+
+### Directives
+
+#### `^import`
+
+Docs TKTK
+
+#### `^layout`
+
+Docs TKTK
+
+### Code blocks
+
+#### `^{`
+
+Docs TKTK
+
+#### `^handler`
+
+Docs TKTK
+
+[token]: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
+[scannerpkg]: https://pkg.go.dev/go/scanner#Scanner
+[htmlpkg]: https://pkg.go.dev/golang.org/x/net/html#Tokenizer
