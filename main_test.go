@@ -76,7 +76,7 @@ func TestPushup(t *testing.T) {
 				var errb bytes.Buffer
 
 				g.Go(func() error {
-					cmd := exec.Command("go", "run", "main.go", "run", "-build-pkg", "github.com/AdHocRandD/pushup/build", "-single", pushupFile, "-unix-socket", socketPath)
+					cmd := exec.Command("go", "run", ".", "run", "-build-pkg", "github.com/AdHocRandD/pushup/build", "-single", pushupFile, "-unix-socket", socketPath)
 					cmd.SysProcAttr = &syscall.SysProcAttr{
 						Setpgid: true,
 					}
