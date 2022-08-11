@@ -52,6 +52,14 @@ that page is automatically mapped to the URL path `/hello`.
 
 To make a new Pushup app, first install the main Pushup executable.
 
+### Installing Pushup
+
+#### Prerequisites
+
+ * go 1.18 or later
+
+#### Install via `go install`
+
 Because Pushup does not (yet) have a public repository, you need to [create a
 personal access token][token] on GitHub, and configure your ~/.netrc file.
 
@@ -71,6 +79,16 @@ directory where the go tool installs to is in your `$PATH`, which is `$(go env G
 ```shell
 echo $PATH | grep $(go env GOPATH)/bin > /dev/null && echo yes || echo no
 ```
+
+#### Install via git
+
+```shell
+git clone git@github.com:AdHocRandD/pushup.git
+cd pushup
+make
+```
+
+This will build the `pushup` binary, then copy it somewhere in your $PATH.
 
 ### Creating a new Pushup project
 
