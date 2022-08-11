@@ -239,7 +239,6 @@ func (r *runCmd) do() error {
 		if r.devReload {
 			reload := make(chan struct{})
 			go func() {
-				time.Sleep(1 * time.Second)
 				watchForReload(ctx.fileChangeCancel, appDir, reload)
 			}()
 			tmpdir, err := ioutil.TempDir("", "pushupdev")
@@ -763,8 +762,16 @@ func getPushupPagePaths(root string) []string {
 }
 
 func copyFile(dest, src string) error {
-	// TODO(paulsmith): this may not work on some OSes, implement some fallback
-	return os.Link(src, dest)
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(dest, b, 0664); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 //go:embed _runtime/pushup_support.go _runtime/cmd/main.go
