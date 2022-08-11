@@ -236,10 +236,10 @@ func (r *runCmd) do() error {
 		ctx := newPushupContext(context.Background())
 
 		if r.devReload {
-			reload, err := watchForReload(ctx.fileChangeCancel, appDir)
-			if err != nil {
-				return fmt.Errorf("watching for reload: %v", err)
-			}
+			reload := make(chan struct{})
+			go func() {
+				watchForReload(ctx.fileChangeCancel, appDir, reload)
+			}()
 			tmpdir, err := ioutil.TempDir("", "pushupdev")
 			if err != nil {
 				return fmt.Errorf("creating temp dir: %v", err)
@@ -449,16 +449,14 @@ func parseAndCompile(root string, outDir string, parseOnly bool, singleFile stri
 	return nil
 }
 
-func watchForReload(cancel context.CancelFunc, root string) (chan struct{}, error) {
-	reload := make(chan struct{})
-
+func watchForReload(cancel context.CancelFunc, root string, reload chan struct{}) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return nil, fmt.Errorf("creating new fsnotify watcher: %v", err)
+		panic(fmt.Errorf("creating new fsnotify watcher: %v", err))
 	}
 
 	go debounce(125*time.Millisecond, watcher.Events, func(event fsnotify.Event) {
-		if event.Op > 0 {
+		if event.Name != "" && event.Op > 0 {
 			switch event.Op {
 			case fsnotify.Create:
 				if isDir(event.Name) {
@@ -475,10 +473,8 @@ func watchForReload(cancel context.CancelFunc, root string) (chan struct{}, erro
 	})
 
 	if err := watchDirRecursively(watcher, root); err != nil {
-		return nil, fmt.Errorf("adding dir to watch: %w", err)
+		panic(fmt.Errorf("adding dir to watch: %w", err))
 	}
-
-	return reload, nil
 }
 
 func isDir(path string) bool {
@@ -764,8 +760,16 @@ func getPushupPagePaths(root string) []string {
 }
 
 func copyFile(dest, src string) error {
-	// TODO(paulsmith): this may not work on some OSes, implement some fallback
-	return os.Link(src, dest)
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(dest, b, 0664); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 //go:embed _runtime/pushup_support.go _runtime/cmd/main.go
