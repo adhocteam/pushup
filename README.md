@@ -129,6 +129,40 @@ process assumes this is the case by default. But it is possible to include a
 Pushup project as part of a parent Go module. See the the `-module` option to
 `pushup new`, and the `-build-pkg` option to the `pushup run` command.
 
+## Project directory structure
+
+Pushup projects have a particular directory structure that the compiler expects
+before building. The most minimal Pushup project would look like:
+
+```
+app
+├── layouts
+├── pages
+│   └── index.pushup
+└── pkg
+go.mod
+```
+
+## Pages
+
+Pushup pages are the main units in Pushup. They are a combination of logic and
+content. It may be helpful to think of them as both the controller and the view
+in a MVC-like system, but colocated together in the same file.
+
+They are also the basis of file-based routing: the name of the Pushup file,
+minus the .pushup extension, is mapped to the portion of the URL path for
+routing.
+
+## Layouts
+
+Layouts are HTML templates that used in common across multiple pages. They are
+just HTML, with the exception of the required Pushup directive `^contents`,
+which indicates where individual page content will be insert when rendered.
+
+## File-based routing
+
+Docs TKTK
+
 ## Pushup syntax
 
 ### How it works
@@ -157,6 +191,10 @@ any valid syntax from either language.
 Docs TKTK
 
 #### `^layout`
+
+Docs TKTK
+
+#### `^contents`
 
 Docs TKTK
 
