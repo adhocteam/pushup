@@ -221,7 +221,6 @@ func runCmdFromFlags(host, port, unixSocket *string, devReload *bool) *runCmd {
 }
 
 func (r *runCmd) do() error {
-	// TODO(paulsmith): make this an option/flag
 	appDir := "app"
 
 	if err := parseAndCompile(appDir, r.outDir, r.parseOnly, r.singleFile, r.applyOptimizations); err != nil {
@@ -437,7 +436,6 @@ func parseAndCompile(root string, outDir string, parseOnly bool, singleFile stri
 		}
 	}
 
-	// log.Printf("PKG FILES: %v", pkgFiles)
 	for _, path := range pkgFiles {
 		if err := copyFile(filepath.Join(outDir, filepath.Base(path)), path); err != nil {
 			return fmt.Errorf("copying Go package file %s: %w", path, err)
@@ -1176,56 +1174,9 @@ type span struct {
 }
 
 func optimize(tree *syntaxTree) *syntaxTree {
-	// opt := optimizer{}
-	// opt.visitNodes(nodeList(tree.nodes))
 	tree.nodes = coalesceLiterals(tree.nodes)
 	return tree
 }
-
-// TODO(paulsmith): this needs to be fleshed out and wired up correctly,
-// currently it is not actually in use.
-type optimizer struct{}
-
-func (o *optimizer) visitElement(n *nodeElement) {
-	nodeList(n.children).accept(o)
-}
-
-func (o *optimizer) visitLiteral(n *nodeLiteral) {
-}
-
-func (o *optimizer) visitGoStrExpr(n *nodeGoStrExpr) {
-}
-
-func (o *optimizer) visitGoCode(n *nodeGoCode) {
-}
-
-func (o *optimizer) visitIf(n *nodeIf) {
-	n.then.accept(o)
-	n.alt.accept(o)
-}
-
-func (o *optimizer) visitFor(n *nodeFor) {
-	n.block.accept(o)
-}
-
-func (o *optimizer) visitStmtBlock(n *nodeBlock) {
-	nodeList(n.nodes).accept(o)
-}
-
-func (o *optimizer) visitNodes(n []node) {
-	n = coalesceLiterals(n)
-	for i := range n {
-		n[i].accept(o)
-	}
-}
-
-func (o *optimizer) visitImport(n *nodeImport) {
-}
-
-func (o *optimizer) visitLayout(n *nodeLayout) {
-}
-
-var _ nodeVisitor = (*optimizer)(nil)
 
 // coalesceLiterals is an optimization that coalesces consecutive HTML literal
 // nodes together by concatenating their strings together in a single node.
@@ -1932,7 +1883,6 @@ tokenLoop:
 					tree.nodes = append(tree.nodes, e)
 					p.parser.offset = p.start + escaped + 2
 				} else {
-					// TODO(paulsmith): check for an email address
 					// FIXME(paulsmith): clean this up!
 					if strings.HasPrefix(p.raw[idx+1:], "layout") {
 						s := p.raw[idx+1+len("layout"):]
@@ -2252,7 +2202,7 @@ func (p *codeParser) parseCode() node {
 	} else if p.peek().tok == token.IDENT && p.peek().lit == "handler" {
 		p.advance()
 		e = p.parseHandlerKeyword()
-		// NOTE(paulsmith): there is a tricky bit here were an implicit
+		// NOTE(paulsmith): there is a tricky bit here where an implicit
 		// expression in the form of an identifier token is next and we would
 		// not be able to distinguish it from a keyword. this is also a problem
 		// for name collisions because a user could create a variable named the
@@ -2453,7 +2403,7 @@ func (p *codeParser) parseImportKeyword() *nodeImport {
 		TRANS_SYMimport . "lib/math"         Sin
 	*/
 	e := new(nodeImport)
-	// we are one token past the 'code' keyword
+	// we are one token past the 'import' keyword
 	switch p.peek().tok {
 	case token.STRING:
 		e.decl.path = p.peek().lit
