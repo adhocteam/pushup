@@ -1,3 +1,10 @@
+all: pushup
+
+pushup:
+	go build -o pushup .
+
+.PHONY: pushup
+
 test tests:
 	go test -v ./...
 
