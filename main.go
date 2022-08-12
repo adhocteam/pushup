@@ -42,9 +42,17 @@ import (
 )
 
 func main() {
+	var version bool
+
 	flag.Usage = printPushupHelp
+	flag.BoolVar(&version, "version", false, "Print the version number and exit")
 
 	flag.Parse()
+
+	if version {
+		printVersion()
+		os.Exit(0)
+	}
 
 	if flag.NArg() == 0 {
 		printPushupHelp()
@@ -320,6 +328,9 @@ var commands = []command{
 func printPushupHelp() {
 	w := tabwriter.NewWriter(os.Stderr, 0, 0, 1, ' ', 0)
 	fmt.Fprintln(w, "Usage: pushup [command] [options]")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Flags:")
+	fmt.Fprintln(w, "\t-version\t\tPrint the version number and exit")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
 	for _, cmd := range commands {
