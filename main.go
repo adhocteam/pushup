@@ -237,9 +237,6 @@ func (r *runCmd) do() error {
 
 		if r.devReload {
 			reload := make(chan struct{})
-			go func() {
-				watchForReload(ctx.fileChangeCancel, appDir, reload)
-			}()
 			tmpdir, err := ioutil.TempDir("", "pushupdev")
 			if err != nil {
 				return fmt.Errorf("creating temp dir: %v", err)
@@ -275,6 +272,9 @@ func (r *runCmd) do() error {
 					return fmt.Errorf("parsing and compiling: %v", err)
 				}
 				ctx = newPushupContext(context.Background())
+				go func() {
+					watchForReload(ctx, ctx.fileChangeCancel, appDir, reload)
+				}()
 				if err := buildAndRun(ctx, r.projectName, r.buildPkg, r.outDir, ln, buildComplete); err != nil {
 					return fmt.Errorf("building and running generated Go code: %v", err)
 				}
@@ -449,13 +449,14 @@ func parseAndCompile(root string, outDir string, parseOnly bool, singleFile stri
 	return nil
 }
 
-func watchForReload(cancel context.CancelFunc, root string, reload chan struct{}) {
+func watchForReload(ctx context.Context, cancel context.CancelFunc, root string, reload chan struct{}) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		panic(fmt.Errorf("creating new fsnotify watcher: %v", err))
 	}
 
-	go debounce(125*time.Millisecond, watcher.Events, func(event fsnotify.Event) {
+	go debounce(ctx, 125*time.Millisecond, watcher.Events, func(event fsnotify.Event) {
+		// log.Printf("name: %s\top: %s", event.Name, event.Op)
 		if event.Name != "" && event.Op > 0 {
 			switch event.Op {
 			case fsnotify.Create:
@@ -468,12 +469,19 @@ func watchForReload(cancel context.CancelFunc, root string, reload chan struct{}
 			}
 			log.Printf("change detected in project directory, reloading")
 			cancel()
+			stopWatching(watcher)
 			reload <- struct{}{}
 		}
 	})
 
 	if err := watchDirRecursively(watcher, root); err != nil {
 		panic(fmt.Errorf("adding dir to watch: %w", err))
+	}
+}
+
+func stopWatching(watcher *fsnotify.Watcher) {
+	for _, name := range watcher.WatchList() {
+		watcher.Remove(name)
 	}
 }
 
@@ -669,15 +677,21 @@ func appendDevReloaderScript(r io.Reader) (*html.Node, error) {
 	return doc, nil
 }
 
-func debounce[T any](interval time.Duration, input chan T, fn func(arg T)) {
-	var item T
+func debounce[T any](ctx context.Context, interval time.Duration, input chan T, fn func(arg T)) {
+	var item *T
 	timer := time.NewTimer(interval)
 	for {
 		select {
-		case item = <-input:
+		case it := <-input:
+			item = &it
 			timer.Reset(interval)
 		case <-timer.C:
-			fn(item)
+			if item != nil {
+				fn(*item)
+			}
+			item = nil
+		case <-ctx.Done():
+			return
 		}
 	}
 }
