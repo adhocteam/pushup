@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"io/ioutil"
 	"log"
+	"math"
 	"mime"
 	"net"
 	"net/http"
@@ -245,9 +246,6 @@ func (r *runCmd) do() error {
 
 		if r.devReload {
 			reload := make(chan struct{})
-			go func() {
-				watchForReload(ctx.fileChangeCancel, appDir, reload)
-			}()
 			tmpdir, err := ioutil.TempDir("", "pushupdev")
 			if err != nil {
 				return fmt.Errorf("creating temp dir: %v", err)
@@ -283,6 +281,9 @@ func (r *runCmd) do() error {
 					return fmt.Errorf("parsing and compiling: %v", err)
 				}
 				ctx = newPushupContext(context.Background())
+				go func() {
+					watchForReload(ctx, ctx.fileChangeCancel, appDir, reload)
+				}()
 				if err := buildAndRun(ctx, r.projectName, r.buildPkg, r.outDir, ln, buildComplete); err != nil {
 					return fmt.Errorf("building and running generated Go code: %v", err)
 				}
@@ -460,31 +461,34 @@ func parseAndCompile(root string, outDir string, parseOnly bool, singleFile stri
 	return nil
 }
 
-func watchForReload(cancel context.CancelFunc, root string, reload chan struct{}) {
+func watchForReload(ctx context.Context, cancel context.CancelFunc, root string, reload chan struct{}) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		panic(fmt.Errorf("creating new fsnotify watcher: %v", err))
 	}
 
-	go debounce(125*time.Millisecond, watcher.Events, func(event fsnotify.Event) {
-		if event.Name != "" && event.Op > 0 {
-			switch event.Op {
-			case fsnotify.Create:
-				if isDir(event.Name) {
-					if err := watchDirRecursively(watcher, event.Name); err != nil {
-						panic(err)
-					}
-					return
-				}
+	go debounceEvents(ctx, 125*time.Millisecond, watcher, func(event fsnotify.Event) {
+		// log.Printf("name: %s\top: %s", event.Name, event.Op)
+		if event.Op == fsnotify.Create && isDir(event.Name) {
+			if err := watchDirRecursively(watcher, event.Name); err != nil {
+				panic(err)
 			}
-			log.Printf("change detected in project directory, reloading")
-			cancel()
-			reload <- struct{}{}
+			return
 		}
+		log.Printf("change detected in project directory, reloading")
+		cancel()
+		stopWatching(watcher)
+		reload <- struct{}{}
 	})
 
 	if err := watchDirRecursively(watcher, root); err != nil {
 		panic(fmt.Errorf("adding dir to watch: %w", err))
+	}
+}
+
+func stopWatching(watcher *fsnotify.Watcher) {
+	for _, name := range watcher.WatchList() {
+		watcher.Remove(name)
 	}
 }
 
@@ -680,15 +684,48 @@ func appendDevReloaderScript(r io.Reader) (*html.Node, error) {
 	return doc, nil
 }
 
-func debounce[T any](interval time.Duration, input chan T, fn func(arg T)) {
-	var item T
-	timer := time.NewTimer(interval)
+func debounceEvents(ctx context.Context, interval time.Duration, watcher *fsnotify.Watcher, fn func(event fsnotify.Event)) {
+	var mu sync.Mutex
+	timers := make(map[string]*time.Timer)
+
+	has := func(ev fsnotify.Event, op fsnotify.Op) bool {
+		return ev.Op&op == op
+	}
+
 	for {
 		select {
-		case item = <-input:
-			timer.Reset(interval)
-		case <-timer.C:
-			fn(item)
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+			log.Printf("file watch error: %v", err)
+		case ev, ok := <-watcher.Events:
+			// log.Printf("GOT EVENT: %s %d", ev.String(), ev.Op)
+			if !ok {
+				return
+			}
+			if !has(ev, fsnotify.Create) && !has(ev, fsnotify.Write) {
+				continue
+			}
+			mu.Lock()
+			t, ok := timers[ev.Name]
+			mu.Unlock()
+			if !ok {
+				t = time.AfterFunc(math.MaxInt64, func() {
+					fn(ev)
+					mu.Lock()
+					defer mu.Unlock()
+					delete(timers, ev.Name)
+				})
+				t.Stop()
+
+				mu.Lock()
+				timers[ev.Name] = t
+				mu.Unlock()
+			}
+			t.Reset(interval)
+		case <-ctx.Done():
+			return
 		}
 	}
 }
