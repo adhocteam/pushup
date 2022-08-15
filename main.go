@@ -1548,7 +1548,6 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	g.bodyPrintf("  return t.pushupFilePath\n")
 	g.bodyPrintf("}\n\n")
 
-	g.used("io")
 	g.used("net/http")
 	switch strategy {
 	case compilePushupPage:
