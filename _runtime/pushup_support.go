@@ -2,10 +2,12 @@ package build
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -175,4 +177,17 @@ func printEscaped(w io.Writer, val any) {
 	default:
 		io.WriteString(w, template.HTMLEscapeString(fmt.Sprint(val)))
 	}
+}
+
+{{if .EmbedStatic}}
+//go:embed static
+{{end}}
+var static embed.FS
+
+func AddStaticHandler(mux *http.ServeMux) {
+	fsys, err := fs.Sub(static, "static")
+	if err != nil {
+		panic(err)
+	}
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(fsys))))
 }

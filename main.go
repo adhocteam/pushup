@@ -129,7 +129,7 @@ func newNewCmd(arguments []string) *newCmd {
 	return &newCmd{projectDir: projectDir, moduleName: moduleNameFlag.String()}
 }
 
-//go:embed scaffold/layouts/*.pushup scaffold/pages/*.pushup
+//go:embed scaffold
 var scaffold embed.FS
 
 func (n *newCmd) do() error {
@@ -143,14 +143,14 @@ func (n *newCmd) do() error {
 	}
 
 	// create project directory structure
-	for _, name := range []string{"pages", "layouts", "pkg"} {
+	for _, name := range []string{"pages", "layouts", "pkg", "static"} {
 		path := filepath.Join(n.projectDir, "app", name)
 		if err := os.MkdirAll(path, 0755); err != nil {
 			return fmt.Errorf("creating project directory %s: %w", path, err)
 		}
 	}
 
-	for _, name := range []string{"layouts/default.pushup", "pages/index.pushup"} {
+	for _, name := range []string{"layouts/default.pushup", "pages/index.pushup", "static/pushup.css"} {
 		dest := filepath.Join(n.projectDir, "app", name)
 		src := filepath.Join("scaffold", name)
 		if err := copyFileFS(scaffold, dest, src); err != nil {
@@ -438,10 +438,12 @@ func compileProject(c compileProjectParams) error {
 	var layoutsDir string
 	var pagesDir string
 	var pkgDir string
+	var staticDir string
 
 	var layoutFiles []string
 	var pushupFiles []string
 	var pkgFiles []string
+	var staticFiles []string
 
 	if c.singleFile != "" {
 		pushupFiles = []string{c.singleFile}
@@ -490,6 +492,22 @@ func compileProject(c compileProjectParams) error {
 					path := filepath.Join(pkgDir, entry.Name())
 					pkgFiles = append(pkgFiles, path)
 				}
+			}
+		}
+
+		staticDir = filepath.Join(c.root, "static")
+		{
+			if !dirExists(staticDir) {
+				return fmt.Errorf("invalid Pushup project directory structure: couldn't find `static` dir")
+			}
+
+			if err := fs.WalkDir(os.DirFS(staticDir), ".", func(path string, d fs.DirEntry, _ error) error {
+				if !d.IsDir() {
+					staticFiles = append(staticFiles, path)
+				}
+				return nil
+			}); err != nil {
+				return fmt.Errorf("walking static dir: %w", err)
 			}
 		}
 	}
@@ -549,9 +567,31 @@ func compileProject(c compileProjectParams) error {
 		}
 	}
 
+	for _, path := range staticFiles {
+		dir := filepath.Join(c.outDir, "static", filepath.Dir(path))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("making intermediate directory in static dir %s: %v", dir, err)
+		}
+		src := filepath.Join(staticDir, path)
+		dest := filepath.Join(dir, filepath.Base(path))
+		if err := copyFile(dest, src); err != nil {
+			return fmt.Errorf("copying static file %s to %s: %w", src, dest, err)
+		}
+	}
+
 	if err := copyFileFS(runtimeFiles, filepath.Join(c.outDir, "pushup_support.go"), filepath.Join("_runtime", "pushup_support.go")); err != nil {
 		return fmt.Errorf("copying runtime file: %w", err)
 	}
+
+	t := template.Must(template.ParseFS(runtimeFiles, filepath.Join("_runtime", "pushup_support.go")))
+	f, err := os.Create(filepath.Join(c.outDir, "pushup_support.go"))
+	if err != nil {
+		return fmt.Errorf("creating pushup_support.go: %w", err)
+	}
+	if err := t.Execute(f, map[string]any{"EmbedStatic": c.singleFile == ""}); err != nil {
+		return fmt.Errorf("executing pushup_support.go template: %w", err)
+	}
+	f.Close()
 
 	return nil
 }
@@ -958,7 +998,7 @@ func buildProject(ctx context.Context, b buildParams) error {
 	if err != nil {
 		return fmt.Errorf("creating main.go: %w", err)
 	}
-	if err := t.Execute(f, map[string]string{"ProjectPkg": b.pkgName}); err != nil {
+	if err := t.Execute(f, map[string]any{"ProjectPkg": b.pkgName}); err != nil {
 		return fmt.Errorf("executing main.go template: %w", err)
 	}
 	f.Close()

@@ -43,6 +43,7 @@ func main() {
 		w.Header().Set("Cache-Control", "public, max-age=7776000")
 		fmt.Fprintln(w, "data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAYAAABPYyMiAAAABmJLR0T///////8JWPfcAAAACXBIWXMAAABIAAAASABGyWs+AAAAF0lEQVRIx2NgGAWjYBSMglEwCkbBSAcACBAAAeaR9cIAAAAASUVORK5CYII=")
 	})
+	build.AddStaticHandler(mux)
 
 	var ln net.Listener
 	var err error
