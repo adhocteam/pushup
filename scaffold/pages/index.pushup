@@ -11,7 +11,7 @@
 }
 
 ^{
-    title := "Welcome to Pushup!"
+    title := pushupGreeting // pushupGreeting declared in app/pkg/app.go
     greeting := "Hello"
     name := "world"
 }

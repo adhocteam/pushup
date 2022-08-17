@@ -150,7 +150,7 @@ func (n *newCmd) do() error {
 		}
 	}
 
-	for _, name := range []string{"layouts/default.pushup", "pages/index.pushup", "static/pushup.css"} {
+	for _, name := range []string{"layouts/default.pushup", "pages/index.pushup", "static/pushup.css", "pkg/app.go"} {
 		dest := filepath.Join(n.projectDir, "app", name)
 		src := filepath.Join("scaffold", name)
 		if err := copyFileFS(scaffold, dest, src); err != nil {
