@@ -159,7 +159,8 @@ app
 ├── layouts
 ├── pages
 │   └── index.pushup
-└── pkg
+├── pkg
+└── static
 go.mod
 ```
 
@@ -178,6 +179,13 @@ routing.
 Layouts are HTML templates that used in common across multiple pages. They are
 just HTML, with the exception of the required Pushup directive `^contents`,
 which indicates where individual page content will be insert when rendered.
+
+## Static media
+
+Static media files like CSS, JS, and images, can be added to the `app/static`
+project directory. These will be embedded directly in the project executable
+when it is built, and are accessed via a straightforward mapping under the
+"/static/" URL path.
 
 ## File-based routing
 
