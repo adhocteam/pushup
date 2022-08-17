@@ -76,7 +76,7 @@ func main() {
 				cmd = newRunCmd(args)
 			}
 			if err := cmd.do(); err != nil {
-				log.Fatalf("%s command: %v", err)
+				log.Fatalf("%s command: %v", c.name, err)
 			} else {
 				os.Exit(0)
 			}
