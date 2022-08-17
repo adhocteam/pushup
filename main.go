@@ -1,3 +1,4 @@
+// Pushup web framework
 package main
 
 import (
@@ -60,54 +61,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	command := flag.Arg(0)
+	cmdName := flag.Arg(0)
+	args := flag.Args()[1:]
+	var cmd doer
 
-	for _, cmd := range commands {
-		if cmd.name == command {
-			switch command {
+	for _, c := range cliCmds {
+		if c.name == cmdName {
+			switch cmdName {
 			case "new":
-				flags := flag.NewFlagSet("pushup "+command, flag.ExitOnError)
-				moduleNameFlag := newRegexString(`^\w[\w-]*$`, "example/myproject")
-				flags.Var(moduleNameFlag, "module", "name of Go module of the new Pushup app")
-				flags.Parse(flag.Args()[1:])
-				if flags.NArg() > 1 {
-					log.Fatalf("extra unprocessed argument(s)")
-				}
-				projectDir := "."
-				if flags.NArg() == 1 {
-					projectDir = flags.Arg(0)
-				}
-				newc := newCmdFromFlags(projectDir, moduleNameFlag.String())
-				if err := newc.do(); err != nil {
-					log.Fatalf("'new' command error: %v", err)
-				}
+				cmd = newNewCmd(args)
 			case "build":
-				panic("unimplemented 'build' command")
+				cmd = newBuildCmd(args)
 			case "run":
-				flags := flag.NewFlagSet("pushup "+command, flag.ExitOnError)
-				// build flags
-				projectName := newRegexString(`^\w+`, "myproject")
-				buildPkg := flags.String("build-pkg", "example/myproject/build", "name of package of compiled Pushup app")
-				flags.Var(projectName, "project", "name of Pushup project")
-				singleFlag := flags.String("single", "", "path to a single Pushup file")
-				applyOptimizations := flags.Bool("O", false, "apply simple optimizations to the parse tree")
-				parseOnly := flags.Bool("parse-only", false, "exit after dumping parse result")
-				compileOnly := flags.Bool("compile-only", false, "compile only, don't start web server after")
-				outDir := flags.String("out-dir", "./build", "path to output build directory")
-				// run flags
-				host := flags.String("host", "0.0.0.0", "host to listen on")
-				port := flags.String("port", "8080", "port to listen on with TCP IPv4")
-				unixSocket := flags.String("unix-socket", "", "path to listen on with Unix socket")
-				devReload := flags.Bool("dev", false, "compile and run the Pushup app and reload on changes")
-				flags.Parse(flag.Args()[1:])
-				run := runCmdFromFlags(host, port, unixSocket, devReload)
-				run.buildCmd = buildCmdFromFlags(projectName.String(), *buildPkg, singleFlag, applyOptimizations, parseOnly, compileOnly, outDir)
-				if err := run.do(); err != nil {
-					log.Fatalf("'run' command error: %v", err)
-				}
+				cmd = newRunCmd(args)
+			}
+			if err := cmd.do(); err != nil {
+				log.Fatalf("%s command: %v", err)
+			} else {
+				os.Exit(0)
 			}
 		}
 	}
+	fmt.Fprintf(os.Stderr, "unknown command %q\n", cmdName)
+	flag.Usage()
+	os.Exit(1)
 }
 
 type regexString struct {
@@ -137,8 +114,19 @@ type newCmd struct {
 	moduleName string
 }
 
-func newCmdFromFlags(projectDir string, moduleName string) *newCmd {
-	return &newCmd{projectDir: projectDir, moduleName: moduleName}
+func newNewCmd(arguments []string) *newCmd {
+	flags := flag.NewFlagSet("pushup new", flag.ExitOnError)
+	moduleNameFlag := newRegexString(`^\w[\w-]*$`, "example/myproject")
+	flags.Var(moduleNameFlag, "module", "name of Go module of the new Pushup app")
+	flags.Parse(arguments)
+	if flags.NArg() > 1 {
+		log.Fatalf("extra unprocessed argument(s)")
+	}
+	projectDir := "."
+	if flags.NArg() == 1 {
+		projectDir = flags.Arg(0)
+	}
+	return &newCmd{projectDir: projectDir, moduleName: moduleNameFlag.String()}
 }
 
 //go:embed scaffold/layouts/*.pushup scaffold/pages/*.pushup
@@ -186,8 +174,12 @@ func createGoModFile(destDir string, moduleName string) error {
 	return nil
 }
 
+type doer interface {
+	do() error
+}
+
 type buildCmd struct {
-	projectName        string
+	projectName        *regexString
 	buildPkg           string
 	singleFile         string
 	applyOptimizations bool
@@ -196,55 +188,115 @@ type buildCmd struct {
 	outDir             string
 }
 
-func buildCmdFromFlags(projectName string, buildPkg string, singleFile *string, applyOptimizations *bool, parseOnly *bool, compileOnly *bool, outDir *string) *buildCmd {
-	return &buildCmd{
-		projectName:        projectName,
-		buildPkg:           buildPkg,
-		singleFile:         *singleFile,
-		applyOptimizations: *applyOptimizations,
-		parseOnly:          *parseOnly,
-		compileOnly:        *compileOnly,
-		outDir:             *outDir,
-	}
+func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
+	b.projectName = newRegexString(`^\w+`, "myproject")
+	flags.Var(b.projectName, "project", "name of Pushup project")
+	flags.StringVar(&b.buildPkg, "build-pkg", "example/myproject/build", "name of package of compiled Pushup app")
+	flags.StringVar(&b.singleFile, "single", "", "path to a single Pushup file")
+	flags.BoolVar(&b.applyOptimizations, "O", false, "apply simple optimizations to the parse tree")
+	flags.BoolVar(&b.parseOnly, "parse-only", false, "exit after dumping parse result")
+	flags.BoolVar(&b.compileOnly, "compile-only", false, "compile only, don't start web server after")
+	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory")
+}
+
+func newBuildCmd(arguments []string) *buildCmd {
+	flags := flag.NewFlagSet("pushup build", flag.ExitOnError)
+	b := new(buildCmd)
+	setBuildFlags(flags, b)
+	flags.Parse(arguments)
+	return b
 }
 
 func (b *buildCmd) do() error {
+	appDir := "app"
+
+	if err := os.RemoveAll(b.outDir); err != nil {
+		return fmt.Errorf("removing build dir: %w", err)
+	}
+
+	compileParams := compileProjectParams{
+		root:               appDir,
+		outDir:             b.outDir,
+		parseOnly:          b.parseOnly,
+		singleFile:         b.singleFile,
+		applyOptimizations: b.applyOptimizations,
+	}
+
+	if err := compileProject(compileParams); err != nil {
+		return fmt.Errorf("parsing and compiling: %w", err)
+	}
+
+	if b.parseOnly {
+		return nil
+	}
+
+	buildParams := buildParams{
+		projectName: b.projectName.String(),
+		pkgName:     b.buildPkg,
+		srcDir:      b.outDir,
+		buildDir:    b.outDir,
+	}
+	if err := buildProject(context.Background(), buildParams); err != nil {
+		return fmt.Errorf("building project: %w", err)
+	}
+
 	return nil
 }
 
 type runCmd struct {
 	*buildCmd
-	port       string
 	host       string
+	port       string
 	unixSocket string
 	devReload  bool
 }
 
-func runCmdFromFlags(host, port, unixSocket *string, devReload *bool) *runCmd {
-	return &runCmd{
-		host:       *host,
-		port:       *port,
-		unixSocket: *unixSocket,
-		devReload:  *devReload,
-	}
+func newRunCmd(arguments []string) *runCmd {
+	flags := flag.NewFlagSet("pushup run", flag.ExitOnError)
+	b := new(buildCmd)
+	setBuildFlags(flags, b)
+	host := flags.String("host", "0.0.0.0", "host to listen on")
+	port := flags.String("port", "8080", "port to listen on with TCP IPv4")
+	unixSocket := flags.String("unix-socket", "", "path to listen on with Unix socket")
+	devReload := flags.Bool("dev", false, "compile and run the Pushup app and reload on changes")
+	flags.Parse(arguments)
+	return &runCmd{buildCmd: b, host: *host, port: *port, unixSocket: *unixSocket, devReload: *devReload}
 }
 
 func (r *runCmd) do() error {
+	if err := r.buildCmd.do(); err != nil {
+		return fmt.Errorf("build command: %w", err)
+	}
+
 	appDir := "app"
 
-	if err := parseAndCompile(appDir, r.outDir, r.parseOnly, r.singleFile, r.applyOptimizations); err != nil {
+	compileParams := compileProjectParams{
+		root:               appDir,
+		outDir:             r.outDir,
+		parseOnly:          r.parseOnly,
+		singleFile:         r.singleFile,
+		applyOptimizations: r.applyOptimizations,
+	}
+
+	if err := compileProject(compileParams); err != nil {
 		return fmt.Errorf("parsing and compiling: %w", err)
 	}
 
-	// TODO(paulsmith): add a linkOnly flag and separate build step from
-	// buildAndRun. (or a releaseMode flag, alternatively?)
+	// TODO(paulsmith): add a linkOnly flag (or a releaseMode flag,
+	// alternatively?)
 	if !r.compileOnly {
-		var mu sync.Mutex
-		buildComplete := sync.NewCond(&mu)
+		buildParams := buildParams{
+			projectName: r.projectName.String(),
+			pkgName:     r.buildPkg,
+			srcDir:      r.outDir,
+			buildDir:    r.outDir,
+		}
 
 		ctx := newPushupContext(context.Background())
 
 		if r.devReload {
+			var mu sync.Mutex
+			buildComplete := sync.NewCond(&mu)
 			reload := make(chan struct{})
 			tmpdir, err := ioutil.TempDir("", "pushupdev")
 			if err != nil {
@@ -277,14 +329,18 @@ func (r *runCmd) do() error {
 					return nil
 				default:
 				}
-				if err := parseAndCompile(appDir, r.outDir, r.parseOnly, r.singleFile, r.applyOptimizations); err != nil {
+				if err := compileProject(compileParams); err != nil {
 					return fmt.Errorf("parsing and compiling: %v", err)
 				}
 				ctx = newPushupContext(context.Background())
+				if err := buildProject(ctx, buildParams); err != nil {
+					return fmt.Errorf("building Pushup project: %v", err)
+				}
+				buildComplete.Broadcast()
 				go func() {
 					watchForReload(ctx, ctx.fileChangeCancel, appDir, reload)
 				}()
-				if err := buildAndRun(ctx, r.projectName, r.buildPkg, r.outDir, ln, buildComplete); err != nil {
+				if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()+".exe"), ln); err != nil {
 					return fmt.Errorf("building and running generated Go code: %v", err)
 				}
 			}
@@ -303,8 +359,10 @@ func (r *runCmd) do() error {
 					return fmt.Errorf("listening on TCP socket: %v", err)
 				}
 			}
-
-			if err := buildAndRun(ctx, r.projectName, r.buildPkg, r.outDir, ln, buildComplete); err != nil {
+			if err := buildProject(ctx, buildParams); err != nil {
+				return fmt.Errorf("building Pushup project: %v", err)
+			}
+			if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()+".exe"), ln); err != nil {
 				return fmt.Errorf("building and running generated Go code: %v", err)
 			}
 		}
@@ -313,14 +371,14 @@ func (r *runCmd) do() error {
 	return nil
 }
 
-type command struct {
+type cliCmd struct {
 	name        string
 	usage       string
 	description string
 }
 
 // TODO(paulsmith): link these with their command struct counterparts
-var commands = []command{
+var cliCmds = []cliCmd{
 	{name: "new", usage: "[path]", description: "create new Pushup project directory"},
 	{name: "build", usage: "", description: "compile Pushup project and build executable"},
 	{name: "run", usage: "", description: "build and run Pushup project app"},
@@ -334,8 +392,8 @@ func printPushupHelp() {
 	fmt.Fprintln(w, "\t-version\t\tPrint the version number and exit")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
-	for _, cmd := range commands {
-		fmt.Fprintf(w, "\t%s %s\t\t%s\n", cmd.name, cmd.usage, cmd.description)
+	for _, c := range cliCmds {
+		fmt.Fprintf(w, "\t%s %s\t\t%s\n", c.name, c.usage, c.description)
 	}
 	w.Flush()
 }
@@ -359,7 +417,24 @@ func newPushupContext(parent context.Context) *pushupContext {
 	return c
 }
 
-func parseAndCompile(root string, outDir string, parseOnly bool, singleFile string, applyOptimizations bool) error {
+type compileProjectParams struct {
+	// path to project root directory
+	root string
+
+	// path to output build directory
+	outDir string
+
+	// flag to skip code generation
+	parseOnly bool
+
+	// path to a single .pushup file to parse/compile
+	singleFile string
+
+	// flag to apply a set of code generation optimizations
+	applyOptimizations bool
+}
+
+func compileProject(c compileProjectParams) error {
 	var layoutsDir string
 	var pagesDir string
 	var pkgDir string
@@ -368,12 +443,10 @@ func parseAndCompile(root string, outDir string, parseOnly bool, singleFile stri
 	var pushupFiles []string
 	var pkgFiles []string
 
-	os.RemoveAll(outDir)
-
-	if singleFile != "" {
-		pushupFiles = []string{singleFile}
+	if c.singleFile != "" {
+		pushupFiles = []string{c.singleFile}
 	} else {
-		layoutsDir = filepath.Join(root, "layouts")
+		layoutsDir = filepath.Join(c.root, "layouts")
 		{
 			if !dirExists(layoutsDir) {
 				return fmt.Errorf("invalid Pushup project directory structure: couldn't find `layouts` subdir")
@@ -392,7 +465,7 @@ func parseAndCompile(root string, outDir string, parseOnly bool, singleFile stri
 			}
 		}
 
-		pagesDir = filepath.Join(root, "pages")
+		pagesDir = filepath.Join(c.root, "pages")
 		{
 			if !dirExists(pagesDir) {
 				return fmt.Errorf("invalid Pushup project directory structure: couldn't find `pages` subdir")
@@ -401,7 +474,7 @@ func parseAndCompile(root string, outDir string, parseOnly bool, singleFile stri
 			pushupFiles = getPushupPagePaths(pagesDir)
 		}
 
-		pkgDir = filepath.Join(root, "pkg")
+		pkgDir = filepath.Join(c.root, "pkg")
 		{
 			if !dirExists(pkgDir) {
 				return fmt.Errorf("invalid Pushup project directory structure: couldn't find `pkg` subdir")
@@ -421,40 +494,62 @@ func parseAndCompile(root string, outDir string, parseOnly bool, singleFile stri
 		}
 	}
 
-	if parseOnly {
+	if c.parseOnly {
 		for _, path := range pushupFiles {
 			b, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("reading file %s: %w", path, err)
 			}
+
 			tree, err := parse(string(b))
 			if err != nil {
 				return fmt.Errorf("parsing file %s: %w", path, err)
 			}
+
 			(&debugPrettyPrinter{w: os.Stdout}).visitNodes(tree.nodes)
 		}
 		os.Exit(0)
 	}
 
-	for _, path := range layoutFiles {
-		if err := compilePushup(path, layoutsDir, compileLayout, outDir, applyOptimizations, singleFile); err != nil {
-			return fmt.Errorf("compiling layout file %s: %w", path, err)
+	{
+		params := compileParams{
+			rootDir:            layoutsDir,
+			strategy:           compileLayout,
+			targetDir:          c.outDir,
+			applyOptimizations: c.applyOptimizations,
+			singleFile:         c.singleFile,
+		}
+		for _, path := range layoutFiles {
+			params.sourcePath = path
+			if err := compilePushup(params); err != nil {
+				return fmt.Errorf("compiling layout file %s: %w", path, err)
+			}
 		}
 	}
 
-	for _, path := range pushupFiles {
-		if err := compilePushup(path, pagesDir, compilePushupPage, outDir, applyOptimizations, singleFile); err != nil {
-			return fmt.Errorf("compiling pushup file %s: %w", path, err)
+	{
+		params := compileParams{
+			rootDir:            pagesDir,
+			strategy:           compilePushupPage,
+			targetDir:          c.outDir,
+			applyOptimizations: c.applyOptimizations,
+			singleFile:         c.singleFile,
+		}
+		for _, path := range pushupFiles {
+			params.sourcePath = path
+			if err := compilePushup(params); err != nil {
+				return fmt.Errorf("compiling pushup file %s: %w", path, err)
+			}
 		}
 	}
 
 	for _, path := range pkgFiles {
-		if err := copyFile(filepath.Join(outDir, filepath.Base(path)), path); err != nil {
+		if err := copyFile(filepath.Join(c.outDir, filepath.Base(path)), path); err != nil {
 			return fmt.Errorf("copying Go package file %s: %w", path, err)
 		}
 	}
 
-	if err := copyFileFS(runtimeFiles, filepath.Join(outDir, "pushup_support.go"), filepath.Join("_runtime", "pushup_support.go")); err != nil {
+	if err := copyFileFS(runtimeFiles, filepath.Join(c.outDir, "pushup_support.go"), filepath.Join("_runtime", "pushup_support.go")); err != nil {
 		return fmt.Errorf("copying runtime file: %w", err)
 	}
 
@@ -843,24 +938,44 @@ func copyFileFS(fsys fs.FS, dest string, src string) error {
 	return nil
 }
 
-func buildAndRun(ctx context.Context, projectName string, buildPkg string, srcDir string, ln net.Listener, buildComplete *sync.Cond) error {
-	mainExeDir := filepath.Join(srcDir, "cmd", projectName)
+type buildParams struct {
+	projectName string
+	pkgName     string
+	srcDir      string
+	buildDir    string
+}
+
+// buildProject builds the Go program made up of the user's compiled .pushup
+// files and .go code, as well as Pushup's library APIs.
+func buildProject(ctx context.Context, b buildParams) error {
+	mainExeDir := filepath.Join(b.srcDir, "cmd", b.projectName)
 	if err := os.MkdirAll(mainExeDir, 0755); err != nil {
 		return fmt.Errorf("making directory for command: %w", err)
 	}
 
-	{
-		t := template.Must(template.ParseFS(runtimeFiles, filepath.Join("_runtime", "cmd", "main.go")))
-		f, err := os.Create(filepath.Join(mainExeDir, "main.go"))
-		if err != nil {
-			return fmt.Errorf("creating main.go: %w", err)
-		}
-		if err := t.Execute(f, map[string]string{"BuildPkg": buildPkg}); err != nil {
-			return fmt.Errorf("executing main.go template: %w", err)
-		}
-		f.Close()
+	t := template.Must(template.ParseFS(runtimeFiles, filepath.Join("_runtime", "cmd", "main.go")))
+	f, err := os.Create(filepath.Join(mainExeDir, "main.go"))
+	if err != nil {
+		return fmt.Errorf("creating main.go: %w", err)
+	}
+	if err := t.Execute(f, map[string]string{"ProjectPkg": b.pkgName}); err != nil {
+		return fmt.Errorf("executing main.go template: %w", err)
+	}
+	f.Close()
+
+	exeName := b.projectName + ".exe"
+	args := []string{"build", "-o", filepath.Join(b.buildDir, "bin", exeName), filepath.Join(b.pkgName, "cmd", b.projectName)}
+	cmd := exec.Command("go", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("building project main executable: %w", err)
 	}
 
+	return nil
+}
+
+func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 	var file *os.File
 	var err error
 	switch ln := ln.(type) {
@@ -869,14 +984,13 @@ func buildAndRun(ctx context.Context, projectName string, buildPkg string, srcDi
 	case *net.UnixListener:
 		file, err = ln.File()
 	default:
-		panic("")
+		panic(fmt.Sprintf("unsupported net listener type %T", ln))
 	}
 	if err != nil {
 		return fmt.Errorf("getting file from Unix socket listener: %w", err)
 	}
 
-	args := []string{"run", "./build/cmd/" + projectName}
-	cmd := exec.Command("go", args...)
+	cmd := exec.Command(exePath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	sysProcAttr(cmd)
@@ -885,9 +999,6 @@ func buildAndRun(ctx context.Context, projectName string, buildPkg string, srcDi
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting project main executable: %w", err)
 	}
-
-	// FIXME(paulsmith): actually detect when the build is complete
-	buildComplete.Broadcast()
 
 	g := new(errgroup.Group)
 	done := make(chan struct{})
@@ -921,8 +1032,7 @@ func buildAndRun(ctx context.Context, projectName string, buildPkg string, srcDi
 		// regardless of how they were exited. this is also way there is a
 		// `done' channel in this function, to signal to the other goroutine
 		// waiting for context cancellation.
-		err := cmd.Wait()
-		if err != nil {
+		if err := cmd.Wait(); err != nil {
 			if ee, ok := err.(*exec.ExitError); ok {
 				// FIXME(paulsmith): don't like this interface
 				if _, ok := ctx.(*pushupContext); !ok {
@@ -960,14 +1070,22 @@ const (
 	compileLayout
 )
 
-func compilePushup(sourcePath string, rootDir string, strategy compilationStrategy, targetDir string,
-	applyOptimizations bool, singleFile string,
-) error {
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
-		return fmt.Errorf("creating output directory %s: %w", targetDir, err)
+type compileParams struct {
+	sourcePath         string
+	rootDir            string
+	strategy           compilationStrategy
+	targetDir          string
+	applyOptimizations bool
+	singleFile         string
+}
+
+// compilePushup compiles a single .pushup file
+func compilePushup(c compileParams) error {
+	if err := os.MkdirAll(c.targetDir, 0755); err != nil {
+		return fmt.Errorf("creating output directory %s: %w", c.targetDir, err)
 	}
 
-	b, err := os.ReadFile(sourcePath)
+	b, err := os.ReadFile(c.sourcePath)
 	if err != nil {
 		return fmt.Errorf("reading file: %w", err)
 	}
@@ -980,40 +1098,39 @@ func compilePushup(sourcePath string, rootDir string, strategy compilationStrate
 
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("panic while parsing %s: %v", sourcePath, err)
+			log.Printf("panic while parsing %s: %v", c.sourcePath, err)
 			panic(err)
 		}
 	}()
 
-	// apply some simple optimizations
-	if applyOptimizations {
+	if c.applyOptimizations {
 		tree = optimize(tree)
 	}
 
-	var c codeGenUnit
-	switch strategy {
+	var cg codeGenUnit
+	switch c.strategy {
 	case compilePushupPage:
 		page, err := postProcessTree(tree)
 		if err != nil {
 			return fmt.Errorf("post-processing tree: %w", err)
 		}
 		layoutName := page.layout
-		if singleFile != "" {
+		if c.singleFile != "" {
 			layoutName = ""
 		}
-		route := routeFromPath(sourcePath, rootDir)
-		c = &pageCodeGen{path: trimCommonPrefix(sourcePath, rootDir), source: source, layout: layoutName, page: page, route: route}
+		route := routeFromPath(c.sourcePath, c.rootDir)
+		cg = &pageCodeGen{path: trimCommonPrefix(c.sourcePath, c.rootDir), source: source, layout: layoutName, page: page, route: route}
 	case compileLayout:
-		c = &layoutCodeGen{path: trimCommonPrefix(sourcePath, rootDir), source: source, tree: tree}
+		cg = &layoutCodeGen{path: trimCommonPrefix(c.sourcePath, c.rootDir), source: source, tree: tree}
 	default:
-		panic("")
+		panic("unexpected compilation strategy")
 	}
 
-	outputFilename := generatedFilename(sourcePath, rootDir, strategy)
-	outputPath := filepath.Join(targetDir, outputFilename)
-	basename := strings.TrimSuffix(filepath.Base(sourcePath), filepath.Ext(sourcePath))
+	outputFilename := generatedFilename(c.sourcePath, c.rootDir, c.strategy)
+	outputPath := filepath.Join(c.targetDir, outputFilename)
+	basename := strings.TrimSuffix(filepath.Base(c.sourcePath), filepath.Ext(c.sourcePath))
 
-	if err := generateCodeToFile(c, basename, outputPath, strategy); err != nil {
+	if err := generateCodeToFile(cg, basename, outputPath, c.strategy); err != nil {
 		return fmt.Errorf("generating Go code from parse result: %w", err)
 	}
 

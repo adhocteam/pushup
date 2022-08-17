@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"{{.BuildPkg}}"
+	"{{.ProjectPkg}}"
 )
 
 var logger *log.Logger
