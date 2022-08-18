@@ -1430,16 +1430,17 @@ func coalesceLiterals(nodes []node) []node {
 }
 
 type page struct {
-	layout  string
-	imports []importDecl
-	handler *nodeGoCode
-	nodes   []node
+	layout   string
+	imports  []importDecl
+	handler  *nodeGoCode
+	nodes    []node
+	sections map[string]*nodeBlock
 }
 
 func postProcessTree(tree *syntaxTree) (*page, error) {
 	// FIXME(paulsmith): recurse down into child nodes
 	layoutSet := false
-	page := &page{layout: "default"}
+	page := &page{layout: "default", sections: make(map[string]*nodeBlock)}
 	n := 0
 	for _, e := range tree.nodes {
 		switch e := e.(type) {
@@ -1465,6 +1466,8 @@ func postProcessTree(tree *syntaxTree) (*page, error) {
 				tree.nodes[n] = e
 				n++
 			}
+		case *nodeSection:
+			page.sections[e.name] = e.block
 		default:
 			tree.nodes[n] = e
 			n++
