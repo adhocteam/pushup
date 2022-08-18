@@ -1,0 +1,40 @@
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Source+Sans+Pro&display=swap");
+
+:root {
+    --font-family: "Source Sans Pro", sans-serif;
+    --primary: #8e24aa;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    --font-family: "Montserrat", sans-serif;
+}
+
+@media (min-width: 992px) {
+    .container {
+        max-width: 800px;
+    }
+}
+
+@media (min-width: 1200px) {
+    .container {
+        max-width: 960px;
+    }
+}
+
+.greeting {
+    background-color: var(--primary);
+    padding: 2rem;
+}
+
+.greeting h1 {
+    color: #fff;
+}
+
+.greeting h2 {
+    color: rgba(255, 255, 255, 0.8);
+}

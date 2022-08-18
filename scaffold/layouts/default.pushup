@@ -1,15 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Pushup app</title>
-        <link rel="stylesheet" href="/static/pushup.css" />
+        <link rel="stylesheet" href="/static/pico.min.css" />
+        <link rel="stylesheet" href="/static/custom.css" />
     </head>
     <body>
-        <main>
+        <main class="container">
             ^contents
         </main>
-        <footer>
-            <p>We're glad you're here.</p>
+        <footer class="container">
+            <p>Made with Pushup. We're glad you're here.</p>
         </footer>
     </body>
 </html>

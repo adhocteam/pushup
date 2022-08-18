@@ -16,11 +16,12 @@
     name := "world"
 }
 
-<h1>^title</h1>
+<hgroup class="greeting">
+    <h1>^title</h1>
+    <h2>^greeting, ^name!</h2>
+</hgroup>
 
-<h2 style="color: green">^greeting, ^name!</h2>
-
-<h3 style="color: orange">Pushup is a modern web framework for Go with an old-school PHP vibe.</h3>
+<h3>Pushup is a modern web framework for Go with an old-school PHP vibe.</h3>
 
 <h4>Features</h4>
 
