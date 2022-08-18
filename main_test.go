@@ -689,6 +689,22 @@ func TestParse(t *testing.T) {
 				},
 			},
 		},
+		{
+			`^section foo {<text>bar</text>}`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeSection{
+						name: "foo",
+						pos:  span{start: 8, end: 12},
+						block: &nodeBlock{
+							nodes: []node{
+								nodeList{&nodeLiteral{str: "bar", pos: span{start: 20, end: 23}}},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 	opts := cmp.AllowUnexported(unexported...)
 	for _, test := range tests {
@@ -705,6 +721,7 @@ func TestParse(t *testing.T) {
 }
 
 var unexported = []any{
+	attr{},
 	importDecl{},
 	nodeBlock{},
 	nodeElement{},
@@ -714,9 +731,9 @@ var unexported = []any{
 	nodeImport{},
 	nodeLayout{},
 	nodeLiteral{},
+	nodeSection{},
 	span{},
+	stringPos{},
 	syntaxTree{},
 	tag{},
-	attr{},
-	stringPos{},
 }

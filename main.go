@@ -292,6 +292,7 @@ func (r *runCmd) do() error {
 	// alternatively?)
 	if !r.compileOnly {
 		buildParams := buildParams{
+
 			projectName: r.projectName.String(),
 			pkgName:     r.buildPkg,
 			srcDir:      r.outDir,
@@ -1270,6 +1271,7 @@ type nodeVisitor interface {
 	visitGoCode(*nodeGoCode)
 	visitIf(*nodeIf)
 	visitFor(*nodeFor)
+	visitSection(*nodeSection)
 	visitStmtBlock(*nodeBlock)
 	visitNodes([]node)
 	visitImport(*nodeImport)
@@ -1332,6 +1334,17 @@ type nodeFor struct {
 
 func (e nodeFor) Pos() span             { return e.clause.pos }
 func (e *nodeFor) accept(v nodeVisitor) { v.visitFor(e) }
+
+type nodeSection struct {
+	name  string
+	pos   span
+	block *nodeBlock
+}
+
+func (e nodeSection) Pos() span             { return e.pos }
+func (e *nodeSection) accept(v nodeVisitor) { v.visitSection(e) }
+
+var _ node = (*nodeSection)(nil)
 
 // A nodeBlock represents a block of nodes, i.e., a sequence of nodes that
 // appear in order in the source syntax.
@@ -1632,6 +1645,10 @@ func (g *codeGenerator) visitFor(n *nodeFor) {
 	g.bodyPrintf("for %s {\n", n.clause.code)
 	n.block.accept(g)
 	g.bodyPrintf("}\n")
+}
+
+func (g *codeGenerator) visitSection(n *nodeSection) {
+	panic("unimplemented section")
 }
 
 func (g *codeGenerator) visitStmtBlock(n *nodeBlock) {
@@ -2428,6 +2445,9 @@ func (p *codeParser) parseCode() node {
 		// which a keyword block or an implicit expression could be used in the
 		// surrounding markup, and only parse for either depending on which
 		// context is current.
+	} else if p.peek().tok == token.IDENT && p.peek().lit == "section" {
+		p.advance()
+		e = p.parseSectionKeyword()
 	} else if p.peek().tok == token.LBRACE {
 		e = p.parseCodeBlock()
 	} else if p.peek().tok == token.IMPORT {
@@ -2512,7 +2532,7 @@ loop:
 func (p *codeParser) parseStmtBlock() *nodeBlock {
 	// we are sitting on the opening '{' token here
 	if p.peek().tok != token.LBRACE {
-		panic("")
+		panic("invariant, want '{'")
 	}
 	p.advance()
 	var block *nodeBlock
@@ -2574,6 +2594,20 @@ loop:
 	p.advance()
 	result.code = p.sourceFrom(start)[:n]
 	result.pos.end = result.pos.start + n
+	return result
+}
+
+func (p *codeParser) parseSectionKeyword() *nodeSection {
+	// enter function one past the "section" IDENT token
+	if p.peek().tok != token.IDENT {
+		p.parser.errorf("expected IDENT, got %s", p.peek().tok.String())
+		return nil
+	}
+	result := &nodeSection{name: p.peek().lit}
+	result.pos.start = p.parser.offset
+	p.advance()
+	result.pos.end = p.parser.offset
+	result.block = p.parseStmtBlock()
 	return result
 }
 
@@ -2761,6 +2795,12 @@ func (p *debugPrettyPrinter) visitFor(n *nodeFor) {
 	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
 	fmt.Fprintf(p.w, "\x1b[36mFOR\x1b[0m\n")
 	acceptAndIndent(n.clause, p)
+	acceptAndIndent(n.block, p)
+}
+
+func (p *debugPrettyPrinter) visitSection(n *nodeSection) {
+	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
+	fmt.Fprintf(p.w, "\x1b[34mSECTION %s\x1b[0m\n", n.name)
 	acceptAndIndent(n.block, p)
 }
 

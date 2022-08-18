@@ -179,6 +179,17 @@ func printEscaped(w io.Writer, val any) {
 	}
 }
 
+func Section(name string) {
+	// stub
+	// TODO(paulsmith): this should map layout name to section, so maybe this
+	// is a generated method/function in the layout's type
+}
+
+func SectionSet(name string) bool {
+	// stub
+	return false
+}
+
 {{if .EmbedStatic}}
 //go:embed static
 {{end}}
