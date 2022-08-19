@@ -1159,7 +1159,7 @@ func compilePushup(c compileParams) error {
 	var cg codeGenUnit
 	switch c.strategy {
 	case compilePushupPage:
-		page, err := postProcessTree(tree)
+		page, err := preProcessTree(tree)
 		if err != nil {
 			return fmt.Errorf("post-processing tree: %w", err)
 		}
@@ -1439,7 +1439,10 @@ type page struct {
 	sections map[string]*nodeBlock
 }
 
-func postProcessTree(tree *syntaxTree) (*page, error) {
+// preProcessTree prepares the parse tree for code generation. some node types
+// are encountered sequentially in the source file, but need to be reorganized
+// for access in the code generator.
+func preProcessTree(tree *syntaxTree) (*page, error) {
 	// FIXME(paulsmith): recurse down into child nodes
 	layoutSet := false
 	page := &page{layout: "default", sections: make(map[string]*nodeBlock)}
