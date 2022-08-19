@@ -3,13 +3,17 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Pushup app</title>
+        <title>^if up.sectionSet("title") {
+            <text>^(up.section("title"))</text>
+        } else {
+            <text>Pushup app</text>
+        }</title>
         <link rel="stylesheet" href="/static/pico.min.css" />
         <link rel="stylesheet" href="/static/custom.css" />
     </head>
     <body>
         <main class="container">
-            ^contents
+            ^(up.section("contents"))
         </main>
         <footer class="container">
             <p>Made with Pushup. We're glad you're here.</p>

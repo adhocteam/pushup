@@ -2,7 +2,7 @@
 
 ^handler {
     var devReloadFlagSet bool
-    for _, arg := range t.buildCliArgs() {
+    for _, arg := range up.buildCliArgs() {
         if arg == "-dev" {
             devReloadFlagSet = true
             break
@@ -16,9 +16,13 @@
     name := "world"
 }
 
+^section title {
+    <text>^pushupGreeting</text>
+}
+
 <hgroup class="greeting">
-    <h1>^title</h1>
-    <h2>^greeting, ^name!</h2>
+    <h1>^greeting, ^name!</h1>
+    <h2>^title</h2>
 </hgroup>
 
 <h3>Pushup is a modern web framework for Go with an old-school PHP vibe.</h3>
