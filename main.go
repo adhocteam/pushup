@@ -190,6 +190,7 @@ type buildCmd struct {
 	singleFile         string
 	applyOptimizations bool
 	parseOnly          bool
+	codeGenOnly        bool
 	compileOnly        bool
 	outDir             string
 }
@@ -201,6 +202,7 @@ func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
 	flags.StringVar(&b.singleFile, "single", "", "path to a single Pushup file")
 	flags.BoolVar(&b.applyOptimizations, "O", false, "apply simple optimizations to the parse tree")
 	flags.BoolVar(&b.parseOnly, "parse-only", false, "exit after dumping parse result")
+	flags.BoolVar(&b.codeGenOnly, "codegen-only", false, "codegen only, don't compile")
 	flags.BoolVar(&b.compileOnly, "compile-only", false, "compile only, don't start web server after")
 	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory")
 }
@@ -232,7 +234,7 @@ func (b *buildCmd) do() error {
 		return fmt.Errorf("parsing and compiling: %w", err)
 	}
 
-	if b.parseOnly {
+	if b.parseOnly || b.codeGenOnly {
 		return nil
 	}
 
