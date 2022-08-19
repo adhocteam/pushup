@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"io/ioutil"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -71,7 +72,7 @@ func TestPushup(t *testing.T) {
 					t.Fatalf("creating temp dir: %v", err)
 				}
 				defer os.RemoveAll(tmpdir)
-				socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+".sock")
+				socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+"-"+strconv.Itoa(int(rand.Uint32()))+".sock")
 
 				var errb bytes.Buffer
 
