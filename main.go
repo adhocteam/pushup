@@ -1833,6 +1833,7 @@ func (%s *%s) sectionSet(name string) bool {
 			g.generate()
 		} else {
 			// render the main body contents
+
 			// TODO(paulsmith) could do these as a incremental stream
 			// so the receiving end is just pulling individual chunks off
 			// instead of waiting for the whole thing to be buffered
@@ -1845,6 +1846,14 @@ func (%s *%s) sectionSet(name string) bool {
 			g.bodyPrintf("  sections[\"contents\"] <- template.HTML(b.String())\n")
 			g.bodyPrintf("}()\n")
 			g.ioWriterVar = save
+
+			// NOTE(paulsmith): this is to allow for when the layout is dynamically toggled
+			// off by the user, for example, to reuse a page for htmx partial responses. it's
+			// somewhat unfortunate because the entire response is buffered, unlike in the
+			// static case.
+			g.bodyPrintf("if !renderLayout {\n")
+			g.bodyPrintf("  printEscaped(%s, <-sections[\"contents\"])\n", g.ioWriterVar)
+			g.bodyPrintf("}\n")
 
 			for name, block := range p.page.sections {
 				save := g.ioWriterVar

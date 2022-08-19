@@ -5,7 +5,7 @@
             ^if up.sectionSet("title") {
                 <text>^(up.section("title"))</text>
             } else {
-                <text>Pushup app</text>
+                <text>Example Pushup app</text>
             }
         </title>
         <link rel="stylesheet" href="/static/css/pushup.css" />
