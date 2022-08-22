@@ -1252,30 +1252,11 @@ func trimCommonPrefix(path string, prefix string) string {
 // or `for'.
 type node interface {
 	Pos() span
-	nodeAcceptor
-}
-
-type nodeAcceptor interface {
-	accept(nodeVisitor)
 }
 
 type nodeList []node
 
-func (n nodeList) Pos() span            { return n[0].Pos() }
-func (n nodeList) accept(v nodeVisitor) { v.visitNodes(n) }
-
-type nodeVisitor interface {
-	visitElement(*nodeElement)
-	visitLiteral(*nodeLiteral)
-	visitGoStrExpr(*nodeGoStrExpr)
-	visitGoCode(*nodeGoCode)
-	visitIf(*nodeIf)
-	visitFor(*nodeFor)
-	visitStmtBlock(*nodeBlock)
-	visitNodes([]node)
-	visitImport(*nodeImport)
-	visitLayout(*nodeLayout)
-}
+func (n nodeList) Pos() span { return n[0].Pos() }
 
 type visitor interface {
 	visit(node) visitor
@@ -1343,8 +1324,7 @@ type nodeLiteral struct {
 	pos span
 }
 
-func (e nodeLiteral) Pos() span             { return e.pos }
-func (e *nodeLiteral) accept(v nodeVisitor) { v.visitLiteral(e) }
+func (e nodeLiteral) Pos() span { return e.pos }
 
 var _ node = (*nodeLiteral)(nil)
 
@@ -1353,8 +1333,7 @@ type nodeGoStrExpr struct {
 	pos  span
 }
 
-func (e nodeGoStrExpr) Pos() span             { return e.pos }
-func (e *nodeGoStrExpr) accept(v nodeVisitor) { v.visitGoStrExpr(e) }
+func (e nodeGoStrExpr) Pos() span { return e.pos }
 
 var _ node = (*nodeGoStrExpr)(nil)
 
@@ -1371,8 +1350,7 @@ type nodeGoCode struct {
 	pos     span
 }
 
-func (e nodeGoCode) Pos() span             { return e.pos }
-func (e *nodeGoCode) accept(v nodeVisitor) { v.visitGoCode(e) }
+func (e nodeGoCode) Pos() span { return e.pos }
 
 var _ node = (*nodeGoCode)(nil)
 
@@ -1382,8 +1360,7 @@ type nodeIf struct {
 	alt  *nodeBlock
 }
 
-func (e nodeIf) Pos() span             { return e.cond.pos }
-func (e *nodeIf) accept(v nodeVisitor) { v.visitIf(e) }
+func (e nodeIf) Pos() span { return e.cond.pos }
 
 var _ node = (*nodeIf)(nil)
 
@@ -1392,8 +1369,7 @@ type nodeFor struct {
 	block  *nodeBlock
 }
 
-func (e nodeFor) Pos() span             { return e.clause.pos }
-func (e *nodeFor) accept(v nodeVisitor) { v.visitFor(e) }
+func (e nodeFor) Pos() span { return e.clause.pos }
 
 // A nodeBlock represents a block of nodes, i.e., a sequence of nodes that
 // appear in order in the source syntax.
@@ -1405,7 +1381,6 @@ func (e *nodeBlock) Pos() span {
 	// FIXME(paulsmith): span end all exprs
 	return e.nodes[0].Pos()
 }
-func (e *nodeBlock) accept(v nodeVisitor) { v.visitStmtBlock(e) }
 
 var _ node = (*nodeBlock)(nil)
 
@@ -1418,8 +1393,7 @@ type nodeElement struct {
 	pos           span
 }
 
-func (e nodeElement) Pos() span             { return e.pos }
-func (e *nodeElement) accept(v nodeVisitor) { v.visitElement(e) }
+func (e nodeElement) Pos() span { return e.pos }
 
 var _ node = (*nodeElement)(nil)
 
@@ -1428,8 +1402,7 @@ type nodeImport struct {
 	pos  span
 }
 
-func (e nodeImport) Pos() span             { return e.pos }
-func (e *nodeImport) accept(v nodeVisitor) { v.visitImport(e) }
+func (e nodeImport) Pos() span { return e.pos }
 
 var _ node = (*nodeImport)(nil)
 
@@ -1438,8 +1411,7 @@ type nodeLayout struct {
 	pos  span
 }
 
-func (e nodeLayout) Pos() span             { return e.pos }
-func (e *nodeLayout) accept(v nodeVisitor) { v.visitLayout(e) }
+func (e nodeLayout) Pos() span { return e.pos }
 
 var _ node = (*nodeLayout)(nil)
 
@@ -1630,93 +1602,79 @@ func (g *codeGenerator) bodyPrintf(format string, args ...any) {
 }
 
 func (g *codeGenerator) generate() {
-	g.visitNodes(g.c.nodes())
-}
-
-func (g *codeGenerator) visitLiteral(n *nodeLiteral) {
-	g.used("io")
-	g.nodeLineNo(n)
-	g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(n.str))
-}
-
-func (g *codeGenerator) visitElement(n *nodeElement) {
-	g.used("io")
-	g.nodeLineNo(n)
-	for _, e := range n.startTagNodes {
-		e.accept(g)
-	}
-	nodeList(n.children).accept(g)
-	g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.end()))
-}
-
-func (g *codeGenerator) visitGoStrExpr(n *nodeGoStrExpr) {
-	if g.strategy == compileLayout && n.expr == "contents" {
-		// NOTE(paulsmith): this is acting sort of like a coroutine, yielding back to the
-		// component that is being rendered with this layout
-		g.bodyPrintf(`if fl, ok := w.(http.Flusher); ok {
+	var f inspector
+	f = func(n node) bool {
+		switch n := n.(type) {
+		case *nodeLiteral:
+			g.used("io")
+			g.nodeLineNo(n)
+			g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(n.str))
+		case *nodeElement:
+			g.used("io")
+			g.nodeLineNo(n)
+			f(nodeList(n.startTagNodes))
+			f(nodeList(n.children))
+			g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.end()))
+			return false
+		case *nodeGoStrExpr:
+			if g.strategy == compileLayout && n.expr == "contents" {
+				// NOTE(paulsmith): this is acting sort of like a coroutine, yielding back to the
+				// component that is being rendered with this layout
+				g.bodyPrintf(`if fl, ok := w.(http.Flusher); ok {
 			fl.Flush()
 		}
 		`)
-		g.bodyPrintf("yield <- struct{}{}\n")
-		g.bodyPrintf("<-yield\n")
-	} else {
-		g.nodeLineNo(n)
-		g.bodyPrintf("printEscaped(w, %s)\n", n.expr)
+				g.bodyPrintf("yield <- struct{}{}\n")
+				g.bodyPrintf("<-yield\n")
+			} else {
+				g.nodeLineNo(n)
+				g.bodyPrintf("printEscaped(w, %s)\n", n.expr)
+			}
+		case *nodeGoCode:
+			if n.context != inlineGoCode {
+				panic(fmt.Sprintf("assertion failure: expected inlineGoCode, got %v", n.context))
+			}
+			srcLineNo := g.c.lineNo(n.Pos())
+			lines := strings.Split(n.code, "\n")
+			for _, line := range lines {
+				g.lineNo(srcLineNo)
+				g.bodyPrintf("%s\n", line)
+				srcLineNo++
+			}
+		case *nodeIf:
+			g.bodyPrintf("if %s {\n", n.cond.expr)
+			f(n.then)
+			if n.alt == nil {
+				g.bodyPrintf("}\n")
+			} else {
+				g.bodyPrintf("} else {\n")
+				f(n.alt)
+				g.bodyPrintf("}\n")
+			}
+			return false
+		case nodeList:
+			for _, x := range n {
+				f(x)
+			}
+			return false
+		case *nodeFor:
+			g.bodyPrintf("for %s {\n", n.clause.code)
+			f(n.block)
+			g.bodyPrintf("}\n")
+			return false
+		case *nodeBlock:
+			f(nodeList(n.nodes))
+			return false
+		case *nodeLayout:
+			// nothing to do
+		case *nodeImport:
+			// nothing to do
+		}
+		return true
 	}
+	nodes := g.c.nodes()
+	inspect(nodeList(nodes), f)
 }
-
-func (g *codeGenerator) visitGoCode(n *nodeGoCode) {
-	if n.context != inlineGoCode {
-		panic(fmt.Sprintf("assertion failure: expected inlineGoCode, got %v", n.context))
-	}
-	srcLineNo := g.c.lineNo(n.Pos())
-	lines := strings.Split(n.code, "\n")
-	for _, line := range lines {
-		g.lineNo(srcLineNo)
-		g.bodyPrintf("%s\n", line)
-		srcLineNo++
-	}
-}
-
-func (g *codeGenerator) visitIf(n *nodeIf) {
-	g.bodyPrintf("if %s {\n", n.cond.expr)
-	n.then.accept(g)
-	if n.alt == nil {
-		g.bodyPrintf("}\n")
-	} else {
-		g.bodyPrintf("} else {\n")
-		n.alt.accept(g)
-		g.bodyPrintf("}\n")
-	}
-}
-
-func (g *codeGenerator) visitFor(n *nodeFor) {
-	g.bodyPrintf("for %s {\n", n.clause.code)
-	n.block.accept(g)
-	g.bodyPrintf("}\n")
-}
-
-func (g *codeGenerator) visitStmtBlock(n *nodeBlock) {
-	for _, e := range n.nodes {
-		e.accept(g)
-	}
-}
-
-func (g *codeGenerator) visitNodes(n []node) {
-	for _, e := range n {
-		e.accept(g)
-	}
-}
-
-func (g *codeGenerator) visitLayout(n *nodeLayout) {
-	// no-op
-}
-
-func (g *codeGenerator) visitImport(n *nodeImport) {
-	// no-op
-}
-
-var _ nodeVisitor = (*codeGenerator)(nil)
 
 func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]byte, error) {
 	g := newCodeGenerator(c, basename, strategy)
