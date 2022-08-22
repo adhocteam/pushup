@@ -531,6 +531,7 @@ func compileProject(c compileProjectParams) error {
 			}
 
 			prettyPrintTree(tree)
+			fmt.Println()
 		}
 		os.Exit(0)
 	}
@@ -2296,7 +2297,7 @@ func (p *htmlParser) parseElement() node {
 
 	// <text></text> elements are just for parsing
 	if string(p.tagname) == "text" {
-		return nodeList(result.children)
+		return &nodeBlock{nodes: result.children}
 	}
 
 	return result
@@ -2769,14 +2770,18 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 	return result
 }
 
-const padding = "    "
+const padding = " "
 
 func prettyPrintTree(t *syntaxTree) {
-	depth := 0
+	depth := -1
 	var w io.Writer = os.Stdout
 	pad := func() { w.Write([]byte(strings.Repeat(padding, depth))) }
 	var f inspector
 	f = func(n node) bool {
+		depth++
+		defer func() {
+			depth--
+		}()
 		pad()
 		switch n := n.(type) {
 		case *nodeLiteral:
@@ -2786,39 +2791,30 @@ func prettyPrintTree(t *syntaxTree) {
 		case *nodeGoCode:
 			fmt.Fprintf(w, "\x1b[34m%s\x1b[0m\n", n.code)
 		case *nodeIf:
-			fmt.Fprintf(w, "\x1b[35mIF\x1b[0m\n")
-			depth++
+			fmt.Fprintf(w, "\x1b[35mIF\x1b[0m")
 			f(n.cond)
-			depth--
 			pad()
 			fmt.Fprintf(w, "\x1b[35mTHEN\x1b[0m\n")
-			depth++
 			f(n.then)
-			depth--
 			if n.alt != nil {
 				pad()
 				fmt.Fprintf(w, "\x1b[1;35mELSE\x1b[0m\n")
-				depth++
 				f(n.alt)
-				depth--
 			}
 			return false
 		case *nodeFor:
-			fmt.Fprintf(w, "\x1b[36mFOR\x1b[0m\n")
-			depth++
+			fmt.Fprintf(w, "\x1b[36mFOR\x1b[0m")
 			f(n.clause)
 			f(n.block)
-			depth--
 			return false
 		case *nodeElement:
 			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.tag.start())
-			depth++
 			f(nodeList(n.children))
-			depth--
 			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.tag.end())
 			return false
 		case *nodeBlock:
 			f(nodeList(n.nodes))
+			return false
 		case *nodeImport:
 			fmt.Fprintf(w, "IMPORT ")
 			if n.decl.pkgName != "" {
@@ -2827,6 +2823,11 @@ func prettyPrintTree(t *syntaxTree) {
 			fmt.Fprintf(w, "%s\n", n.decl.path)
 		case *nodeLayout:
 			fmt.Fprintf(w, "LAYOUT %s\n", n.name)
+		case nodeList:
+			for _, x := range n {
+				f(x)
+			}
+			return false
 		}
 		return true
 	}
