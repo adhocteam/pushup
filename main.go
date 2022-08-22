@@ -530,7 +530,7 @@ func compileProject(c compileProjectParams) error {
 				return fmt.Errorf("parsing file %s: %w", path, err)
 			}
 
-			(&debugPrettyPrinter{w: os.Stdout}).visitNodes(tree.nodes)
+			prettyPrintTree(tree)
 		}
 		os.Exit(0)
 	}
@@ -1274,6 +1274,67 @@ type nodeVisitor interface {
 	visitNodes([]node)
 	visitImport(*nodeImport)
 	visitLayout(*nodeLayout)
+}
+
+type visitor interface {
+	visit(node) visitor
+}
+
+type inspector func(node) bool
+
+func (f inspector) visit(n node) visitor {
+	if f(n) {
+		return f
+	}
+	return nil
+}
+
+func inspect(n node, f func(node) bool) {
+	walk(inspector(f), n)
+}
+
+func walkNodeList(v visitor, list []node) {
+	for _, n := range list {
+		walk(v, n)
+	}
+}
+
+func walk(v visitor, n node) {
+	if v = v.visit(n); v == nil {
+		return
+	}
+
+	switch n := n.(type) {
+	case *nodeElement:
+		walkNodeList(v, n.startTagNodes)
+		walkNodeList(v, n.children)
+	case *nodeLiteral:
+		// no children
+	case *nodeGoStrExpr:
+		// no children
+	case *nodeGoCode:
+		// no children
+	case *nodeIf:
+		walk(v, n.cond)
+		walk(v, n.then)
+		if n.alt != nil {
+			walk(v, n.alt)
+		}
+	case *nodeFor:
+		walk(v, n.clause)
+		walk(v, n.block)
+	case *nodeBlock:
+		walkNodeList(v, n.nodes)
+	case *nodeImport:
+		// no children
+	case *nodeLayout:
+		// no children
+	case nodeList:
+		walkNodeList(v, n)
+	default:
+		panic(fmt.Sprintf("unhandled type %T", n))
+	}
+	v.visit(nil)
 }
 
 type nodeLiteral struct {
@@ -2708,93 +2769,68 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 	return result
 }
 
-type debugPrettyPrinter struct {
-	w     io.Writer
-	depth int
-}
+const padding = "    "
 
-var _ nodeVisitor = (*debugPrettyPrinter)(nil)
-
-const pad = "    "
-
-func acceptAndIndent(n node, p *debugPrettyPrinter) {
-	p.depth++
-	n.accept(p)
-	p.depth--
-}
-
-func (p *debugPrettyPrinter) visitLiteral(n *nodeLiteral) {
-	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
-	fmt.Fprintf(p.w, "\x1b[32m%q\x1b[0m", n.str)
-	fmt.Fprintln(p.w, "")
-}
-
-func (p *debugPrettyPrinter) visitGoStrExpr(n *nodeGoStrExpr) {
-	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
-	fmt.Fprintf(p.w, "\x1b[33m%s\x1b[0m", n.expr)
-	fmt.Fprintln(p.w, "")
-}
-
-func (p *debugPrettyPrinter) visitGoCode(n *nodeGoCode) {
-	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
-	fmt.Fprintf(p.w, "\x1b[34m%s\x1b[0m", n.code)
-	fmt.Fprintln(p.w, "")
-}
-
-func (p *debugPrettyPrinter) visitIf(n *nodeIf) {
-	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
-	fmt.Fprintf(p.w, "\x1b[35mIF\x1b[0m\n")
-	acceptAndIndent(n.cond, p)
-	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
-	fmt.Fprintf(p.w, "\x1b[35mTHEN\x1b[0m\n")
-	acceptAndIndent(n.then, p)
-	if n.alt != nil {
-		p.w.Write([]byte(strings.Repeat(pad, p.depth)))
-		fmt.Fprintf(p.w, "\x1b[1;35mELSE\x1b[0m\n")
-		acceptAndIndent(n.alt, p)
+func prettyPrintTree(t *syntaxTree) {
+	depth := 0
+	var w io.Writer = os.Stdout
+	pad := func() { w.Write([]byte(strings.Repeat(padding, depth))) }
+	var f inspector
+	f = func(n node) bool {
+		pad()
+		switch n := n.(type) {
+		case *nodeLiteral:
+			fmt.Fprintf(w, "\x1b[32m%q\x1b[0m\n", n.str)
+		case *nodeGoStrExpr:
+			fmt.Fprintf(w, "\x1b[33m%s\x1b[0m\n", n.expr)
+		case *nodeGoCode:
+			fmt.Fprintf(w, "\x1b[34m%s\x1b[0m\n", n.code)
+		case *nodeIf:
+			fmt.Fprintf(w, "\x1b[35mIF\x1b[0m\n")
+			depth++
+			f(n.cond)
+			depth--
+			pad()
+			fmt.Fprintf(w, "\x1b[35mTHEN\x1b[0m\n")
+			depth++
+			f(n.then)
+			depth--
+			if n.alt != nil {
+				pad()
+				fmt.Fprintf(w, "\x1b[1;35mELSE\x1b[0m\n")
+				depth++
+				f(n.alt)
+				depth--
+			}
+			return false
+		case *nodeFor:
+			fmt.Fprintf(w, "\x1b[36mFOR\x1b[0m\n")
+			depth++
+			f(n.clause)
+			f(n.block)
+			depth--
+			return false
+		case *nodeElement:
+			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.tag.start())
+			depth++
+			f(nodeList(n.children))
+			depth--
+			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.tag.end())
+			return false
+		case *nodeBlock:
+			f(nodeList(n.nodes))
+		case *nodeImport:
+			fmt.Fprintf(w, "IMPORT ")
+			if n.decl.pkgName != "" {
+				fmt.Fprintf(w, "%s", n.decl.pkgName)
+			}
+			fmt.Fprintf(w, "%s\n", n.decl.path)
+		case *nodeLayout:
+			fmt.Fprintf(w, "LAYOUT %s\n", n.name)
+		}
+		return true
 	}
-	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
-	fmt.Fprintf(p.w, "\x1b[35mEND IF\x1b[0m\n")
-}
-
-func (p *debugPrettyPrinter) visitFor(n *nodeFor) {
-	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
-	fmt.Fprintf(p.w, "\x1b[36mFOR\x1b[0m\n")
-	acceptAndIndent(n.clause, p)
-	acceptAndIndent(n.block, p)
-}
-
-func (p *debugPrettyPrinter) visitElement(n *nodeElement) {
-	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
-	fmt.Fprintf(p.w, "\x1b[31m%s\x1b[0m\n", n.tag.start())
-	for _, e := range n.children {
-		acceptAndIndent(e, p)
-	}
-	fmt.Fprintf(p.w, "\x1b[31m%s\x1b[0m\n", n.tag.end())
-}
-
-func (p *debugPrettyPrinter) visitStmtBlock(n *nodeBlock) {
-	nodeList(n.nodes).accept(p)
-}
-
-func (p *debugPrettyPrinter) visitNodes(nodes []node) {
-	for _, n := range nodes {
-		acceptAndIndent(n, p)
-	}
-}
-
-func (p *debugPrettyPrinter) visitImport(n *nodeImport) {
-	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
-	fmt.Fprintf(p.w, "IMPORT ")
-	if n.decl.pkgName != "" {
-		fmt.Fprintf(p.w, "%s", n.decl.pkgName)
-	}
-	fmt.Fprintf(p.w, "%s\n", n.decl.path)
-}
-
-func (p *debugPrettyPrinter) visitLayout(n *nodeLayout) {
-	p.w.Write([]byte(strings.Repeat(pad, p.depth)))
-	fmt.Fprintf(p.w, "LAYOUT %s\n", n.name)
+	inspect(nodeList(t.nodes), f)
 }
 
 // implement the HTML5 spec lexing algorithm for open tags. this is necessary
