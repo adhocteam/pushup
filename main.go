@@ -190,6 +190,7 @@ type buildCmd struct {
 	singleFile         string
 	applyOptimizations bool
 	parseOnly          bool
+	codeGenOnly        bool
 	compileOnly        bool
 	outDir             string
 }
@@ -201,6 +202,7 @@ func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
 	flags.StringVar(&b.singleFile, "single", "", "path to a single Pushup file")
 	flags.BoolVar(&b.applyOptimizations, "O", false, "apply simple optimizations to the parse tree")
 	flags.BoolVar(&b.parseOnly, "parse-only", false, "exit after dumping parse result")
+	flags.BoolVar(&b.codeGenOnly, "codegen-only", false, "codegen only, don't compile")
 	flags.BoolVar(&b.compileOnly, "compile-only", false, "compile only, don't start web server after")
 	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory")
 }
@@ -232,7 +234,7 @@ func (b *buildCmd) do() error {
 		return fmt.Errorf("parsing and compiling: %w", err)
 	}
 
-	if b.parseOnly {
+	if b.parseOnly || b.codeGenOnly {
 		return nil
 	}
 
@@ -292,6 +294,7 @@ func (r *runCmd) do() error {
 	// alternatively?)
 	if !r.compileOnly {
 		buildParams := buildParams{
+
 			projectName: r.projectName.String(),
 			pkgName:     r.buildPkg,
 			srcDir:      r.outDir,
@@ -684,6 +687,7 @@ func startReloadRevProxy(socketPath string, buildComplete *sync.Cond, port strin
 
 	reloadHandler := new(devReloader)
 	reloadHandler.complete = buildComplete
+	reloadHandler.verboseLogging = os.Getenv("VERBOSE") != ""
 
 	mux := http.NewServeMux()
 	mux.Handle("/", proxy)
@@ -725,7 +729,8 @@ func modifyResponseAddDevReload(res *http.Response) error {
 }
 
 type devReloader struct {
-	complete *sync.Cond
+	complete       *sync.Cond
+	verboseLogging bool
 }
 
 func (d *devReloader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -760,7 +765,9 @@ loop:
 		case <-built:
 			w.Write([]byte("event: reload\ndata: \n\n"))
 		case <-r.Context().Done():
-			log.Printf("client disconnected")
+			if d.verboseLogging {
+				log.Printf("client disconnected")
+			}
 			close(done)
 			break loop
 		case <-time.After(1 * time.Second):
@@ -1157,7 +1164,7 @@ func compilePushup(c compileParams) error {
 	var cg codeGenUnit
 	switch c.strategy {
 	case compilePushupPage:
-		page, err := postProcessTree(tree)
+		page, err := preProcessTree(tree)
 		if err != nil {
 			return fmt.Errorf("post-processing tree: %w", err)
 		}
@@ -1371,6 +1378,16 @@ type nodeFor struct {
 
 func (e nodeFor) Pos() span { return e.clause.pos }
 
+type nodeSection struct {
+	name  string
+	pos   span
+	block *nodeBlock
+}
+
+func (e nodeSection) Pos() span { return e.pos }
+
+var _ node = (*nodeSection)(nil)
+
 // A nodeBlock represents a block of nodes, i.e., a sequence of nodes that
 // appear in order in the source syntax.
 type nodeBlock struct {
@@ -1451,13 +1468,17 @@ func coalesceLiterals(nodes []node) []node {
 }
 
 type page struct {
-	layout  string
-	imports []importDecl
-	handler *nodeGoCode
-	nodes   []node
+	layout   string
+	imports  []importDecl
+	handler  *nodeGoCode
+	nodes    []node
+	sections map[string]*nodeBlock
 }
 
-func postProcessTree(tree *syntaxTree) (*page, error) {
+// preProcessTree prepares the parse tree for code generation. some node types
+// are encountered sequentially in the source file, but need to be reorganized
+// for access in the code generator.
+func preProcessTree(tree *syntaxTree) (*page, error) {
 	page := &page{layout: "default"}
 	layoutSet := false
 	n := 0
@@ -1572,12 +1593,13 @@ func (c *layoutCodeGen) lineNo(s span) int {
 }
 
 type codeGenerator struct {
-	c        codeGenUnit
-	strategy compilationStrategy
-	basename string
-	imports  map[importDecl]bool
-	outb     bytes.Buffer
-	bodyb    bytes.Buffer
+	c           codeGenUnit
+	strategy    compilationStrategy
+	basename    string
+	imports     map[importDecl]bool
+	outb        bytes.Buffer
+	bodyb       bytes.Buffer
+	ioWriterVar string
 }
 
 func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrategy) *codeGenerator {
@@ -1591,11 +1613,14 @@ func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrate
 			g.imports[decl] = true
 		}
 	}
+	g.ioWriterVar = "w"
 	return &g
 }
 
-func (g *codeGenerator) used(path string) {
-	g.imports[importDecl{path: strconv.Quote(path), pkgName: ""}] = true
+func (g *codeGenerator) used(path ...string) {
+	for _, p := range path {
+		g.imports[importDecl{path: strconv.Quote(p), pkgName: ""}] = true
+	}
 }
 
 func (g *codeGenerator) nodeLineNo(e node) {
@@ -1615,22 +1640,27 @@ func (g *codeGenerator) bodyPrintf(format string, args ...any) {
 }
 
 func (g *codeGenerator) generate() {
+	nodes := g.c.nodes()
+	g.genFromNode(nodeList(nodes))
+}
+
+func (g *codeGenerator) genFromNode(n node) {
 	var f inspector
-	f = func(n node) bool {
-		switch n := n.(type) {
+	f = func(e node) bool {
+		switch e := e.(type) {
 		case *nodeLiteral:
 			g.used("io")
-			g.nodeLineNo(n)
-			g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(n.str))
+			g.nodeLineNo(e)
+			g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(e.str))
 		case *nodeElement:
 			g.used("io")
-			g.nodeLineNo(n)
-			f(nodeList(n.startTagNodes))
-			f(nodeList(n.children))
-			g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(n.tag.end()))
+			g.nodeLineNo(e)
+			f(nodeList(e.startTagNodes))
+			f(nodeList(e.children))
+			g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(e.tag.end()))
 			return false
 		case *nodeGoStrExpr:
-			if g.strategy == compileLayout && n.expr == "contents" {
+			if g.strategy == compileLayout && e.expr == "contents" {
 				// NOTE(paulsmith): this is acting sort of like a coroutine, yielding back to the
 				// component that is being rendered with this layout
 				g.bodyPrintf(`if fl, ok := w.(http.Flusher); ok {
@@ -1640,43 +1670,43 @@ func (g *codeGenerator) generate() {
 				g.bodyPrintf("yield <- struct{}{}\n")
 				g.bodyPrintf("<-yield\n")
 			} else {
-				g.nodeLineNo(n)
-				g.bodyPrintf("printEscaped(w, %s)\n", n.expr)
+				g.nodeLineNo(e)
+				g.bodyPrintf("printEscaped(w, %s)\n", e.expr)
 			}
 		case *nodeGoCode:
-			if n.context != inlineGoCode {
-				panic(fmt.Sprintf("assertion failure: expected inlineGoCode, got %v", n.context))
+			if e.context != inlineGoCode {
+				panic(fmt.Sprintf("assertion failure: expected inlineGoCode, got %v", e.context))
 			}
-			srcLineNo := g.c.lineNo(n.Pos())
-			lines := strings.Split(n.code, "\n")
+			srcLineNo := g.c.lineNo(e.Pos())
+			lines := strings.Split(e.code, "\n")
 			for _, line := range lines {
 				g.lineNo(srcLineNo)
 				g.bodyPrintf("%s\n", line)
 				srcLineNo++
 			}
 		case *nodeIf:
-			g.bodyPrintf("if %s {\n", n.cond.expr)
-			f(n.then)
-			if n.alt == nil {
+			g.bodyPrintf("if %s {\n", e.cond.expr)
+			f(e.then)
+			if e.alt == nil {
 				g.bodyPrintf("}\n")
 			} else {
 				g.bodyPrintf("} else {\n")
-				f(n.alt)
+				f(e.alt)
 				g.bodyPrintf("}\n")
 			}
 			return false
 		case nodeList:
-			for _, x := range n {
+			for _, x := range e {
 				f(x)
 			}
 			return false
 		case *nodeFor:
-			g.bodyPrintf("for %s {\n", n.clause.code)
-			f(n.block)
+			g.bodyPrintf("for %s {\n", e.clause.code)
+			f(e.block)
 			g.bodyPrintf("}\n")
 			return false
 		case *nodeBlock:
-			f(nodeList(n.nodes))
+			f(nodeList(e.nodes))
 			return false
 		case *nodeLayout:
 			// nothing to do
@@ -1685,8 +1715,7 @@ func (g *codeGenerator) generate() {
 		}
 		return true
 	}
-	nodes := g.c.nodes()
-	inspect(nodeList(nodes), f)
+	inspect(n, f)
 }
 
 func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]byte, error) {
@@ -1709,21 +1738,28 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		{name: "pushupFilePath", typ: "string"},
 	}
 
+	if strategy == compileLayout {
+		g.used("html/template")
+		fields = append(fields, field{name: "sections", typ: "map[string]chan template.HTML"})
+	}
+
 	g.bodyPrintf("type %s struct {\n", typeName)
 	for _, field := range fields {
 		g.bodyPrintf("%s %s\n", field.name, field.typ)
 	}
 	g.bodyPrintf("}\n")
 
-	g.bodyPrintf("func (t *%s) buildCliArgs() []string {\n", typeName)
+	const receiver = "up"
+
+	g.bodyPrintf("func (%s *%s) buildCliArgs() []string {\n", receiver, typeName)
 	g.bodyPrintf("  return %#v\n", os.Args)
 	g.bodyPrintf("}\n\n")
 
 	switch strategy {
 	case compilePushupPage:
 		p := c.(*pageCodeGen)
-		g.bodyPrintf("func (t *%s) register() {\n", typeName)
-		g.bodyPrintf("  routes.add(\"%s\", t)\n", p.route)
+		g.bodyPrintf("func (up *%s) register() {\n", typeName)
+		g.bodyPrintf("  routes.add(\"%s\", %s)\n", p.route, receiver)
 		g.bodyPrintf("}\n\n")
 
 		g.bodyPrintf("func init() {\n")
@@ -1737,19 +1773,38 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		g.bodyPrintf("  layout.pushupFilePath = %s\n", strconv.Quote(c.filePath()))
 		g.bodyPrintf("  layouts[\"%s\"] = layout\n", basename)
 		g.bodyPrintf("}\n\n")
+
+		g.used("html/template")
+		g.bodyPrintf(`
+func (%s *%s) section(name string) template.HTML {
+	return <-up.sections[name]
+}
+
+`, receiver, typeName)
+
+		g.bodyPrintf(`
+func (%s *%s) sectionSet(name string) bool {
+	_, ok := up.sections[name]
+	return ok
+}
+
+`, receiver, typeName)
+
 	}
 
 	// FIXME(paulsmith): feels a bit hacky to have this method in the page interface
-	g.bodyPrintf("func (t *%s) filePath() string {\n", typeName)
-	g.bodyPrintf("  return t.pushupFilePath\n")
+	g.bodyPrintf("func (%s *%s) filePath() string {\n", receiver, typeName)
+	g.bodyPrintf("  return %s.pushupFilePath\n", receiver)
 	g.bodyPrintf("}\n\n")
 
 	g.used("net/http")
 	switch strategy {
 	case compilePushupPage:
-		g.bodyPrintf("func (t *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", typeName)
+		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", receiver, typeName)
 	case compileLayout:
-		g.bodyPrintf("func (t *%s) Respond(yield chan struct{}, w http.ResponseWriter, req *http.Request) error {\n", typeName)
+		g.used("html/template")
+		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {\n", receiver, typeName)
+		g.bodyPrintf("  %s.sections = sections\n", receiver)
 	default:
 		panic("")
 	}
@@ -1775,26 +1830,33 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		}
 
 		if p.layout != "" {
+			g.used("html/template")
+			g.bodyPrintf("// sections\n")
+			g.bodyPrintf("sections := make(map[string]chan template.HTML)\n")
+			g.bodyPrintf("sections[\"contents\"] = make(chan template.HTML)\n")
+			for name := range p.page.sections {
+				g.bodyPrintf("sections[%s] = make(chan template.HTML)\n", strconv.Quote(name))
+			}
+		}
+
+		if p.layout != "" {
 			// TODO(paulsmith): this is where a flag that could conditionally toggle the rendering
 			// of the layout could go - maybe a special header in request object?
-			g.used("sync")
-			g.used("log")
+			g.used("log", "sync")
+
 			g.bodyPrintf(
 				`
-				yield := make(chan struct{})
 				var wg sync.WaitGroup
 				if renderLayout {
 					layout := getLayout("%s")
 					wg.Add(1)
 					go func() {
-						if err := layout.Respond(yield, w, req); err != nil {
+						if err := layout.Respond(w, req, sections); err != nil {
 							log.Printf("error responding with layout: %%v", err)
 							panic(err)
 						}
 						wg.Done()
 					}()
-					// Let layout render run until its `+transSymStr+`contents is encountered
-					<-yield
 				}
 			`, p.layout)
 		}
@@ -1805,24 +1867,63 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	g.bodyPrintf("// Begin user Go code and HTML\n")
 	g.bodyPrintf("{\n")
 
-	g.generate()
-
-	if strategy == compilePushupPage {
+	switch strategy {
+	case compilePushupPage:
 		p := c.(*pageCodeGen)
-		if p.layout != "" {
-			g.bodyPrintf(
-				`
-				if renderLayout {
-					yield <- struct{}{}
-					wg.Wait()
-				}
-			`)
+
+		if p.layout == "" {
+			// if there is no layout statically, just write directly to the
+			// response writer (the default)
+			g.generate()
+		} else {
+			// render the main body contents
+
+			// TODO(paulsmith) could do these as a incremental stream
+			// so the receiving end is just pulling individual chunks off
+			// instead of waiting for the whole thing to be buffered
+			g.bodyPrintf("go func() {\n")
+			g.used("bytes", "html/template")
+			save := g.ioWriterVar
+			g.ioWriterVar = "b"
+			g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
+			g.generate()
+			g.bodyPrintf("  sections[\"contents\"] <- template.HTML(b.String())\n")
+			g.bodyPrintf("}()\n")
+			g.ioWriterVar = save
+
+			// NOTE(paulsmith): this is to allow for when the layout is dynamically toggled
+			// off by the user, for example, to reuse a page for htmx partial responses. it's
+			// somewhat unfortunate because the entire response is buffered, unlike in the
+			// static case.
+			g.bodyPrintf("if !renderLayout {\n")
+			g.bodyPrintf("  printEscaped(%s, <-sections[\"contents\"])\n", g.ioWriterVar)
+			g.bodyPrintf("}\n")
+
+			for name, block := range p.page.sections {
+				save := g.ioWriterVar
+				g.ioWriterVar = "b"
+				g.bodyPrintf("go func() {\n")
+				g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
+				g.genFromNode(block)
+				g.bodyPrintf("  sections[%s] <- template.HTML(b.String())\n", strconv.Quote(name))
+				g.bodyPrintf("}()\n")
+				g.ioWriterVar = save
+			}
 		}
+	case compileLayout:
+		g.generate()
 	}
 
 	// Close the scope we started for the user code and HTML.
 	g.bodyPrintf("// End user Go code and HTML\n")
 	g.bodyPrintf("}\n")
+
+	if strategy == compilePushupPage {
+		p := c.(*pageCodeGen)
+		if p.layout != "" {
+			g.bodyPrintf("wg.Wait()\n")
+		}
+	}
 
 	g.bodyPrintf("return nil\n")
 	g.bodyPrintf("}\n")
@@ -1843,7 +1944,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		return nil, fmt.Errorf("reading all buffers: %w", err)
 	}
 
-	// fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
+	//fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
 
 	formatted, err := format.Source(raw)
 	if err != nil {
@@ -2461,6 +2562,9 @@ func (p *codeParser) parseCode() node {
 		// which a keyword block or an implicit expression could be used in the
 		// surrounding markup, and only parse for either depending on which
 		// context is current.
+	} else if p.peek().tok == token.IDENT && p.peek().lit == "section" {
+		p.advance()
+		e = p.parseSectionKeyword()
 	} else if p.peek().tok == token.LBRACE {
 		e = p.parseCodeBlock()
 	} else if p.peek().tok == token.IMPORT {
@@ -2545,7 +2649,7 @@ loop:
 func (p *codeParser) parseStmtBlock() *nodeBlock {
 	// we are sitting on the opening '{' token here
 	if p.peek().tok != token.LBRACE {
-		panic("")
+		panic("invariant, want '{'")
 	}
 	p.advance()
 	var block *nodeBlock
@@ -2607,6 +2711,20 @@ loop:
 	p.advance()
 	result.code = p.sourceFrom(start)[:n]
 	result.pos.end = result.pos.start + n
+	return result
+}
+
+func (p *codeParser) parseSectionKeyword() *nodeSection {
+	// enter function one past the "section" IDENT token
+	if p.peek().tok != token.IDENT {
+		p.parser.errorf("expected IDENT, got %s", p.peek().tok.String())
+		return nil
+	}
+	result := &nodeSection{name: p.peek().lit}
+	result.pos.start = p.parser.offset
+	p.advance()
+	result.pos.end = p.parser.offset
+	result.block = p.parseStmtBlock()
 	return result
 }
 

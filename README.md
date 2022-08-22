@@ -56,7 +56,7 @@ To make a new Pushup app, first install the main Pushup executable.
 
 #### Prerequisites
 
- * go 1.18 or later
+-   go 1.18 or later
 
 #### Install via `go install`
 
@@ -88,7 +88,7 @@ cd pushup
 make
 ```
 
-This will build the `pushup` binary, then copy it somewhere in your $PATH.
+This will build the `pushup` binary, then copy it somewhere in your \$PATH.
 
 ### Creating a new Pushup project
 
@@ -299,6 +299,60 @@ Renders:
 
 ```html
 <p>HelloHelloHello</p>
+```
+
+### Layout
+
+#### `^section`
+
+Pushup layouts can have sections within the HTML document that Pushup pages
+can define with their own content to be rendered into those locations.
+
+For example, a layout could have a sidebar section, and each page can set
+its own sidebar content.
+
+In a Pushup page, sections are defined with the keyword like so:
+
+```pushup
+^section sidebar {
+    <article>
+        <h1>This is my sidebar content</h1>
+        <p>More to come</p>
+    </article>
+}
+```
+
+Layouts can declare sections with the `up.section()` method.
+
+```pushup
+<aside>
+    ^(up.section("sidebar"))
+</aside>
+```
+
+Layouts can also make sections optional, by first checking if a page has set a
+section with `up.sectionSet()`, which returns a boolean.
+
+```pushup
+^if (up.sectionSet("sidebar")) {
+    <aside>
+        ^(up.section("sidebar"))
+    </aside>
+}
+```
+
+Checking for if a section was set by a page lets a layout designer provide
+default markup that can be overridden by a page.
+
+```pushup
+^if (up.sectionSet("title")) {
+    <title>
+        ^(up.section("title"))
+    </title>
+} else {
+    <title>Welcome to our site</title>
+}
+</title>
 ```
 
 [token]: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token

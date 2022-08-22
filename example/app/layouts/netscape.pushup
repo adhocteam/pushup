@@ -19,8 +19,8 @@
         <header>
             <h1>Pushup Navigator</h1>
         </header>
-        <main hx-boost="true">
-            ^contents
+        <main>
+            ^(up.section("contents"))
         </main>
         <hr>
         <footer>

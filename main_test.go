@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"io/ioutil"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -71,7 +72,7 @@ func TestPushup(t *testing.T) {
 					t.Fatalf("creating temp dir: %v", err)
 				}
 				defer os.RemoveAll(tmpdir)
-				socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+".sock")
+				socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+"-"+strconv.Itoa(int(rand.Uint32()))+".sock")
 
 				var errb bytes.Buffer
 
@@ -689,6 +690,22 @@ func TestParse(t *testing.T) {
 				},
 			},
 		},
+		{
+			`^section foo {<text>bar</text>}`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeSection{
+						name: "foo",
+						pos:  span{start: 8, end: 12},
+						block: &nodeBlock{
+							nodes: []node{
+								&nodeBlock{nodes: []node{&nodeLiteral{str: "bar", pos: span{start: 20, end: 23}}}},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 	opts := cmp.AllowUnexported(unexported...)
 	for _, test := range tests {
@@ -705,6 +722,7 @@ func TestParse(t *testing.T) {
 }
 
 var unexported = []any{
+	attr{},
 	importDecl{},
 	nodeBlock{},
 	nodeElement{},
@@ -714,9 +732,9 @@ var unexported = []any{
 	nodeImport{},
 	nodeLayout{},
 	nodeLiteral{},
+	nodeSection{},
 	span{},
+	stringPos{},
 	syntaxTree{},
 	tag{},
-	attr{},
-	stringPos{},
 }

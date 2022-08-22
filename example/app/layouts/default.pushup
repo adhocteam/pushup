@@ -1,7 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <title>Pushup app</title>
+        <title>
+            ^if up.sectionSet("title") {
+                <text>^(up.section("title"))</text>
+            } else {
+                <text>Example Pushup app</text>
+            }
+        </title>
         <link rel="stylesheet" href="/static/css/pushup.css" />
         <script src="https://unpkg.com/htmx.org@1.7.0"></script>
     </head>
@@ -17,7 +23,7 @@
             <h1>Pushup demo</h1>
         </header>
         <main>
-            ^contents
+            ^(up.section("contents"))
         </main>
         <footer>
             <p><a href="/source?route=^(req.URL.Path)">view source</a></p>

@@ -134,7 +134,7 @@ func getParam(r *http.Request, slug string) string {
 }
 
 type layout interface {
-	Respond(yield chan struct{}, w http.ResponseWriter, req *http.Request) error
+	Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error
 }
 
 var layouts = make(map[string]layout)
@@ -174,6 +174,8 @@ func printEscaped(w io.Writer, val any) {
 		template.HTMLEscape(w, val)
 	case int:
 		io.WriteString(w, strconv.Itoa(val))
+	case template.HTML:
+		io.WriteString(w, string(val))
 	default:
 		io.WriteString(w, template.HTMLEscapeString(fmt.Sprint(val)))
 	}

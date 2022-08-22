@@ -1,3 +1,5 @@
+^section title { <text>Dump headers</text> }
+
 <h2>Dump request headers</h2>
 <ul>
 ^for key := range req.Header {
