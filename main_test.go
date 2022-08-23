@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -24,15 +25,24 @@ import (
 )
 
 func TestPushup(t *testing.T) {
-	os.RemoveAll("./build")
-	t.Cleanup(func() {
-		os.RemoveAll("./build")
-	})
 	testdataDir := "./testdata"
 	entries, err := os.ReadDir(testdataDir)
 	if err != nil {
 		t.Fatalf("reading testdata dir: %v", err)
 	}
+	tmpdir, err := ioutil.TempDir("", "pushuptests")
+	if err != nil {
+		t.Fatalf("creating temp dir: %v", err)
+	}
+	//defer os.RemoveAll(tmpdir)
+	log.Printf("TMPDIR: %v", tmpdir)
+
+	// build the Pushup executable
+	pushup := filepath.Join(tmpdir, "pushup.exe")
+	if err := exec.Command("go", "build", "-o", pushup, ".").Run(); err != nil {
+		t.Fatalf("building the Pushup exe: %v", err)
+	}
+
 	for _, entry := range entries {
 		if strings.HasSuffix(entry.Name(), ".pushup") {
 			t.Run(entry.Name(), func(t *testing.T) {
@@ -45,7 +55,10 @@ func TestPushup(t *testing.T) {
 				} else if basename == "$name" {
 					requestPath = "/testdata/world"
 				}
-				pushupFile := filepath.Join(testdataDir, entry.Name())
+				pushupFile, err := filepath.Abs(filepath.Join(testdataDir, entry.Name()))
+				if err != nil {
+					t.Fatalf("getting absolute path: %v", err)
+				}
 				outFile := filepath.Join(testdataDir, basename+".out")
 				if _, err := os.Stat(outFile); err != nil {
 					if errors.Is(err, fs.ErrNotExist) {
@@ -67,17 +80,26 @@ func TestPushup(t *testing.T) {
 				ready := make(chan bool)
 				done := make(chan bool)
 
-				tmpdir, err := ioutil.TempDir("", "pushuptests")
-				if err != nil {
-					t.Fatalf("creating temp dir: %v", err)
+				dir := filepath.Join(tmpdir, strconv.Itoa(os.Getpid()), strconv.Itoa(rand.Int()))
+				log.Printf("DIR: %v", dir)
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					t.Fatalf("making test dir: %v", dir)
 				}
-				defer os.RemoveAll(tmpdir)
-				socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+"-"+strconv.Itoa(int(rand.Uint32()))+".sock")
+				socketPath := filepath.Join(dir, "pushup.sock")
+				{
+					log.Printf("initializing go.mod")
+					cmd := exec.Command("go", "mod", "init", "example/myproject")
+					cmd.Dir = dir
+					if err := cmd.Run(); err != nil {
+						t.Fatalf("initializing go.mod: %v", err)
+					}
+				}
 
 				var errb bytes.Buffer
 
 				g.Go(func() error {
-					cmd := exec.Command("go", "run", ".", "run", "-build-pkg", "github.com/AdHocRandD/pushup/build", "-single", pushupFile, "-unix-socket", socketPath)
+					cmd := exec.Command(pushup, "run", "-single", pushupFile, "-unix-socket", socketPath)
+					cmd.Dir = dir
 					sysProcAttr(cmd)
 
 					stdout, err := cmd.StdoutPipe()

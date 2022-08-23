@@ -1083,7 +1083,7 @@ func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 	g.Go(func() error {
 		defer close(done)
 		// NOTE(paulsmith): we have to wait() the child process(es) in any case,
-		// regardless of how they were exited. this is also way there is a
+		// regardless of how they were exited. this is also why there is a
 		// `done' channel in this function, to signal to the other goroutine
 		// waiting for context cancellation.
 		if err := cmd.Wait(); err != nil {
