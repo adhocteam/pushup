@@ -24,10 +24,14 @@ import (
 )
 
 func TestPushup(t *testing.T) {
-	os.RemoveAll("./build")
-	t.Cleanup(func() {
-		os.RemoveAll("./build")
-	})
+	tmpdir := t.TempDir()
+	pushup := filepath.Join(tmpdir, "pushup.exe")
+
+	// build Pushup executable
+	if err := exec.Command("go", "build", "-o", pushup, ".").Run(); err != nil {
+		t.Fatalf("building Pushup exe: %v", err)
+	}
+
 	testdataDir := "./testdata"
 	entries, err := os.ReadDir(testdataDir)
 	if err != nil {
@@ -77,7 +81,7 @@ func TestPushup(t *testing.T) {
 				var errb bytes.Buffer
 
 				g.Go(func() error {
-					cmd := exec.Command("go", "run", ".", "run", "-build-pkg", "github.com/AdHocRandD/pushup/build", "-single", pushupFile, "-unix-socket", socketPath)
+					cmd := exec.Command(pushup, "run", "-build-pkg", "github.com/AdHocRandD/pushup/build", "-single", pushupFile, "-unix-socket", socketPath)
 					sysProcAttr(cmd)
 
 					stdout, err := cmd.StdoutPipe()
