@@ -63,18 +63,10 @@ func main() {
 
 	cmdName := flag.Arg(0)
 	args := flag.Args()[1:]
-	var cmd doer
 
 	for _, c := range cliCmds {
 		if c.name == cmdName {
-			switch cmdName {
-			case "new":
-				cmd = newNewCmd(args)
-			case "build":
-				cmd = newBuildCmd(args)
-			case "run":
-				cmd = newRunCmd(args)
-			}
+			cmd := c.fn(args)
 			if err := cmd.do(); err != nil {
 				log.Fatalf("%s command: %v", c.name, err)
 			} else {
@@ -384,13 +376,13 @@ type cliCmd struct {
 	name        string
 	usage       string
 	description string
+	fn          func(args []string) doer
 }
 
-// TODO(paulsmith): link these with their command struct counterparts
 var cliCmds = []cliCmd{
-	{name: "new", usage: "[path]", description: "create new Pushup project directory"},
-	{name: "build", usage: "", description: "compile Pushup project and build executable"},
-	{name: "run", usage: "", description: "build and run Pushup project app"},
+	{name: "new", usage: "[path]", description: "create new Pushup project directory", fn: func(args []string) doer { return newNewCmd(args) }},
+	{name: "build", usage: "", description: "compile Pushup project and build executable", fn: func(args []string) doer { return newBuildCmd(args) }},
+	{name: "run", usage: "", description: "build and run Pushup project app", fn: func(args []string) doer { return newRunCmd(args) }},
 }
 
 func printPushupHelp() {
