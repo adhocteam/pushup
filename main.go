@@ -1164,7 +1164,7 @@ func compilePushup(c compileParams) error {
 	var cg codeGenUnit
 	switch c.strategy {
 	case compilePushupPage:
-		page, err := preProcessTree(tree)
+		page, err := newPageFromTree(tree)
 		if err != nil {
 			return fmt.Errorf("post-processing tree: %w", err)
 		}
@@ -1475,10 +1475,12 @@ type page struct {
 	sections map[string]*nodeBlock
 }
 
-// preProcessTree prepares the parse tree for code generation. some node types
-// are encountered sequentially in the source file, but need to be reorganized
-// for access in the code generator.
-func preProcessTree(tree *syntaxTree) (*page, error) {
+// newPageFromTree produces a page which is the main prepared object for code
+// generation. this requires walking the syntax tree and reorganizing things
+// somewhat to make them easier to access. some node types are encountered
+// sequentially in the source file, but need to be reorganized for access in
+// the code generator.
+func newPageFromTree(tree *syntaxTree) (*page, error) {
 	page := &page{layout: "default"}
 	layoutSet := false
 	n := 0
@@ -1651,28 +1653,17 @@ func (g *codeGenerator) genFromNode(n node) {
 		case *nodeLiteral:
 			g.used("io")
 			g.nodeLineNo(e)
-			g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(e.str))
+			g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.str))
 		case *nodeElement:
 			g.used("io")
 			g.nodeLineNo(e)
 			f(nodeList(e.startTagNodes))
 			f(nodeList(e.children))
-			g.bodyPrintf("io.WriteString(w, %s)\n", strconv.Quote(e.tag.end()))
+			g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.tag.end()))
 			return false
 		case *nodeGoStrExpr:
-			if g.strategy == compileLayout && e.expr == "contents" {
-				// NOTE(paulsmith): this is acting sort of like a coroutine, yielding back to the
-				// component that is being rendered with this layout
-				g.bodyPrintf(`if fl, ok := w.(http.Flusher); ok {
-			fl.Flush()
-		}
-		`)
-				g.bodyPrintf("yield <- struct{}{}\n")
-				g.bodyPrintf("<-yield\n")
-			} else {
-				g.nodeLineNo(e)
-				g.bodyPrintf("printEscaped(w, %s)\n", e.expr)
-			}
+			g.nodeLineNo(e)
+			g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, e.expr)
 		case *nodeGoCode:
 			if e.context != inlineGoCode {
 				panic(fmt.Sprintf("assertion failure: expected inlineGoCode, got %v", e.context))
@@ -1877,7 +1868,6 @@ func (%s *%s) sectionSet(name string) bool {
 			g.generate()
 		} else {
 			// render the main body contents
-
 			// TODO(paulsmith) could do these as a incremental stream
 			// so the receiving end is just pulling individual chunks off
 			// instead of waiting for the whole thing to be buffered
