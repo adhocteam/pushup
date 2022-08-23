@@ -352,7 +352,6 @@ default markup that can be overridden by a page.
 } else {
     <title>Welcome to our site</title>
 }
-</title>
 ```
 
 [token]: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
