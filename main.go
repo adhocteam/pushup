@@ -2,9 +2,11 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -372,6 +374,19 @@ func (r *runCmd) do() error {
 	return nil
 }
 
+type lspCmd struct{}
+
+func newLspCmd(args []string) *lspCmd {
+	return &lspCmd{}
+}
+
+func (c *lspCmd) do() error {
+	if err := startLspServer(); err != nil {
+		return err
+	}
+	return nil
+}
+
 type cliCmd struct {
 	name        string
 	usage       string
@@ -383,6 +398,7 @@ var cliCmds = []cliCmd{
 	{name: "new", usage: "[path]", description: "create new Pushup project directory", fn: func(args []string) doer { return newNewCmd(args) }},
 	{name: "build", usage: "", description: "compile Pushup project and build executable", fn: func(args []string) doer { return newBuildCmd(args) }},
 	{name: "run", usage: "", description: "build and run Pushup project app", fn: func(args []string) doer { return newRunCmd(args) }},
+	{name: "lsp", usage: "", description: "start LSP server", fn: func(args []string) doer { return newLspCmd(args) }},
 }
 
 func printPushupHelp() {
@@ -3392,4 +3408,126 @@ func isASCIIAlphanum(ch int) bool {
 		return true
 	}
 	return false
+}
+
+/*
+request
+{
+    "jsonrpc": "2.0",
+    "id" : 1,
+    "method": "textDocument/definition",
+    "params": {
+        "textDocument": {
+            "uri": "file:///p%3A/mseng/VSCode/Playgrounds/cpp/use.cpp"
+        },
+        "position": {
+            "line": 3,
+            "character": 12
+        }
+    }
+}
+*/
+
+type jsonRpcReq struct {
+	Version string          `json:"jsonrpc"`
+	Id      int             `json:"id"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params"`
+}
+
+type lspError struct {
+	code    int
+	message string
+	data    any
+}
+
+func (e *lspError) Error() string {
+	return e.message
+}
+
+const (
+	ParseError                     = -32700
+	InvalidRequest                 = -32600
+	MethodNotFound                 = -32601
+	InvalidParams                  = -32602
+	InternalError                  = -32603
+	JsonrpcReservedErrorRangeStart = -32099
+	ServerErrorStart               = JsonrpcReservedErrorRangeStart
+	ServerNotInitialized           = -32002
+	UnknownErrorCode               = -32001
+	JsonrpcReservedErrorRangeEnd   = -32000
+	ServerErrorEnd                 = JsonrpcReservedErrorRangeEnd
+	LspReservedErrorRangeStart     = -32899
+	RequestFailed                  = -32803
+	ServerCancelled                = -32802
+	ContentModified                = -32801
+	RequestCancelled               = -32800
+)
+
+func startLspServer() error {
+	s := &lspServer{}
+	for {
+		// read JSON-RPC request from stdin
+		var req jsonRpcReq
+		if err := s.readRequest(os.Stdin, &req); err != nil {
+			return fmt.Errorf("reading LSP request from stdin: %w", err)
+		}
+		// invoke appropriate method
+		resp, err := s.invokeMethod(req.Method, req.Params)
+		if err != nil {
+			var lerr lspError
+			if errors.As(err, &lerr) {
+				s.respondErr(os.Stdout, &lerr)
+			} else {
+				return fmt.Errorf("LSP response: %w", err)
+			}
+		}
+		// print encoded response to stdout
+		s.respond(os.Stdout, resp)
+	}
+	return nil
+}
+
+type lspServer struct {
+}
+
+func (s *lspServer) readRequest(r io.Reader, req *jsonRpcReq) error {
+	br := bufio.NewReader(r)
+	headers := make(map[string]string)
+	for {
+		b, err := br.ReadBytes('\n')
+		if err != nil {
+			return err
+		}
+		b = bytes.TrimSpace(b)
+		//log.Printf("READ BYTES: %q", b)
+		if bytes.Equal(b, []byte("")) {
+			break
+		}
+		bits := bytes.Split(b, []byte(": "))
+		headers[string(bits[0])] = string(bits[1])
+	}
+	if err := json.NewDecoder(br).Decode(req); err != nil {
+		return fmt.Errorf("reading request content: %w", err)
+	}
+	log.Printf("REQ: %+v", req)
+	return nil
+}
+
+func (s *lspServer) respondErr(w io.Writer, err *lspError) {
+}
+
+func (s *lspServer) invokeMethod(method string, params json.RawMessage) (any, error) {
+	switch method {
+	case "textDocument/didOpen":
+	//case "textDocument/declaration":
+	default:
+		log.Printf("unimplemented LSP server capability %q", method)
+		// TODO render error response
+	}
+	return nil, nil
+}
+
+func (s *lspServer) respond(w io.Writer, resp any) {
+	//
 }
