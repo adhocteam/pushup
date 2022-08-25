@@ -351,27 +351,44 @@ func TestGeneratedFilename(t *testing.T) {
 	}
 }
 
-func TestGenStructName(t *testing.T) {
+func TestTypenameFromPath(t *testing.T) {
 	tests := []struct {
-		basename string
-		strategy compilationStrategy
-		want     string
+		path string
+		want string
 	}{
-		{
-			"index",
-			compilePushupPage,
-			"Pushup__index__1",
-		},
-		{
-			"$name",
-			compilePushupPage,
-			"Pushup__DollarSign_name__2",
-		},
+		{"", ""},
+		{"index", "Index"},
+		{"$name", "DollarSignName"},
+		{"default", "Default"},
 	}
 
 	for _, test := range tests {
 		t.Run("", func(t *testing.T) {
-			got := genStructName(test.basename, test.strategy)
+			got := typenameFromPath(test.path)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("(-want, +got)\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestGeneratedTypename(t *testing.T) {
+	tests := []struct {
+		path     string
+		root     string
+		strategy compilationStrategy
+		want     string
+	}{
+		{"index.pushup", ".", compilePushupPage, "IndexPage"},
+		{"foo-bar.pushup", ".", compilePushupPage, "FooBarPage"},
+		{"foo_bar.pushup", ".", compilePushupPage, "FooBarPage"},
+		{"a/b/c.pushup", ".", compilePushupPage, "ABCPage"},
+		{"a/b/$c.pushup", ".", compilePushupPage, "ABDollarSignCPage"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			got := generatedTypename(test.path, test.root, test.strategy)
 			if diff := cmp.Diff(test.want, got); diff != "" {
 				t.Errorf("(-want, +got)\n%s", diff)
 			}

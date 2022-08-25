@@ -1173,10 +1173,11 @@ func compilePushup(c compileParams) error {
 	}
 
 	outputFilename := generatedFilename(c.sourcePath, c.rootDir, c.strategy)
+	outputTypename := generatedTypename(c.sourcePath, c.rootDir, c.strategy)
 	outputPath := filepath.Join(c.targetDir, outputFilename)
 	basename := strings.TrimSuffix(filepath.Base(c.sourcePath), filepath.Ext(c.sourcePath))
 
-	if err := generateCodeToFile(cg, basename, outputPath, c.strategy); err != nil {
+	if err := generateCodeToFile(cg, basename, outputTypename, outputPath, c.strategy); err != nil {
 		return fmt.Errorf("generating Go code from parse result: %w", err)
 	}
 
@@ -1205,6 +1206,26 @@ func generatedFilename(path string, root string, strategy compilationStrategy) s
 	} else {
 		result = base + suffix + ".go"
 	}
+	return result
+}
+
+// generatedTypename returns the name of the type of the Go struct that
+// holds the generated code for the Pushup page and related methods.
+func generatedTypename(path string, root string, strategy compilationStrategy) string {
+	path = trimCommonPrefix(path, root)
+	ext := filepath.Ext(path)
+	path = path[:len(path)-len(ext)]
+	typename := typenameFromPath(path)
+	var suffix string
+	switch strategy {
+	case compilePushupPage:
+		suffix = "Page"
+	case compileLayout:
+		suffix = "Layout"
+	default:
+		panic("unhandled compilation strategy")
+	}
+	result := typename + suffix
 	return result
 }
 
@@ -1518,8 +1539,8 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 	return page, nil
 }
 
-func generateCodeToFile(c codeGenUnit, basename string, outputPath string, strategy compilationStrategy) error {
-	code, err := genCode(c, basename, strategy)
+func generateCodeToFile(c codeGenUnit, basename string, typename string, outputPath string, strategy compilationStrategy) error {
+	code, err := genCode(c, basename, typename, strategy)
 	if err != nil {
 		return fmt.Errorf("code gen: %w", err)
 	}
@@ -1696,7 +1717,7 @@ func (g *codeGenerator) genFromNode(n node) {
 	inspect(n, f)
 }
 
-func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]byte, error) {
+func genCode(c codeGenUnit, basename string, typename string, strategy compilationStrategy) ([]byte, error) {
 	g := newCodeGenerator(c, basename, strategy)
 
 	// FIXME(paulsmith): need way to specify this as user
@@ -1707,8 +1728,6 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	printVersion(&g.outb)
 	g.outPrintf("\n")
 	g.outPrintf("package %s\n\n", packageName)
-
-	typeName := genStructName(basename, strategy)
 
 	type field struct {
 		name string
@@ -1724,7 +1743,7 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 		fields = append(fields, field{name: "sections", typ: "map[string]chan template.HTML"})
 	}
 
-	g.bodyPrintf("type %s struct {\n", typeName)
+	g.bodyPrintf("type %s struct {\n", typename)
 	for _, field := range fields {
 		g.bodyPrintf("%s %s\n", field.name, field.typ)
 	}
@@ -1732,25 +1751,25 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 
 	const receiver = "up"
 
-	g.bodyPrintf("func (%s *%s) buildCliArgs() []string {\n", receiver, typeName)
+	g.bodyPrintf("func (%s *%s) buildCliArgs() []string {\n", receiver, typename)
 	g.bodyPrintf("  return %#v\n", os.Args)
 	g.bodyPrintf("}\n\n")
 
 	switch strategy {
 	case compilePushupPage:
 		p := c.(*pageCodeGen)
-		g.bodyPrintf("func (up *%s) register() {\n", typeName)
+		g.bodyPrintf("func (up *%s) register() {\n", typename)
 		g.bodyPrintf("  routes.add(\"%s\", %s)\n", p.route, receiver)
 		g.bodyPrintf("}\n\n")
 
 		g.bodyPrintf("func init() {\n")
-		g.bodyPrintf("  page := new(%s)\n", typeName)
+		g.bodyPrintf("  page := new(%s)\n", typename)
 		g.bodyPrintf("  page.pushupFilePath = %s\n", strconv.Quote(c.filePath()))
 		g.bodyPrintf("  page.register()\n")
 		g.bodyPrintf("}\n\n")
 	case compileLayout:
 		g.bodyPrintf("func init() {\n")
-		g.bodyPrintf("  layout := new(%s)\n", typeName)
+		g.bodyPrintf("  layout := new(%s)\n", typename)
 		g.bodyPrintf("  layout.pushupFilePath = %s\n", strconv.Quote(c.filePath()))
 		g.bodyPrintf("  layouts[\"%s\"] = layout\n", basename)
 		g.bodyPrintf("}\n\n")
@@ -1761,7 +1780,7 @@ func (%s *%s) section(name string) template.HTML {
 	return <-up.sections[name]
 }
 
-`, receiver, typeName)
+`, receiver, typename)
 
 		g.bodyPrintf(`
 func (%s *%s) sectionSet(name string) bool {
@@ -1769,22 +1788,22 @@ func (%s *%s) sectionSet(name string) bool {
 	return ok
 }
 
-`, receiver, typeName)
+`, receiver, typename)
 
 	}
 
 	// FIXME(paulsmith): feels a bit hacky to have this method in the page interface
-	g.bodyPrintf("func (%s *%s) filePath() string {\n", receiver, typeName)
+	g.bodyPrintf("func (%s *%s) filePath() string {\n", receiver, typename)
 	g.bodyPrintf("  return %s.pushupFilePath\n", receiver)
 	g.bodyPrintf("}\n\n")
 
 	g.used("net/http")
 	switch strategy {
 	case compilePushupPage:
-		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", receiver, typeName)
+		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", receiver, typename)
 	case compileLayout:
 		g.used("html/template")
-		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {\n", receiver, typeName)
+		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {\n", receiver, typename)
 		g.bodyPrintf("  %s.sections = sections\n", receiver)
 	default:
 		panic("")
@@ -1934,24 +1953,25 @@ func (%s *%s) sectionSet(name string) bool {
 	return formatted, nil
 }
 
-var structNameIdx int
-
-func safeGoIdentFromFilename(filename string) string {
-	// FIXME(paulsmith): need to be more rigorous in mapping safely from
-	// filenames to legal Go identifiers
-	filename = strings.ReplaceAll(filename, ".", "")
-	filename = strings.ReplaceAll(filename, "-", "_")
-	filename = strings.ReplaceAll(filename, "$", "DollarSign_")
-	return filename
-}
-
-func genStructName(basename string, strategy compilationStrategy) string {
-	structNameIdx++
-	basename = safeGoIdentFromFilename(basename)
-	if strategy == compileLayout {
-		basename += "_layout"
+func typenameFromPath(path string) string {
+	path = strings.ReplaceAll(path, "$", "DollarSign_")
+	buf := make([]rune, len(path))
+	i := 0
+	wordBoundary := true
+	for _, r := range path {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			if wordBoundary {
+				wordBoundary = false
+				buf[i] = unicode.ToUpper(r)
+			} else {
+				buf[i] = r
+			}
+			i++
+		} else {
+			wordBoundary = true
+		}
 	}
-	return "Pushup__" + basename + "__" + strconv.Itoa(structNameIdx)
+	return string(buf[:i])
 }
 
 type importDecl struct {
