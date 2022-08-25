@@ -52,7 +52,7 @@ func main() {
 	flag.Parse()
 
 	if version {
-		printVersion()
+		printVersion(os.Stdout)
 		os.Exit(0)
 	}
 
@@ -1708,6 +1708,9 @@ func genCode(c codeGenUnit, basename string, strategy compilationStrategy) ([]by
 	packageName := "build"
 
 	g.outPrintf("// this file is mechanically generated, do not edit!\n")
+	g.outPrintf("// version: ")
+	printVersion(&g.outb)
+	g.outPrintf("\n")
 	g.outPrintf("package %s\n\n", packageName)
 
 	typeName := genStructName(basename, strategy)

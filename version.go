@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"runtime/debug"
 )
 
@@ -24,14 +25,14 @@ func getRuntimeVersion() string {
 	return ""
 }
 
-func printVersion() {
+func printVersion(w io.Writer) {
 	runtimeVersion := getRuntimeVersion()
 
 	// If the binary was not compiled with a git version, don't print an empty
 	// parens
 	if runtimeVersion == "" {
-		fmt.Printf("Pushup %s\n", VERSION)
+		fmt.Fprintf(w, "Pushup %s\n", VERSION)
 	} else {
-		fmt.Printf("Pushup %s (%s)\n", VERSION, runtimeVersion[:8])
+		fmt.Fprintf(w, "Pushup %s (%s)\n", VERSION, runtimeVersion[:8])
 	}
 }
