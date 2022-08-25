@@ -1196,14 +1196,9 @@ func generatedFilename(path string, root string, strategy compilationStrategy) s
 	base := strings.TrimSuffix(file, filepath.Ext(file))
 	prefix := strings.Join(dirs, "__")
 	var result string
-	var suffix string
-	switch strategy {
-	case compileLayout:
-		suffix = "__layout-gen"
-	case compilePushupPage:
-		suffix = "__gen"
-	default:
-		panic("")
+	suffix := ".up"
+	if strategy == compileLayout {
+		suffix = ".layout.up"
 	}
 	if prefix != "" {
 		result = prefix + "__" + base + suffix + ".go"

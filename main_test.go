@@ -305,35 +305,46 @@ func TestRouteFromPath(t *testing.T) {
 
 func TestGeneratedFilename(t *testing.T) {
 	tests := []struct {
-		path string
-		root string
-		want string
+		path     string
+		root     string
+		want     string
+		strategy compilationStrategy
 	}{
 		{
 			"app/pages/index.pushup",
 			"app/pages",
-			"index__gen.go",
+			"index.up.go",
+			compilePushupPage,
 		},
 		{
 			"app/pages/about.pushup",
 			"app/pages",
-			"about__gen.go",
+			"about.up.go",
+			compilePushupPage,
 		},
 		{
 			"app/pages/x/sub.pushup",
 			"app/pages",
-			"x__sub__gen.go",
+			"x__sub.up.go",
+			compilePushupPage,
 		},
 		{
 			"testdata/foo.pushup",
 			".",
-			"testdata__foo__gen.go",
+			"testdata__foo.up.go",
+			compilePushupPage,
+		},
+		{
+			"app/layouts/default.pushup",
+			"app/layouts",
+			"default.layout.up.go",
+			compileLayout,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run("", func(t *testing.T) {
-			if got := generatedFilename(test.path, test.root, compilePushupPage); test.want != got {
+			if got := generatedFilename(test.path, test.root, test.strategy); test.want != got {
 				t.Errorf("want %q, got %q", test.want, got)
 			}
 		})
