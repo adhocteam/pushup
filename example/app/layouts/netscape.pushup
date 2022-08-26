@@ -20,7 +20,7 @@
             <h1>Pushup Navigator</h1>
         </header>
         <main>
-            ^(up.section("contents"))
+            ^up.section("contents")
         </main>
         <hr>
         <footer>

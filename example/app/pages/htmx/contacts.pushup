@@ -28,7 +28,7 @@
 <tr>
     <td>Agent Smith</td>
     <td>void^(page * 5 + i)&#x40;pizza.null</td>
-    <td>^(uid())</td>
+    <td>^uid()</td>
 </tr>
 }
 <tr id="replace-me">

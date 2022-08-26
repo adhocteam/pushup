@@ -1,1 +1,1 @@
-<p>Hello, ^(getParam(req, "name"))!</p>
+<p>Hello, ^getParam(req, "name")!</p>

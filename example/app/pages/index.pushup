@@ -22,7 +22,7 @@
     <li>Builds on Go <tt>net/http</tt></li>
 </ul>
 
-<p>It is currently ^(time.Now().Format(time.UnixDate)).</p>
+<p>It is currently ^time.Now().Format(time.UnixDate).</p>
 
 <ul>
     <li><a href="/about">About</a></li>

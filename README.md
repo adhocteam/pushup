@@ -33,7 +33,7 @@ The syntax looks like this:
 
 <h1>^title</h1>
 
-<p>The time is now ^(time.Now().String()).</p>
+<p>The time is now ^time.Now().String().</p>
 
 ^if time.Now().Weekday() == time.Friday {
     <p>It's Friday! Enjoy the start to your weekend.</p>
@@ -251,7 +251,12 @@ Docs TKTK
 #### Simple expressions
 
 Simple Go expressions can be written with just `^` followed by the expression.
-"Simple" means variable names, and dotted field name access of structs.
+"Simple" means:
+
+-   variable names (eg., `^x`)
+-   dotted field name access of structs (eg., `^account.name`)
+-   function and method calls (eg., `^strings.Repeat("x", 3)`)
+-   index expressions (eg., `a[x]`)
 
 Example:
 
@@ -260,7 +265,7 @@ Example:
 <p>Hello, ^name!</p>
 ```
 
-Renders:
+Outputs:
 
 ```html
 <p>Hello, Paul!</p>
@@ -275,10 +280,23 @@ Example:
 <p>The URL path: ^req.URL.Path</p>
 ```
 
-Renders:
+Outputs:
 
 ```html
 <p>The URL path: /foo/bar</p>
+```
+
+Example:
+
+```pushup
+^import "strings"
+<p>^strings.Repeat("Hello", 3)</p>
+```
+
+Outputs:
+
+```html
+<p>HelloHelloHello</p>
 ```
 
 #### Explicit expressions
@@ -286,19 +304,17 @@ Renders:
 Explicit expressions are written with `^` and the followed by any valid Go
 expression surrounded by parentheses.
 
-This is a good way to make function/method calls.
-
 Example:
 
 ```pushup
-^import "strings"
-<p>^(strings.Repeat("Hello", 3))</p>
+^{ numPeople := 4 }
+<p>With ^numPeople people there are ^(numPeople * 2) hands</p>
 ```
 
-Renders:
+Outputs:
 
 ```html
-<p>HelloHelloHello</p>
+<p>With 4 people there are 8 hands</p>
 ```
 
 ### Layout
@@ -326,7 +342,7 @@ Layouts can declare sections with the `up.section()` method.
 
 ```pushup
 <aside>
-    ^(up.section("sidebar"))
+    ^up.section("sidebar")
 </aside>
 ```
 
@@ -336,7 +352,7 @@ section with `up.sectionSet()`, which returns a boolean.
 ```pushup
 ^if (up.sectionSet("sidebar")) {
     <aside>
-        ^(up.section("sidebar"))
+        ^up.section("sidebar")
     </aside>
 }
 ```
@@ -347,7 +363,7 @@ default markup that can be overridden by a page.
 ```pushup
 ^if (up.sectionSet("title")) {
     <title>
-        ^(up.section("title"))
+        ^up.section("title")
     </title>
 } else {
     <title>Welcome to our site</title>

@@ -37,7 +37,7 @@
     <li>Live-reloading dev mode</li>
 </ul>
 
-<p>It is currently ^(time.Now().Format(time.UnixDate)).</p>
+<p>It is currently ^time.Now().Format(time.UnixDate).</p>
 
 <h4>What to do next?</h4>
 <ul>

@@ -26,8 +26,8 @@
 
 <h3>Live example</h3>
 
-<p><code>Hello, ^^(getParam(req, "name"))</code>: <b>Hello, ^(getParam(req, "name"))!</b></p>
-<p>URL: <tt>^(req.URL.Path)</tt></p>
+<p><code>Hello, ^^getParam(req, "name")</code>: <b>Hello, ^getParam(req, "name")!</b></p>
+<p>URL: <tt>^req.URL.Path</tt></p>
 ^if getParam(req, "name") == "world" {
     <p><a href="/dyn/Pushup">/dyn/Pushup</a></p>
 } else {

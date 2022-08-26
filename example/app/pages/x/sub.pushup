@@ -1,4 +1,4 @@
 ^section title { <text>file-based routing example</text> }
 
 <p>This is a page showing how filesystem-based routing works with subdirectories</p>
-<p>URL path: ^(req.URL.Path)</p>
+<p>URL path: ^req.URL.Path</p>

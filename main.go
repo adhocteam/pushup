@@ -2477,7 +2477,7 @@ func (p *codeParser) reset() {
 	// log.Printf("SOURCE: %q", source)
 	p.file = fset.AddFile("", fset.Base(), len(source))
 	p.scanner = new(scanner.Scanner)
-	p.scanner.Init(p.file, []byte(source), p.handleGoScanErr, scanner.ScanComments)
+	p.scanner.Init(p.file, []byte(source), nil, scanner.ScanComments)
 	p.acceptedToken = goToken{}
 	p.lookaheadToken = goToken{}
 }
@@ -2490,10 +2490,6 @@ func (p *codeParser) lookahead() (t goToken) {
 	t.pos, t.tok, t.lit = p.scanner.Scan()
 	// log.Printf("POS: %d\tTOK: %v\tLIT: %q", t.pos, t.tok, t.lit)
 	return t
-}
-
-func (p *codeParser) handleGoScanErr(pos token.Position, msg string) {
-	p.parser.errorf("Go scanning error: pos: %v msg: %s", pos, msg)
 }
 
 type goToken struct {
@@ -2514,6 +2510,18 @@ func (p *codeParser) peek() goToken {
 		p.lookaheadToken = p.lookahead()
 	}
 	return p.lookaheadToken
+}
+
+// charAt() returns the byte at the offset in the input source string. because
+// the Go tokenizer discards white space, we need this method in order to
+// check for, for example, a space after an identifier in parsing an implicit
+// expression, because that would denote the end of that simple expression in
+// Pushup syntax.
+func (p *codeParser) charAt(offset int) byte {
+	if len(p.parser.src) > offset {
+		return p.parser.src[offset]
+	}
+	return 0
 }
 
 func (p *codeParser) prev() goToken {
@@ -2838,31 +2846,90 @@ loop:
 
 func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 	if p.peek().tok != token.IDENT {
-		panic("")
+		panic("invariant, expected IDENT")
 	}
 	result := new(nodeGoStrExpr)
-	result.pos.start = p.parser.offset
+	offset := p.parser.offset
+	result.pos.start = offset
 	start := p.peek().pos
 	n := len(p.peek().String())
-	p.advance()
-	for {
-		if p.peek().tok == token.PERIOD {
-			p.advance()
-			if p.peek().tok == token.IDENT {
-				n += 1 + len(p.peek().String())
+	if unicode.IsSpace(rune(p.charAt(offset + n))) {
+		// done
+		offset += n
+		p.advance()
+	} else {
+		offset += n
+		p.advance()
+	Loop:
+		for {
+			if p.peek().tok == token.LPAREN {
+				nested := 1
+				n++
+				offset++
 				p.advance()
+				for {
+					if p.peek().tok == token.RPAREN {
+						n++
+						offset++
+						p.advance()
+						nested--
+						if nested == 0 {
+							goto Loop
+						}
+					} else if p.peek().tok == token.EOF {
+						p.parser.errorf("unexpected EOF, want ')'")
+						break
+					}
+					n = p.file.Offset(p.peek().pos) + len(p.peek().String())
+					offset = n
+					p.advance()
+				}
+			} else if p.peek().tok == token.LBRACK { // '['
+				nested := 1
+				n++
+				offset++
+				p.advance()
+				for {
+					if p.peek().tok == token.RBRACK {
+						n++
+						offset++
+						p.advance()
+						nested--
+						if nested == 0 {
+							goto Loop
+						}
+					} else if p.peek().tok == token.EOF {
+						p.parser.errorf("unexpected EOF, want ')'")
+						break
+					}
+					n = p.file.Offset(p.peek().pos) + len(p.peek().String())
+					offset = n
+					p.advance()
+				}
+			} else if p.peek().tok == token.PERIOD {
+				p.advance()
+				if p.peek().tok == token.IDENT {
+					adv := 1 + len(p.peek().String())
+					n += adv
+					offset += adv
+					if unicode.IsSpace(rune(p.charAt(offset))) {
+						// done
+						p.advance()
+						break
+					}
+					p.advance()
+				} else {
+					break
+				}
 			} else {
-				p.parser.errorf("illegal selector expression")
 				break
 			}
-		} else {
-			break
 		}
 	}
 	result.expr = p.sourceFrom(start)[:n]
-	result.pos.end = result.pos.start + n
+	result.pos.end = offset
 	if _, err := goparser.ParseExpr(result.expr); err != nil {
-		p.parser.errorf("illegal Go expression: %w", err)
+		p.parser.errorf("illegal Go expression %q: %w", result.expr, err)
 	}
 	return result
 }

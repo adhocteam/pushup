@@ -20,7 +20,7 @@
     }
 }
 
-<h1>Delete ^(album.title)?</h1>
+<h1>Delete ^album.title ?</h1>
 
 <p>Are you sure?</p>
 

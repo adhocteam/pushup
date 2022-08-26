@@ -16,6 +16,6 @@
 
 <ul>
 ^for _, p := range products {
-    <li>^p.name ($^(fmt.Sprintf("%.2f", p.price)))</li>
+    <li>^p.name ($^fmt.Sprintf("%.2f", p.price))</li>
 }
 </ul>

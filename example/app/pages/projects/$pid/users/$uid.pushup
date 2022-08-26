@@ -1,2 +1,2 @@
-<p>Project ^(getParam(req, "pid"))</p>
-<p>User ^(getParam(req, "uid"))</p>
+<p>Project ^getParam(req, "pid")</p>
+<p>User ^getParam(req, "uid")</p>

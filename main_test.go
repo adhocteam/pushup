@@ -414,26 +414,26 @@ func TestOpenTagLexer(t *testing.T) {
 			[]*attr{{name: stringPos{"class", pos(5)}, value: stringPos{"foo", pos(12)}}},
 		},
 		{
-			`<p   data-^(name)="/foo/bar/^value"   thing="^(asd)"  >`,
+			`<p   data-^name="/foo/bar/^value"   thing="^asd"  >`,
 			[]*attr{
 				{
 					name: stringPos{
-						"data-^(name)",
+						"data-^name",
 						pos(5),
 					},
 					value: stringPos{
 						"/foo/bar/^value",
-						pos(19),
+						pos(17),
 					},
 				},
 				{
 					name: stringPos{
 						"thing",
-						pos(38),
+						pos(36),
 					},
 					value: stringPos{
-						"^(asd)",
-						pos(45),
+						"^asd",
+						pos(43),
 					},
 				},
 			},
@@ -735,6 +735,45 @@ func TestParse(t *testing.T) {
 							},
 						},
 					},
+				},
+			},
+		},
+		{
+			// example of expanded implicit/simple expression
+			`^foo.bar("asd").baz.biz()`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeGoStrExpr{expr: `foo.bar("asd").baz.biz()`, pos: span{start: 1, end: 24}},
+				},
+			},
+		},
+		{
+			// example of expanded implicit/simple expression
+			`^quux[42]`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeGoStrExpr{expr: `quux[42]`, pos: span{start: 1, end: 8}},
+				},
+			},
+		},
+		{
+			// space separates the Go ident `name` from the next `(`, ending the
+			// expression and preventing it from being interpreted as a function
+			// call
+			`^p.name ($blah ...`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeGoStrExpr{expr: `p.name`, pos: span{start: 1, end: 7}},
+					&nodeLiteral{str: ` ($blah ...`, pos: span{start: 7, end: 18}},
+				},
+			},
+		},
+		{
+			// expanded implicit/simple expression with argument list in func call
+			`^getParam(req, "name")`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeGoStrExpr{expr: `getParam(req, "name")`, pos: span{start: 1, end: 21}},
 				},
 			},
 		},

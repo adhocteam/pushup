@@ -32,8 +32,8 @@ tbody tr { border-bottom: 1px solid #ccc; }
         ^for i := 0; i < 5; i++ {
             <tr>
                 <td>Agent Smith</td>
-                <td>void^(i)&#x40;pizza.null</td>
-                <td>^(uid())</td>
+                <td>void^i@pizza.null</td>
+                <td>^uid()</td>
             </tr>
         }
         <tr id="replace-me">

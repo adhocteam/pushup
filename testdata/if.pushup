@@ -1,5 +1,5 @@
 ^if req.FormValue("name") != "" {
-    <h1>Hello, ^(req.FormValue("name"))!</h1>
+    <h1>Hello, ^req.FormValue("name")!</h1>
 } else {
     <h1>Hello, world!</h1>
 }
