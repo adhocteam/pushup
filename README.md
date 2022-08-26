@@ -58,7 +58,7 @@ To make a new Pushup app, first install the main Pushup executable.
 
 -   go 1.18 or later
 
-Make sure the directory where the go tool installs executables is in your 
+Make sure the directory where the go tool installs executables is in your
 `$PATH`. It is `$(go env GOPATH)/bin`. You can check if this is the case with:
 
 ```shell
@@ -187,7 +187,7 @@ when it is built, and are accessed via a straightforward mapping under the
 
 ## File-based routing
 
-Pushup maps file locations to URL route paths. So `about.pushup` becomes 
+Pushup maps file locations to URL route paths. So `about.pushup` becomes
 `/about`, and `foo/bar/baz.pushup` becomes `/foo/bar/baz`. More TK ...
 
 ### Dynamic routes
@@ -211,7 +211,7 @@ would output:
 ```
 
 The name of the parameter is the word following the `$` dollar sign, up to a dot
-or a slash. Conceptually, the URL route is `/people/:id`, where `:id` is the 
+or a slash. Conceptually, the URL route is `/people/:id`, where `:id` is the
 named parameter that is substituted for the actual value in the request URL.
 
 Directories can be dynamic, too. `app/pages/products/$pid/details.pushup` maps
@@ -234,7 +234,7 @@ When the parser encounters a '^' character (caret, ASCII 0x5e) while in
 HTML mode, it switches to parsing Pushup syntax, which consists of simple
 directives, control flow statements, block delimiters, and Go expressions. It
 then switches to the Go code parser. Once it detects the end of the directive,
-statement or expression, it switches back to HTML mode, and parsing continues
+statement, or expression, it switches back to HTML mode, and parsing continues
 in a similar fashion.
 
 Pushup uses the tokenizers from the [go/scanner][scannerpkg] and
@@ -330,7 +330,7 @@ Outputs:
 
 #### Explicit expressions
 
-Explicit expressions are written with `^` and the followed by any valid Go
+Explicit expressions are written with `^` and followed by any valid Go
 expression surrounded by parentheses.
 
 Example:
