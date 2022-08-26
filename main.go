@@ -146,6 +146,7 @@ func (n *newCmd) do() error {
 		"pages/index.pushup",
 		"static/pico.min.css",
 		"static/custom.css",
+		"static/htmx.min.js",
 		"pkg/app.go",
 	}
 	for _, name := range scaffoldFiles {

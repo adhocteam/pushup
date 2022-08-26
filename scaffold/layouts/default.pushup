@@ -10,6 +10,7 @@
         }</title>
         <link rel="stylesheet" href="/static/pico.min.css" />
         <link rel="stylesheet" href="/static/custom.css" />
+        <script src="/static/htmx.min.js"></script>
     </head>
     <body>
         <main class="container">
