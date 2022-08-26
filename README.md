@@ -66,7 +66,12 @@ cd pushup
 make
 ```
 
-This will build the `pushup` binary, then copy it somewhere in your \$PATH.
+This will build and install the `pushup` binary. Make sure the
+directory where the go tool installs to is in your `$PATH`, which is `$(go env GOPATH)/bin`. You can check if this is the case with:
+
+```shell
+echo $PATH | grep $(go env GOPATH)/bin > /dev/null && echo yes || echo no
+```
 
 #### Install via `go install`
 
