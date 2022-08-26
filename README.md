@@ -58,19 +58,19 @@ To make a new Pushup app, first install the main Pushup executable.
 
 -   go 1.18 or later
 
+Make sure the directory where the go tool installs executables is in your 
+`$PATH`. It is `$(go env GOPATH)/bin`. You can check if this is the case with:
+
+```shell
+echo $PATH | grep $(go env GOPATH)/bin > /dev/null && echo yes || echo no
+```
+
 #### Install via git
 
 ```shell
 git clone git@github.com:AdHocRandD/pushup.git
 cd pushup
 make
-```
-
-This will build and install the `pushup` binary. Make sure the
-directory where the go tool installs to is in your `$PATH`, which is `$(go env GOPATH)/bin`. You can check if this is the case with:
-
-```shell
-echo $PATH | grep $(go env GOPATH)/bin > /dev/null && echo yes || echo no
 ```
 
 #### Install via `go install`
@@ -87,13 +87,6 @@ GOPRIVATE=github.com/AdHocRandD/pushup go install github.com/AdHocRandD/pushup@l
 The `GOPRIVATE` environment variable is necessary to tell the go tool not to
 try to get the module from one of the central module services, but directly
 from GitHub.
-
-The command will install the `pushup` executable locally. Make sure the
-directory where the go tool installs to is in your `$PATH`, which is `$(go env GOPATH)/bin`. You can check if this is the case with:
-
-```shell
-echo $PATH | grep $(go env GOPATH)/bin > /dev/null && echo yes || echo no
-```
 
 ### Creating a new Pushup project
 
