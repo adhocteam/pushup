@@ -187,7 +187,38 @@ when it is built, and are accessed via a straightforward mapping under the
 
 ## File-based routing
 
-Docs TKTK
+Pushup maps file locations to URL route paths. So `about.pushup` becomes 
+`/about`, and `foo/bar/baz.pushup` becomes `/foo/bar/baz`. More TK ...
+
+### Dynamic routes
+
+If the filename of a Pushup page starts with a `$` dollar sign, the portion
+of the URL path that matches will be available to the page via the `getParam()`
+Pushup API method.
+
+For example, let's say there is a Pushup page at `app/pages/people/$id.pushup`.
+If a browser visits the URL `/people/1234`, the page can access it like a named
+parameter with the API method `getParam()`, for example:
+
+```pushup
+<p>ID: ^getParam(req, "id")</p>
+```
+
+would output:
+
+```html
+<p>ID: 1234</p>
+```
+
+The name of the parameter is the word following the `$` dollar sign, up to a dot
+or a slash. Conceptually, the URL route is `/people/:id`, where `:id` is the 
+named parameter that is substituted for the actual value in the request URL.
+
+Directories can be dynamic, too. `app/pages/products/$pid/details.pushup` maps
+to `/products/:pid/details`.
+
+Multiple named parameters are allowed, for example, `app/pages/users/$uid/projects/$pid.pushup`
+maps to `/users/:uid/projects/:pid`.
 
 ## Pushup syntax
 
