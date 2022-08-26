@@ -9,7 +9,7 @@
             }
         </title>
         <link rel="stylesheet" href="/static/css/pushup.css" />
-        <script src="https://unpkg.com/htmx.org@1.7.0"></script>
+		<script src="/static/js/htmx.min.js"></script>
     </head>
     <body>
         <nav>
