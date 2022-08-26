@@ -1777,7 +1777,12 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 		g.used("html/template")
 		g.bodyPrintf(`
 func (%s *%s) section(name string) template.HTML {
-	return <-up.sections[name]
+	select {
+	case x := <-up.sections[name]:
+		return x
+	case <-up.req.Context().Done():
+		return template.HTML("")
+	}
 }
 
 `, receiver, typename)
@@ -1886,7 +1891,10 @@ func (%s *%s) sectionSet(name string) bool {
 			g.ioWriterVar = "b"
 			g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
 			g.generate()
-			g.bodyPrintf("  sections[\"contents\"] <- template.HTML(b.String())\n")
+			g.bodyPrintf("  select {\n")
+			g.bodyPrintf("	  case sections[\"contents\"] <- template.HTML(b.String()):\n")
+			g.bodyPrintf("    case <-req.Context().Done():\n")
+			g.bodyPrintf("  }\n")
 			g.bodyPrintf("}()\n")
 			g.ioWriterVar = save
 
@@ -1895,7 +1903,11 @@ func (%s *%s) sectionSet(name string) bool {
 			// somewhat unfortunate because the entire response is buffered, unlike in the
 			// static case.
 			g.bodyPrintf("if !renderLayout {\n")
-			g.bodyPrintf("  printEscaped(%s, <-sections[\"contents\"])\n", g.ioWriterVar)
+			g.bodyPrintf("  select {\n")
+			g.bodyPrintf("	  case x := <-sections[\"contents\"]:\n")
+			g.bodyPrintf("      printEscaped(%s, x)\n", g.ioWriterVar)
+			g.bodyPrintf("    case <-req.Context().Done():\n")
+			g.bodyPrintf("  }\n")
 			g.bodyPrintf("}\n")
 
 			for name, block := range p.page.sections {
@@ -1904,7 +1916,10 @@ func (%s *%s) sectionSet(name string) bool {
 				g.bodyPrintf("go func() {\n")
 				g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
 				g.genFromNode(block)
-				g.bodyPrintf("  sections[%s] <- template.HTML(b.String())\n", strconv.Quote(name))
+				g.bodyPrintf("  select {\n")
+				g.bodyPrintf("	  case sections[%s] <- template.HTML(b.String()):\n", strconv.Quote(name))
+				g.bodyPrintf("    case <-req.Context().Done():\n")
+				g.bodyPrintf("  }\n")
 				g.bodyPrintf("}()\n")
 				g.ioWriterVar = save
 			}
