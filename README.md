@@ -300,8 +300,8 @@ Outputs:
 <p>Hello, Paul!</p>
 ```
 
-Notice that the parser stops on the "!" because it knows it is not part of the
-variable name.
+Notice that the parser stops on the "!" because it knows it is not part of a
+Go variable name.
 
 Example:
 
