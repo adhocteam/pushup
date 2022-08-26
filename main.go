@@ -1322,6 +1322,8 @@ func walk(v visitor, n node) {
 		walk(v, n.block)
 	case *nodeBlock:
 		walkNodeList(v, n.nodes)
+	case *nodeSection:
+		walk(v, n.block)
 	case *nodeImport:
 		// no children
 	case *nodeLayout:
@@ -1489,7 +1491,7 @@ type page struct {
 // sequentially in the source file, but need to be reorganized for access in
 // the code generator.
 func newPageFromTree(tree *syntaxTree) (*page, error) {
-	page := &page{layout: "default"}
+	page := &page{layout: "default", sections: make(map[string]*nodeBlock)}
 	layoutSet := false
 	n := 0
 	var err error
@@ -1524,6 +1526,8 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 			for _, x := range e {
 				f(x)
 			}
+		case *nodeSection:
+			page.sections[e.name] = e.block
 		default:
 			tree.nodes[n] = e
 			n++
@@ -1706,6 +1710,9 @@ func (g *codeGenerator) genFromNode(n node) {
 			return false
 		case *nodeBlock:
 			f(nodeList(e.nodes))
+			return false
+		case *nodeSection:
+			f(e.block)
 			return false
 		case *nodeLayout:
 			// nothing to do
@@ -2900,6 +2907,9 @@ func prettyPrintTree(t *syntaxTree) {
 			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.tag.start())
 			f(nodeList(n.children))
 			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.tag.end())
+			return false
+		case *nodeSection:
+			f(n.block)
 			return false
 		case *nodeBlock:
 			f(nodeList(n.nodes))
