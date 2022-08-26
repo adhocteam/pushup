@@ -4,12 +4,12 @@
 
 ^handler {
     path := req.FormValue("route")
-    route := getRouteFromPath(path)
-    if route == nil {
+    routeMatch := getRouteFromPath(path)
+    if routeMatch.response == routeNotFound {
         http.Error(w, http.StatusText(404), 404)
         return nil
     }
-    fpath := filepath.Join("app", "pages", route.page.filePath())
+    fpath := filepath.Join("app", "pages", routeMatch.route.page.filePath())
     b, err := os.ReadFile(fpath)
     if err != nil {
         log.Printf("reading file %s: %v", fpath, err)

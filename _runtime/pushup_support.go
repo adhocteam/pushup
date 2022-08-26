@@ -79,20 +79,28 @@ var NotFound = errors.New("page not found")
 type ctxKey struct{}
 
 func Respond(w http.ResponseWriter, r *http.Request) error {
-	route := getRouteFromPath(r.URL.Path)
-	if route == nil {
+	routeMatch := getRouteFromPath(r.URL.Path)
+	switch routeMatch.response {
+	case routeNotFound:
 		return NotFound
+	case redirectTrailingSlash:
+		http.Redirect(w, r, routeMatch.route.path, 301)
+		return nil
+	case routeFound:
+		route := routeMatch.route
+		matches := route.regex.FindStringSubmatch(r.URL.Path)
+		params := zipMap(route.slugs, matches[1:])
+		// NOTE(paulsmith): since we totally control the Respond() method on
+		// the component interface, we probably should pass the params to
+		// Respond instead of wrapping the request object with context values.
+		ctx := context.WithValue(r.Context(), ctxKey{}, params)
+		if err := route.page.Respond(w, r.WithContext(ctx)); err != nil {
+			return err
+		}
+		return nil
+	default:
+		panic("unhandled route match response")
 	}
-	matches := route.regex.FindStringSubmatch(r.URL.Path)
-	params := zipMap(route.slugs, matches[1:])
-	// NOTE(paulsmith): since we totally control the Respond() method on
-	// the component interface, we probably should pass the params to
-	// Respond instead of wrapping the request object with context values.
-	ctx := context.WithValue(r.Context(), ctxKey{}, params)
-	if err := route.page.Respond(w, r.WithContext(ctx)); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -112,20 +120,48 @@ func mostSpecificMatch(routes []*route, path string) *route {
 	return most
 }
 
-func getRouteFromPath(path string) *route {
+type routeMatchResponse int
+
+const (
+	routeNotFound routeMatchResponse = iota
+	redirectTrailingSlash
+	routeFound
+)
+
+type routeMatch struct {
+	response routeMatchResponse
+	route    *route
+}
+
+func getRouteFromPath(path string) routeMatch {
 	var matchedRoutes []*route
 
-	for _, route := range routes {
-		if route.regex.MatchString(path) {
-			matchedRoutes = append(matchedRoutes, route)
+	for _, r := range routes {
+		if r.regex.MatchString(path) {
+			matchedRoutes = append(matchedRoutes, r)
 		}
 	}
 
 	if len(matchedRoutes) == 0 {
-		return nil
+		// check trailing slash
+		if path[len(path)-1] == '/' {
+			lessSlash := path[:len(path)-1]
+			for _, r := range routes {
+				if r.regex.MatchString(lessSlash) {
+					return routeMatch{
+						response: redirectTrailingSlash,
+						route:    &route{path: lessSlash},
+					}
+				}
+			}
+		}
 	}
 
-	return mostSpecificMatch(matchedRoutes, path)
+	if len(matchedRoutes) == 0 {
+		return routeMatch{response: routeNotFound, route: nil}
+	}
+
+	return routeMatch{response: routeFound, route: mostSpecificMatch(matchedRoutes, path)}
 }
 
 func getParam(r *http.Request, slug string) string {
@@ -181,9 +217,8 @@ func printEscaped(w io.Writer, val any) {
 	}
 }
 
-{{if .EmbedStatic}}
-//go:embed static
-{{end}}
+//{{if .EmbedStatic}}
+//go:embed static{{end}}
 var static embed.FS
 
 func AddStaticHandler(mux *http.ServeMux) {
