@@ -384,7 +384,7 @@ func (r *runCmd) do() error {
 				}
 				buildComplete.Broadcast()
 				go func() {
-					watchForReload(ctx, ctx.fileChangeCancel, r.projectDir, reload)
+					watchForReload(ctx, ctx.fileChangeCancel, r.appDir, reload)
 				}()
 				if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()+".exe"), ln); err != nil {
 					return fmt.Errorf("building and running generated Go code: %v", err)
