@@ -101,6 +101,17 @@ func (r *regexString) Set(value string) error {
 	return nil
 }
 
+type stringSlice []string
+
+func (s *stringSlice) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
+
+func (s *stringSlice) String() string {
+	return strings.Join(*s, " ")
+}
+
 type newCmd struct {
 	projectDir string
 	moduleName string
@@ -136,7 +147,7 @@ func (n *newCmd) do() error {
 
 	// create project directory structure
 	for _, name := range []string{"pages", "layouts", "pkg", "static"} {
-		path := filepath.Join(n.projectDir, "app", name)
+		path := filepath.Join(n.projectDir, appDirName, name)
 		if err := os.MkdirAll(path, 0755); err != nil {
 			return fmt.Errorf("creating project directory %s: %w", path, err)
 		}
@@ -179,48 +190,74 @@ type doer interface {
 
 type buildCmd struct {
 	projectName        *regexString
+	projectDir         string
 	buildPkg           string
-	singleFile         string
 	applyOptimizations bool
 	parseOnly          bool
 	codeGenOnly        bool
 	compileOnly        bool
 	outDir             string
+	embedSource        bool
+	pages              stringSlice
+
+	files  *projectFiles
+	appDir string
 }
 
 func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
 	b.projectName = newRegexString(`^\w+`, "myproject")
 	flags.Var(b.projectName, "project", "name of Pushup project")
 	flags.StringVar(&b.buildPkg, "build-pkg", "example/myproject/build", "name of package of compiled Pushup app")
-	flags.StringVar(&b.singleFile, "single", "", "path to a single Pushup file")
 	flags.BoolVar(&b.applyOptimizations, "O", false, "apply simple optimizations to the parse tree")
 	flags.BoolVar(&b.parseOnly, "parse-only", false, "exit after dumping parse result")
 	flags.BoolVar(&b.codeGenOnly, "codegen-only", false, "codegen only, don't compile")
 	flags.BoolVar(&b.compileOnly, "compile-only", false, "compile only, don't start web server after")
 	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory")
+	flags.BoolVar(&b.embedSource, "embed-source", false, "embed the source .pushup files in executable")
+	flags.Var(&b.pages, "page", "path to a Pushup page. mulitple can be given")
 }
+
+const appDirName = "app"
 
 func newBuildCmd(arguments []string) *buildCmd {
 	flags := flag.NewFlagSet("pushup build", flag.ExitOnError)
 	b := new(buildCmd)
 	setBuildFlags(flags, b)
 	flags.Parse(arguments)
+	if flags.NArg() == 1 {
+		b.projectDir = flags.Arg(0)
+	} else {
+		b.projectDir = "."
+	}
+	b.appDir = filepath.Join(b.projectDir, appDirName)
 	return b
 }
 
 func (b *buildCmd) do() error {
-	appDir := "app"
-
 	if err := os.RemoveAll(b.outDir); err != nil {
 		return fmt.Errorf("removing build dir: %w", err)
 	}
 
+	// FIXME(paulsmith): remove singleFile (and -single flag) and replace with
+	// configurable project root, leading path strip, and optional file paths.
+	if len(b.pages) == 0 {
+		var err error
+		b.files, err = findProjectFiles(b.appDir)
+		if err != nil {
+			return err
+		}
+	} else {
+		b.files = &projectFiles{pages: []string(b.pages)}
+	}
+	// b.files.debug()
+
 	compileParams := compileProjectParams{
-		root:               appDir,
+		root:               b.projectDir,
 		outDir:             b.outDir,
 		parseOnly:          b.parseOnly,
-		singleFile:         b.singleFile,
+		files:              b.files,
 		applyOptimizations: b.applyOptimizations,
+		enableLayout:       len(b.pages) == 0, // FIXME
 	}
 
 	if err := compileProject(compileParams); err != nil {
@@ -232,10 +269,10 @@ func (b *buildCmd) do() error {
 	}
 
 	buildParams := buildParams{
-		projectName: b.projectName.String(),
-		pkgName:     b.buildPkg,
-		srcDir:      b.outDir,
-		buildDir:    b.outDir,
+		projectName:       b.projectName.String(),
+		pkgName:           b.buildPkg,
+		compiledOutputDir: b.outDir,
+		buildDir:          b.outDir,
 	}
 	if err := buildProject(context.Background(), buildParams); err != nil {
 		return fmt.Errorf("building project: %w", err)
@@ -261,6 +298,14 @@ func newRunCmd(arguments []string) *runCmd {
 	unixSocket := flags.String("unix-socket", "", "path to listen on with Unix socket")
 	devReload := flags.Bool("dev", false, "compile and run the Pushup app and reload on changes")
 	flags.Parse(arguments)
+	// FIXME this logic is duplicated with newBuildCmd
+	if flags.NArg() == 1 {
+		b.projectDir = flags.Arg(0)
+	} else {
+		b.projectDir = "."
+	}
+	// FIXME this logic is duplicated with newBuildCmd
+	b.appDir = filepath.Join(b.projectDir, appDirName)
 	return &runCmd{buildCmd: b, host: *host, port: *port, unixSocket: *unixSocket, devReload: *devReload}
 }
 
@@ -269,14 +314,14 @@ func (r *runCmd) do() error {
 		return fmt.Errorf("build command: %w", err)
 	}
 
-	appDir := "app"
-
 	compileParams := compileProjectParams{
-		root:               appDir,
+		root:               r.projectDir,
+		appDir:             r.appDir,
 		outDir:             r.outDir,
 		parseOnly:          r.parseOnly,
-		singleFile:         r.singleFile,
+		files:              r.files,
 		applyOptimizations: r.applyOptimizations,
+		enableLayout:       len(r.pages) == 0, // FIXME
 	}
 
 	if err := compileProject(compileParams); err != nil {
@@ -287,11 +332,10 @@ func (r *runCmd) do() error {
 	// alternatively?)
 	if !r.compileOnly {
 		buildParams := buildParams{
-
-			projectName: r.projectName.String(),
-			pkgName:     r.buildPkg,
-			srcDir:      r.outDir,
-			buildDir:    r.outDir,
+			projectName:       r.projectName.String(),
+			pkgName:           r.buildPkg,
+			compiledOutputDir: r.outDir,
+			buildDir:          r.outDir,
 		}
 
 		ctx := newPushupContext(context.Background())
@@ -340,7 +384,7 @@ func (r *runCmd) do() error {
 				}
 				buildComplete.Broadcast()
 				go func() {
-					watchForReload(ctx, ctx.fileChangeCancel, appDir, reload)
+					watchForReload(ctx, ctx.fileChangeCancel, r.projectDir, reload)
 				}()
 				if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()+".exe"), ln); err != nil {
 					return fmt.Errorf("building and running generated Go code: %v", err)
@@ -419,9 +463,120 @@ func newPushupContext(parent context.Context) *pushupContext {
 	return c
 }
 
+// projectFiles represents all the source files in a Pushup project.
+type projectFiles struct {
+	// paths to .pushup page files
+	pages []string
+	// paths to .pushup layout files
+	layouts []string
+	// paths to static files like JS, CSS, etc.
+	static []string
+	// paths to user-contributed .go code
+	gofiles []string
+}
+
+func (f *projectFiles) debug() {
+	fmt.Println("pages:")
+	for _, p := range f.pages {
+		fmt.Printf("\t%s\n", p)
+	}
+	fmt.Println("layouts:")
+	for _, p := range f.layouts {
+		fmt.Printf("\t%s\n", p)
+	}
+	fmt.Println("static:")
+	for _, p := range f.static {
+		fmt.Printf("\t%s\n", p)
+	}
+	fmt.Println("gofiles:")
+	for _, p := range f.gofiles {
+		fmt.Printf("\t%s\n", p)
+	}
+}
+
+func findProjectFiles(appDir string) (*projectFiles, error) {
+	pf := new(projectFiles)
+
+	layoutsDir := filepath.Join(appDir, "layouts")
+	{
+		entries, err := os.ReadDir(layoutsDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("invalid Pushup project directory structure: couldn't find `layouts` subdir")
+			} else {
+				return nil, fmt.Errorf("reading app layouts directory: %w", err)
+			}
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
+				path := filepath.Join(layoutsDir, entry.Name())
+				pf.layouts = append(pf.layouts, path)
+			}
+		}
+	}
+
+	pagesDir := filepath.Join(appDir, "pages")
+	{
+		if err := fs.WalkDir(os.DirFS(pagesDir), ".", func(path string, d fs.DirEntry, err error) error {
+			if !d.IsDir() && filepath.Ext(path) == ".pushup" {
+				pf.pages = append(pf.pages, filepath.Join(pagesDir, path))
+			}
+			return nil
+		}); err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("invalid Pushup project directory structure: couldn't find `pages` subdir")
+			} else {
+				return nil, err
+			}
+		}
+	}
+
+	pkgDir := filepath.Join(appDir, "pkg")
+	{
+		entries, err := os.ReadDir(pkgDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("invalid Pushup project directory structure: couldn't find `pkg` subdir")
+			} else {
+				return nil, fmt.Errorf("reading app pkg directory: %w", err)
+			}
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
+				path := filepath.Join(pkgDir, entry.Name())
+				pf.gofiles = append(pf.gofiles, path)
+			}
+		}
+	}
+
+	staticDir := filepath.Join(appDir, "static")
+	{
+		if err := fs.WalkDir(os.DirFS(staticDir), ".", func(path string, d fs.DirEntry, _ error) error {
+			if !d.IsDir() {
+				path := filepath.Join(staticDir, path)
+				pf.static = append(pf.static, path)
+			}
+			return nil
+		}); err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("invalid Pushup project directory structure: couldn't find `static` dir")
+			} else {
+				return nil, fmt.Errorf("walking static dir: %w", err)
+			}
+		}
+	}
+
+	return pf, nil
+}
+
 type compileProjectParams struct {
 	// path to project root directory
 	root string
+
+	// path to app dir within project
+	appDir string
 
 	// path to output build directory
 	outDir string
@@ -429,93 +584,19 @@ type compileProjectParams struct {
 	// flag to skip code generation
 	parseOnly bool
 
-	// path to a single .pushup file to parse/compile
-	singleFile string
+	// paths to Pushup project files
+	files *projectFiles
 
 	// flag to apply a set of code generation optimizations
 	applyOptimizations bool
+
+	// flag to enable layouts (FIXME)
+	enableLayout bool
 }
 
 func compileProject(c compileProjectParams) error {
-	var layoutsDir string
-	var pagesDir string
-	var pkgDir string
-	var staticDir string
-
-	var layoutFiles []string
-	var pushupFiles []string
-	var pkgFiles []string
-	var staticFiles []string
-
-	if c.singleFile != "" {
-		pushupFiles = []string{c.singleFile}
-	} else {
-		layoutsDir = filepath.Join(c.root, "layouts")
-		{
-			if !dirExists(layoutsDir) {
-				return fmt.Errorf("invalid Pushup project directory structure: couldn't find `layouts` subdir")
-			}
-
-			entries, err := os.ReadDir(layoutsDir)
-			if err != nil {
-				return fmt.Errorf("reading app layouts directory: %w", err)
-			}
-
-			for _, entry := range entries {
-				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
-					path := filepath.Join(layoutsDir, entry.Name())
-					layoutFiles = append(layoutFiles, path)
-				}
-			}
-		}
-
-		pagesDir = filepath.Join(c.root, "pages")
-		{
-			if !dirExists(pagesDir) {
-				return fmt.Errorf("invalid Pushup project directory structure: couldn't find `pages` subdir")
-			}
-
-			pushupFiles = getPushupPagePaths(pagesDir)
-		}
-
-		pkgDir = filepath.Join(c.root, "pkg")
-		{
-			if !dirExists(pkgDir) {
-				return fmt.Errorf("invalid Pushup project directory structure: couldn't find `pkg` subdir")
-			}
-
-			entries, err := os.ReadDir(pkgDir)
-			if err != nil {
-				return fmt.Errorf("reading app pkg directory: %w", err)
-			}
-
-			for _, entry := range entries {
-				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
-					path := filepath.Join(pkgDir, entry.Name())
-					pkgFiles = append(pkgFiles, path)
-				}
-			}
-		}
-
-		staticDir = filepath.Join(c.root, "static")
-		{
-			if !dirExists(staticDir) {
-				return fmt.Errorf("invalid Pushup project directory structure: couldn't find `static` dir")
-			}
-
-			if err := fs.WalkDir(os.DirFS(staticDir), ".", func(path string, d fs.DirEntry, _ error) error {
-				if !d.IsDir() {
-					staticFiles = append(staticFiles, path)
-				}
-				return nil
-			}); err != nil {
-				return fmt.Errorf("walking static dir: %w", err)
-			}
-		}
-	}
-
 	if c.parseOnly {
-		for _, path := range pushupFiles {
+		for _, path := range append(c.files.pages, c.files.layouts...) {
 			b, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("reading file %s: %w", path, err)
@@ -534,13 +615,13 @@ func compileProject(c compileProjectParams) error {
 
 	{
 		params := compileParams{
-			rootDir:            layoutsDir,
+			rootDir:            filepath.Join(c.appDir, "layouts"),
 			strategy:           compileLayout,
 			targetDir:          c.outDir,
 			applyOptimizations: c.applyOptimizations,
-			singleFile:         c.singleFile,
+			enableLayout:       c.enableLayout, // FIXME: need better mechanism
 		}
-		for _, path := range layoutFiles {
+		for _, path := range c.files.layouts {
 			params.sourcePath = path
 			if err := compilePushup(params); err != nil {
 				return fmt.Errorf("compiling layout file %s: %w", path, err)
@@ -550,13 +631,13 @@ func compileProject(c compileProjectParams) error {
 
 	{
 		params := compileParams{
-			rootDir:            pagesDir,
+			rootDir:            filepath.Join(c.appDir, "pages"),
 			strategy:           compilePushupPage,
 			targetDir:          c.outDir,
 			applyOptimizations: c.applyOptimizations,
-			singleFile:         c.singleFile,
+			enableLayout:       c.enableLayout,
 		}
-		for _, path := range pushupFiles {
+		for _, path := range c.files.pages {
 			params.sourcePath = path
 			if err := compilePushup(params); err != nil {
 				return fmt.Errorf("compiling pushup file %s: %w", path, err)
@@ -564,21 +645,21 @@ func compileProject(c compileProjectParams) error {
 		}
 	}
 
-	for _, path := range pkgFiles {
+	for _, path := range c.files.gofiles {
 		if err := copyFile(filepath.Join(c.outDir, filepath.Base(path)), path); err != nil {
 			return fmt.Errorf("copying Go package file %s: %w", path, err)
 		}
 	}
 
-	for _, path := range staticFiles {
-		dir := filepath.Join(c.outDir, "static", filepath.Dir(path))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("making intermediate directory in static dir %s: %v", dir, err)
+	for _, path := range c.files.static {
+		relativePath := trimCommonPrefix(path, appDirName)
+		destDir := filepath.Join(c.outDir, filepath.Dir(relativePath))
+		if err := os.MkdirAll(destDir, 0755); err != nil {
+			return fmt.Errorf("making intermediate directory in static dir %s: %v", destDir, err)
 		}
-		src := filepath.Join(staticDir, path)
-		dest := filepath.Join(dir, filepath.Base(path))
-		if err := copyFile(dest, src); err != nil {
-			return fmt.Errorf("copying static file %s to %s: %w", src, dest, err)
+		destPath := filepath.Join(destDir, filepath.Base(path))
+		if err := copyFile(destPath, path); err != nil {
+			return fmt.Errorf("copying static file %s to %s: %w", path, destPath, err)
 		}
 	}
 
@@ -591,7 +672,7 @@ func compileProject(c compileProjectParams) error {
 	if err != nil {
 		return fmt.Errorf("creating pushup_support.go: %w", err)
 	}
-	if err := t.Execute(f, map[string]any{"EmbedStatic": c.singleFile == ""}); err != nil {
+	if err := t.Execute(f, map[string]any{"EmbedStatic": c.enableLayout}); err != nil { // FIXME
 		return fmt.Errorf("executing pushup_support.go template: %w", err)
 	}
 	f.Close()
@@ -988,14 +1069,15 @@ func copyFileFS(fsys fs.FS, dest string, src string) error {
 type buildParams struct {
 	projectName string
 	pkgName     string
-	srcDir      string
-	buildDir    string
+	// path to directory with the compiled Pushup project code
+	compiledOutputDir string
+	buildDir          string
 }
 
 // buildProject builds the Go program made up of the user's compiled .pushup
 // files and .go code, as well as Pushup's library APIs.
 func buildProject(ctx context.Context, b buildParams) error {
-	mainExeDir := filepath.Join(b.srcDir, "cmd", b.projectName)
+	mainExeDir := filepath.Join(b.compiledOutputDir, "cmd", b.projectName)
 	if err := os.MkdirAll(mainExeDir, 0755); err != nil {
 		return fmt.Errorf("making directory for command: %w", err)
 	}
@@ -1123,10 +1205,10 @@ type compileParams struct {
 	strategy           compilationStrategy
 	targetDir          string
 	applyOptimizations bool
-	singleFile         string
+	enableLayout       bool
 }
 
-// compilePushup compiles a single .pushup file
+// compilePushup compiles a single .pushup file to Go code.
 func compilePushup(c compileParams) error {
 	if err := os.MkdirAll(c.targetDir, 0755); err != nil {
 		return fmt.Errorf("creating output directory %s: %w", c.targetDir, err)
@@ -1162,7 +1244,7 @@ func compilePushup(c compileParams) error {
 			return fmt.Errorf("post-processing tree: %w", err)
 		}
 		layoutName := page.layout
-		if c.singleFile != "" {
+		if !c.enableLayout {
 			layoutName = ""
 		}
 		route := routeFromPath(c.sourcePath, c.rootDir)

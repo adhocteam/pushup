@@ -81,7 +81,7 @@ func TestPushup(t *testing.T) {
 				var errb bytes.Buffer
 
 				g.Go(func() error {
-					cmd := exec.Command(pushup, "run", "-build-pkg", "github.com/AdHocRandD/pushup/build", "-single", pushupFile, "-unix-socket", socketPath)
+					cmd := exec.Command(pushup, "run", "-build-pkg", "github.com/AdHocRandD/pushup/build", "-page", pushupFile, "-unix-socket", socketPath)
 					sysProcAttr(cmd)
 
 					stdout, err := cmd.StdoutPipe()
