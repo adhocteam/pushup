@@ -328,10 +328,6 @@ func (r *runCmd) do() error {
 		embedSource:        r.embedSource,
 	}
 
-	if err := compileProject(compileParams); err != nil {
-		return fmt.Errorf("parsing and compiling: %w", err)
-	}
-
 	// TODO(paulsmith): add a linkOnly flag (or a releaseMode flag,
 	// alternatively?)
 	if !r.compileOnly {
