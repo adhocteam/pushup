@@ -1,3 +1,20 @@
+/*
+
+Inline partials TODO
+
+- [x] add "partial" keyword
+	- [ ] add partial to parser unit tests
+- [x] add parsePartialKeyword method
+- [x] add nodePartial type
+- [ ] update code gen
+	- [ ] in regular page, just handle like a block
+	- [ ] if routed to as a partial, skip non-partial content and disable layout
+		- [ ] this has to work in an arbitrarily nested context as well
+- [ ] update pretty-printer to handle nodePartial
+- [ ] add routes to partials
+
+*/
+
 // Pushup web framework
 package main
 
@@ -1500,7 +1517,19 @@ func (e nodeSection) Pos() span { return e.pos }
 
 var _ node = (*nodeSection)(nil)
 
-// A nodeBlock represents a block of nodes, i.e., a sequence of nodes that
+// nodePartial is a syntax tree node representing an inline partial in a Pushup
+// page.
+type nodePartial struct {
+	name  string
+	pos   span
+	block *nodeBlock
+}
+
+func (e nodePartial) Pos() span { return e.pos }
+
+var _ node = (*nodePartial)(nil)
+
+// nodeBlock represents a block of nodes, i.e., a sequence of nodes that
 // appear in order in the source syntax.
 type nodeBlock struct {
 	nodes []node
@@ -2682,6 +2711,9 @@ func (p *codeParser) parseCode() node {
 	} else if p.peek().tok == token.IDENT && p.peek().lit == "section" {
 		p.advance()
 		e = p.parseSectionKeyword()
+	} else if p.peek().tok == token.IDENT && p.peek().lit == "partial" {
+		p.advance()
+		e = p.parsePartialKeyword()
 	} else if p.peek().tok == token.LBRACE {
 		e = p.parseCodeBlock()
 	} else if p.peek().tok == token.IMPORT {
@@ -2838,6 +2870,20 @@ func (p *codeParser) parseSectionKeyword() *nodeSection {
 		return nil
 	}
 	result := &nodeSection{name: p.peek().lit}
+	result.pos.start = p.parser.offset
+	p.advance()
+	result.pos.end = p.parser.offset
+	result.block = p.parseStmtBlock()
+	return result
+}
+
+func (p *codeParser) parsePartialKeyword() *nodePartial {
+	// enter function one past the "partial" IDENT token
+	if p.peek().tok != token.IDENT {
+		p.parser.errorf("expected IDENT, got %s", p.peek().tok.String())
+		return nil
+	}
+	result := &nodePartial{name: p.peek().lit}
 	result.pos.start = p.parser.offset
 	p.advance()
 	result.pos.end = p.parser.offset

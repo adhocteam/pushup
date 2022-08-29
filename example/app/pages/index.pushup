@@ -36,4 +36,5 @@
     <li><a href="/dyn/world">Dynamic path segments</a></li>
     <li><a href="/htmx/">htmx examples</a></li>
     <li><a href="/crud/">CRUD</a></li>
+    <li><a href="/partials/">Inline partials</a></li>
 </ul>
