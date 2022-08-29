@@ -1,0 +1,42 @@
+^{
+    architects := []string {
+        "Mies van der Rohe",
+        "Jeanne Gang",
+        "Le Courbosier",
+        "Zaha Hadid",
+        "Frank Gehry",
+        "Rem Koolhaas",
+    }
+}
+
+<h1>Architects</h1>
+^partial list {
+    <ul>
+        ^for _, architect := range architects {
+            <li>^architect</li>
+        }
+    </ul>
+}
+
+^partial foo {
+    <p>
+        Foo
+        ^partial bar {
+            <p>Bar</p>
+        }
+    </p>
+}
+
+^partial first {
+    <p>
+        Foo
+        ^partial second {
+            <p>
+                Bar
+                ^partial third {
+                    <p>Quux</p>
+                }
+            </p>
+        }
+    </p>
+}

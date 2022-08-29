@@ -1,0 +1,8 @@
+^section title {
+    <text>Inline partials</text>
+}
+
+<h1>Inline partials</h1>
+<ul>
+    <li><a href="./architects/">Architects</a></li>
+</ul>
