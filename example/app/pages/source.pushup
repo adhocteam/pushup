@@ -1,21 +1,25 @@
-^import "log"
-^import "os"
-^import "path/filepath"
+^import "strings"
 
 ^handler {
-    path := req.FormValue("route")
-    routeMatch := getRouteFromPath(path)
+    route := req.FormValue("route")
+    routeMatch := getRouteFromPath(route)
     if routeMatch.response == routeNotFound {
         http.Error(w, http.StatusText(404), 404)
         return nil
     }
-    fpath := filepath.Join("app", "pages", routeMatch.route.page.filePath())
-    b, err := os.ReadFile(fpath)
-    if err != nil {
-        log.Printf("reading file %s: %v", fpath, err)
-        return err
+    path := routeMatch.route.path
+    // FIXME(paulsmith): this should be a routePathToFilepath API method
+    var fpath string
+    if path[len(path)-1] == '/' {
+        fpath = path + "index.pushup"
+    } else {
+        fpath = path + ".pushup"
     }
-    source := string(b)
+    if fpath[0] == '/' {
+        fpath = fpath[1:]
+    }
+    fpath = strings.ReplaceAll(fpath, ":", "$")
+    source := string(GetPageSource(fpath))
 }
 
 <p>Source code for Pushup page <a href="^path"><b>^path</b></a>:</p>

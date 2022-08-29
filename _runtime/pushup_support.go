@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -227,4 +228,21 @@ func AddStaticHandler(mux *http.ServeMux) {
 		panic(err)
 	}
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(fsys))))
+}
+
+//go:embed src
+var source embed.FS
+
+// GetPageSource gets the source code of the Pushup page at the path. Assumes
+// path is relative to the app/pages project directory.
+func GetPageSource(path string) []byte {
+	fsys, err := fs.Sub(source, filepath.Join("src", "pages"))
+	if err != nil {
+		panic(err)
+	}
+	data, err := fsys.(fs.ReadFileFS).ReadFile(path)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

@@ -213,7 +213,7 @@ func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
 	flags.BoolVar(&b.codeGenOnly, "codegen-only", false, "codegen only, don't compile")
 	flags.BoolVar(&b.compileOnly, "compile-only", false, "compile only, don't start web server after")
 	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory")
-	flags.BoolVar(&b.embedSource, "embed-source", false, "embed the source .pushup files in executable")
+	flags.BoolVar(&b.embedSource, "embed-source", true, "embed the source .pushup files in executable")
 	flags.Var(&b.pages, "page", "path to a Pushup page. mulitple can be given")
 }
 
@@ -251,6 +251,7 @@ func (b *buildCmd) do() error {
 	}
 	// b.files.debug()
 
+	// FIXME(paulsmith): dedupe this with runCmd.do()
 	compileParams := compileProjectParams{
 		root:               b.projectDir,
 		appDir:             b.appDir,
@@ -259,6 +260,7 @@ func (b *buildCmd) do() error {
 		files:              b.files,
 		applyOptimizations: b.applyOptimizations,
 		enableLayout:       len(b.pages) == 0, // FIXME
+		embedSource:        b.embedSource,
 	}
 
 	if err := compileProject(compileParams); err != nil {
@@ -323,6 +325,7 @@ func (r *runCmd) do() error {
 		files:              r.files,
 		applyOptimizations: r.applyOptimizations,
 		enableLayout:       len(r.pages) == 0, // FIXME
+		embedSource:        r.embedSource,
 	}
 
 	if err := compileProject(compileParams); err != nil {
@@ -593,6 +596,9 @@ type compileProjectParams struct {
 
 	// flag to enable layouts (FIXME)
 	enableLayout bool
+
+	// embed .pushup source files in project executable
+	embedSource bool
 }
 
 func compileProject(c compileProjectParams) error {
@@ -677,6 +683,22 @@ func compileProject(c compileProjectParams) error {
 		return fmt.Errorf("executing pushup_support.go template: %w", err)
 	}
 	f.Close()
+
+	if c.embedSource {
+		outSrcDir := filepath.Join(c.outDir, "src")
+		for _, path := range c.files.pages {
+			relativePath := trimCommonPrefix(path, filepath.Join(c.appDir, "pages"))
+			relativeDir := filepath.Dir(relativePath)
+			dir := filepath.Join(outSrcDir, "pages", relativeDir)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return err
+			}
+			dest := filepath.Join(outSrcDir, "pages", relativePath)
+			if err := copyFile(dest, path); err != nil {
+				return fmt.Errorf("copying page file %s to %s: %v", path, dest, err)
+			}
+		}
+	}
 
 	return nil
 }
@@ -1047,7 +1069,9 @@ func copyFile(dest, src string) error {
 //go:embed _runtime/pushup_support.go _runtime/cmd/main.go
 var runtimeFiles embed.FS
 
-// assumes directory for dest already exists
+// copyFileFS copies a file from an fs.FS and writes it to a file location on
+// the local filesystem. src is the name of the file object in the FS. it
+// assumes the directory for dest already exists.
 func copyFileFS(fsys fs.FS, dest string, src string) error {
 	f, err := fsys.Open(src)
 	if err != nil {
@@ -1279,17 +1303,11 @@ func generatedFilename(path string, root string, strategy compilationStrategy) s
 	}
 	file := filepath.Base(path)
 	base := strings.TrimSuffix(file, filepath.Ext(file))
-	prefix := strings.Join(dirs, "__")
-	var result string
 	suffix := ".up"
 	if strategy == compileLayout {
 		suffix = ".layout.up"
 	}
-	if prefix != "" {
-		result = prefix + "__" + base + suffix + ".go"
-	} else {
-		result = base + suffix + ".go"
-	}
+	result := strings.Join(append(dirs, base), "__") + suffix + ".go"
 	return result
 }
 
