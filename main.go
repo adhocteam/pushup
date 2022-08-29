@@ -3,15 +3,15 @@
 Inline partials TODO
 
 - [x] add "partial" keyword
-	- [ ] add partial to parser unit tests
+	- [x] add partial to parser unit tests
 - [x] add parsePartialKeyword method
 - [x] add nodePartial type
-- [ ] update code gen
-	- [ ] in regular page, just handle like a block
+- [x] update code gen
+	- [x] in regular page, just handle like a block
 	- [ ] if routed to as a partial, skip non-partial content and disable layout
 		- [ ] this has to work in an arbitrarily nested context as well
-- [ ] update pretty-printer to handle nodePartial
 - [ ] add routes to partials
+- [x] update pretty-printer to handle nodePartial
 
 */
 
@@ -1449,6 +1449,8 @@ func walk(v visitor, n node) {
 		// no children
 	case nodeList:
 		walkNodeList(v, n)
+	case *nodePartial:
+		walk(v, n.block)
 	default:
 		panic(fmt.Sprintf("unhandled type %T", n))
 	}
@@ -1614,6 +1616,9 @@ type page struct {
 	handler  *nodeGoCode
 	nodes    []node
 	sections map[string]*nodeBlock
+	// partialRoutes is a list of all (potentially nested) routes to inline
+	// partials in this page
+	partialRoutes []string
 }
 
 // newPageFromTree produces a page which is the main prepared object for code
@@ -1622,7 +1627,10 @@ type page struct {
 // sequentially in the source file, but need to be reorganized for access in
 // the code generator.
 func newPageFromTree(tree *syntaxTree) (*page, error) {
-	page := &page{layout: "default", sections: make(map[string]*nodeBlock)}
+	page := &page{
+		layout:   "default",
+		sections: make(map[string]*nodeBlock),
+	}
 	layoutSet := false
 	n := 0
 	var err error
@@ -1670,6 +1678,32 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	{
+		var partialPath []string
+		var f inspector
+		var depth int
+		var sawPartial bool
+		f = func(e node) bool {
+			switch e := e.(type) {
+			case *nodePartial:
+				sawPartial = true
+				depth++
+				log.Printf("DEPTH: %d", depth)
+				partialPath = append(partialPath, e.name)
+				page.partialRoutes = append(page.partialRoutes, strings.Join(partialPath, "/"))
+				partialPath = partialPath[:len(partialPath)-1]
+			case nil:
+				if sawPartial {
+					depth--
+					sawPartial = false
+				}
+			}
+			return true
+		}
+		inspect(nodeList(tree.nodes), f)
+	}
+
 	page.nodes = tree.nodes[:n]
 	return page, nil
 }
@@ -1790,6 +1824,7 @@ func (g *codeGenerator) generate() {
 }
 
 func (g *codeGenerator) genFromNode(n node) {
+	var partialPath []string
 	var f inspector
 	f = func(e node) bool {
 		switch e := e.(type) {
@@ -1845,6 +1880,11 @@ func (g *codeGenerator) genFromNode(n node) {
 		case *nodeSection:
 			f(e.block)
 			return false
+		case *nodePartial:
+			partialPath = append(partialPath, e.name)
+			f(e.block)
+			partialPath = partialPath[:len(partialPath)-1]
+			return false
 		case *nodeLayout:
 			// nothing to do
 		case *nodeImport:
@@ -1898,6 +1938,15 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 		p := c.(*pageCodeGen)
 		g.bodyPrintf("func (up *%s) register() {\n", typename)
 		g.bodyPrintf("  routes.add(\"%s\", %s)\n", p.route, receiver)
+		for _, partialPath := range p.page.partialRoutes {
+			var path string
+			if p.route[len(p.route)-1] == '/' {
+				path = p.route + partialPath
+			} else {
+				path = p.route + "/" + partialPath
+			}
+			g.bodyPrintf("  // routes.add(\"%s\", %s)\n", path, receiver)
+		}
 		g.bodyPrintf("}\n\n")
 
 		g.bodyPrintf("func init() {\n")
@@ -3124,6 +3173,11 @@ func prettyPrintTree(t *syntaxTree) {
 			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.tag.end())
 			return false
 		case *nodeSection:
+			fmt.Fprintf(w, "SECTION %s\n", n.name)
+			f(n.block)
+			return false
+		case *nodePartial:
+			fmt.Fprintf(w, "PARTIAL %s\n", n.name)
 			f(n.block)
 			return false
 		case *nodeBlock:
