@@ -2,6 +2,40 @@
 
 ![workflow status](https://github.com/AdHocRandD/pushup/actions/workflows/go.yml/badge.svg)
 
+* [What is Pushup?](#what-is-pushup)
+* [Getting started](#getting-started)
++ [Installing Pushup](#installing-pushup)
+  - [Prerequisites](#prerequisites)
+  - [Install via git](#install-via-git)
+  - [Install via `go install`](#install-via-go-install)
++ [Creating a new Pushup project](#creating-a-new-pushup-project)
+* [Example demo app](#example-demo-app)
+* [Go modules and Pushup projects](#go-modules-and-pushup-projects)
+* [Project directory structure](#project-directory-structure)
+* [Pages](#pages)
+* [Layouts](#layouts)
+* [Static media](#static-media)
+* [File-based routing](#file-based-routing)
++ [Dynamic routes](#dynamic-routes)
+* [Pushup syntax](#pushup-syntax)
++ [How it works](#how-it-works)
++ [Directives](#directives)
+  - [`^import`](#import)
+  - [`^layout`](#layout)
+  - [`^contents`](#contents)
++ [Code blocks](#code-blocks)
+  - [`^{`](#)
+  - [`^handler`](#handler)
++ [Control flow statements](#control-flow-statements)
+  - [`^if`](#if)
+  - [`^for`](#for)
++ [Expressions](#expressions)
+  - [Simple expressions](#simple-expressions)
+  - [Explicit expressions](#explicit-expressions)
++ [Layout](#layout)
+  - [`^section`](#section)
+* [Vim syntax file](#vim-syntax-file)
+
 Pushup is an experimental new project that is exploring the viability of a new
 approach to web frameworks in Go.
 
@@ -402,3 +436,12 @@ default markup that can be overridden by a page.
 [token]: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
 [scannerpkg]: https://pkg.go.dev/go/scanner#Scanner
 [htmlpkg]: https://pkg.go.dev/golang.org/x/net/html#Tokenizer
+
+## Vim syntax file
+
+There is a vim syntax file at the root of the repository, `pushup.vim`. To install it:
+
+- Locate or create a `syntax` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
+- Copy [`pushup.vim`](https://github.com/AdHocRandD/pushup/blob/main/pushup.vim) into that directory
+- Locate or create a `ftdetect` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
+- Create a file `pushup.vim` with this line of code: `au BufRead,BufNewFile *.pushup set filetype=pushup`
