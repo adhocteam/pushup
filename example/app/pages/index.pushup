@@ -34,6 +34,6 @@
     <li><a href="/no-layout">No layout</a></li>
     <li><a href="/x/sub">Subdirectory route (<tt>/x/sub</tt>)</a></li>
     <li><a href="/dyn/world">Dynamic path segments</a></li>
-    <li><a href="/htmx">htmx examples</a></li>
-    <li><a href="/crud">CRUD</a></li>
+    <li><a href="/htmx/">htmx examples</a></li>
+    <li><a href="/crud/">CRUD</a></li>
 </ul>

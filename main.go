@@ -253,6 +253,7 @@ func (b *buildCmd) do() error {
 
 	compileParams := compileProjectParams{
 		root:               b.projectDir,
+		appDir:             b.appDir,
 		outDir:             b.outDir,
 		parseOnly:          b.parseOnly,
 		files:              b.files,
@@ -1334,6 +1335,10 @@ func routeFromPath(path string, root string) string {
 		}
 	}
 	route = "/" + strings.Join(dirs, "/")
+	if base == "index" && route[len(route)-1] != '/' {
+		// indexes always have a trailing slash
+		route += "/"
+	}
 	return route
 }
 

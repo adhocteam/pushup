@@ -45,7 +45,7 @@ func TestPushup(t *testing.T) {
 				// desired path to avoid these hacks
 				requestPath := "/testdata/" + basename
 				if basename == "index" {
-					requestPath = "/testdata"
+					requestPath = "/testdata/"
 				} else if basename == "$name" {
 					requestPath = "/testdata/world"
 				}
@@ -291,6 +291,11 @@ func TestRouteFromPath(t *testing.T) {
 			"app/pages/$projectId/$productId",
 			"app/pages",
 			"/:projectId/:productId",
+		},
+		{
+			"app/pages/blah/index.pushup",
+			"app/pages",
+			"/blah/",
 		},
 	}
 
