@@ -799,6 +799,8 @@ func modifyResponseAddDevReload(res *http.Response) error {
 		return fmt.Errorf("parsing MIME type: %w", err)
 	}
 
+	// FIXME(paulsmith): we might not want to skip injecting in the case of a
+	// hx-boost link
 	if mediatype == "text/html" && res.Header.Get("HX-Response") != "true" {
 		doc, err := appendDevReloaderScript(res.Body)
 		if err != nil {
@@ -1962,7 +1964,7 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 	case compilePushupPage:
 		p := c.(*pageCodeGen)
 		g.bodyPrintf("func (%s *%s) register() {\n", methodReceiverName, typename)
-		g.bodyPrintf("  routes.add(%[1]s.mainRoute, %[1]s)\n", methodReceiverName)
+		g.bodyPrintf("  routes.add(%[1]s.mainRoute, %[1]s, routePage)\n", methodReceiverName)
 		if len(p.page.partialRoutes) > 0 {
 			g.bodyPrintf("  // partial routes\n")
 		}
@@ -1973,8 +1975,7 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 			} else {
 				path = "/" + partialPath
 			}
-			// FIXME(paulsmith): add a param to routes.add() that indicates this is a partial route
-			g.bodyPrintf("  routes.add(%[1]s.mainRoute + \"%[2]s\", %[1]s)\n", methodReceiverName, path)
+			g.bodyPrintf("  routes.add(%[1]s.mainRoute + \"%[2]s\", %[1]s, routePartial)\n", methodReceiverName, path)
 		}
 		g.bodyPrintf("}\n\n")
 

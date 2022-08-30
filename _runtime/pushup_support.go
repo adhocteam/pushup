@@ -30,8 +30,15 @@ type routeList []*route
 
 var routes routeList
 
-func (r *routeList) add(path string, c page) {
-	*r = append(*r, newRoute(path, c))
+type routeRole int
+
+const (
+	routePage routeRole = iota
+	routePartial
+)
+
+func (r *routeList) add(path string, c page, role routeRole) {
+	*r = append(*r, newRoute(path, c, role))
 }
 
 type route struct {
@@ -39,15 +46,17 @@ type route struct {
 	regex *regexp.Regexp
 	slugs []string
 	page  page
+	role  routeRole
 }
 
-func newRoute(path string, c page) *route {
+func newRoute(path string, c page, role routeRole) *route {
 	p := regexPatFromRoute(path)
 	result := new(route)
 	result.path = path
 	result.regex = regexp.MustCompile("^" + p.pat + "$")
 	result.slugs = p.slugs
 	result.page = c
+	result.role = role
 	return result
 }
 
