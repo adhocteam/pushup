@@ -1682,22 +1682,45 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 	{
 		var partialPath []string
 		var f inspector
-		var depth int
-		var sawPartial bool
 		f = func(e node) bool {
 			switch e := e.(type) {
+			case *nodeLiteral:
+			case *nodeElement:
+				f(nodeList(e.startTagNodes))
+				f(nodeList(e.children))
+				return false
+			case *nodeGoStrExpr:
+			case *nodeGoCode:
+			case *nodeIf:
+				f(e.then)
+				if e.alt != nil {
+					f(e.alt)
+				}
+				return false
+			case nodeList:
+				for _, x := range e {
+					f(x)
+				}
+				return false
+			case *nodeFor:
+				f(e.block)
+				return false
+			case *nodeBlock:
+				f(nodeList(e.nodes))
+				return false
+			case *nodeSection:
+				f(e.block)
+				return false
 			case *nodePartial:
-				sawPartial = true
-				depth++
-				log.Printf("DEPTH: %d", depth)
 				partialPath = append(partialPath, e.name)
 				page.partialRoutes = append(page.partialRoutes, strings.Join(partialPath, "/"))
+				f(e.block)
 				partialPath = partialPath[:len(partialPath)-1]
-			case nil:
-				if sawPartial {
-					depth--
-					sawPartial = false
-				}
+				return false
+			case *nodeLayout:
+				// nothing to do
+			case *nodeImport:
+				// nothing to do
 			}
 			return true
 		}

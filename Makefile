@@ -1,7 +1,7 @@
 all: install
 
 install:
-	go install .
+	go install -gcflags="all=-N -l" .
 
 .PHONY: install
 
