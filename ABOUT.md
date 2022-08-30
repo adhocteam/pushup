@@ -33,9 +33,7 @@ clear from the get-go.
 -   Health checks
 -   Metrics and monitoring hooks
 
-Aspirational features
-
----
+## Aspirational features
 
 -   Blend the distinction between server and client code
 -   WASM (run (some) Go code in the browser)
