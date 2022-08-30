@@ -249,19 +249,109 @@ func GetPageSource(path string) []byte {
 
 // Inline partials
 
-func isPartialRoute(mainRoute string, path string) bool {
-	if path == mainRoute {
-		return false
-	} else if strings.HasPrefix(path, mainRoute) {
+func isPartialRoute(mainRoute string, requestPath string) bool {
+	match := getRouteFromPath(requestPath)
+	if match.response == routeFound {
+		route := match.route
+		if route.path == mainRoute {
+			return false
+		}
 		return true
-	} else {
-		panic("internal error: unexpected path")
 	}
+	panic("internal error: unexpected path")
 }
 
-func displayPartialHere(partialPath string, path string) bool {
-	if strings.HasPrefix(partialPath, path) {
-		return true
+func displayPartialHere(mainRoute string, partialPath string, requestPath string) bool {
+	var path string
+	if mainRoute[len(mainRoute)-1] != '/' {
+		path = mainRoute + "/" + partialPath
+	} else {
+		path = mainRoute + partialPath
 	}
-	return false
+	//log.Printf("PATH: %v\tREQUEST_PATH: %v", path, requestPath)
+	match := getRouteFromPath(path)
+	if match.response == routeFound {
+		if matchURLPathSegmentPrefix(match.route.regex, requestPath) {
+			return true
+		}
+		return false
+	}
+	//log.Printf("MAIN ROUTE: %v\tPARTIAL PATH: %v\tREQUEST PATH: %v", mainRoute, partialPath, requestPath)
+	panic("internal error: unexpected path")
+}
+
+// matchURLPathSegmentPrefix reports whether a string in the form of a URL
+// path matches as a prefix of a regex that is potentially shorter (in terms
+// of number of URL path segments) than the string.
+func matchURLPathSegmentPrefix(re *regexp.Regexp, s string) bool {
+	res := re.String()
+	// strip off matching start of string
+	if res[0] == '^' {
+		res = res[1:]
+	}
+	// strip off matching end of string
+	if res[len(res)-1] == '$' {
+		res = res[:len(res)-1]
+	}
+	var reSegments []string
+	var state int
+	const (
+		stateStart int = iota
+		stateInCapture
+	)
+	var accum []rune
+	for _, r := range res {
+		switch state {
+		case stateStart:
+			if r == '/' {
+				if len(accum) > 0 {
+					reSegments = append(reSegments, string(accum))
+					accum = accum[:0]
+				}
+			} else if r == '(' {
+				state = stateInCapture
+			} else {
+				accum = append(accum, r)
+			}
+		case stateInCapture:
+			if r == ')' {
+				if len(accum) > 0 {
+					reSegments = append(reSegments, string(accum))
+					accum = accum[:0]
+					state = stateStart
+				}
+			} else {
+				accum = append(accum, r)
+			}
+		default:
+			panic("unhandled state")
+		}
+	}
+	if len(accum) > 0 {
+		reSegments = append(reSegments, string(accum))
+	}
+	var segments []string
+	s = strings.Trim(s, "/")
+	if s != "" {
+		segments = strings.Split(s, "/")
+	}
+	//log.Printf("RESEGMENTS: %#v\tSEGMENTS: %#v", reSegments, segments)
+	for i := 0; i < min(len(reSegments), len(segments)); i++ {
+		reseg := reSegments[i]
+		seg := segments[i]
+		if !regexp.MustCompile(reseg).MatchString(seg) {
+			return false
+		}
+	}
+	if len(segments) > len(reSegments) {
+		return false
+	}
+	return true
+}
+
+func min(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

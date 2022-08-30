@@ -24,9 +24,7 @@
     architects := db[page * 2:page * 2 + 2]
 }
 
-<h1>Inline partials</h1>
-
-<p>This page: ^req.URL.Path</p>
+<p><a href="/partials/">Inline partials</a></p>
 
 <h2>Architects</h2>
 <a href="./list">^(req.URL.Path + "list")</a>

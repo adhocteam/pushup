@@ -1905,7 +1905,7 @@ func (g *codeGenerator) genFromNode(n node) {
 			partialPath = append(partialPath, e.name)
 			g.bodyPrintf("}\n") // closes opening if
 			path := strconv.Quote(strings.Join(partialPath, "/"))
-			g.bodyPrintf("if displayPartialHere(%s.mainRoute + %s, req.URL.Path) {\n", methodReceiverName, path)
+			g.bodyPrintf("if displayPartialHere(%s.mainRoute, %s, req.URL.Path) {\n", methodReceiverName, path)
 			f(e.block)
 			g.bodyPrintf("}\n")
 			g.bodyPrintf("if %s {\n", g.partialGuardCond)

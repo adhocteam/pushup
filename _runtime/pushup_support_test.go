@@ -1,6 +1,8 @@
 package build
 
 import (
+	"net/http"
+	"regexp"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -88,6 +90,121 @@ func TestMostSpecificMatch(t *testing.T) {
 			got := mostSpecificMatch(test.routes, test.path)
 			if want := test.routes[test.want]; want != got {
 				t.Errorf("want %v, got %v", want, got)
+			}
+		})
+	}
+}
+
+type dummyPage struct{}
+
+func (p *dummyPage) Respond(http.ResponseWriter, *http.Request) error {
+	return nil
+}
+
+func (p *dummyPage) filePath() string {
+	return ""
+}
+
+var _ page = (*dummyPage)(nil)
+
+func TestIsPartialRoute(t *testing.T) {
+	oldRoutes := routes
+	defer func() {
+		routes = oldRoutes
+	}()
+	dummy := new(dummyPage)
+	routes = routeList{}
+	routes.add("/sports/leagues/", dummy)
+	routes.add("/sports/leagues/teams", dummy)
+	routes.add("/fruits/:name/", dummy)
+	routes.add("/fruits/:name/nutrition", dummy)
+	tests := []struct {
+		mainRoute string
+		path      string
+		want      bool
+	}{
+		{mainRoute: "/sports/leagues/", path: "/sports/leagues/", want: false},
+		{mainRoute: "/sports/leagues/", path: "/sports/leagues/teams", want: true},
+		{mainRoute: "/fruits/:name/", path: "/fruits/cherry/", want: false},
+		{mainRoute: "/fruits/:name/", path: "/fruits/cherry/nutrition", want: true},
+	}
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+			got := isPartialRoute(test.mainRoute, test.path)
+			if test.want != got {
+				t.Errorf("want %t, got %t", test.want, got)
+			}
+		})
+	}
+}
+
+func TestDisplayPartialHere(t *testing.T) {
+	oldRoutes := routes
+	defer func() {
+		routes = oldRoutes
+	}()
+	dummy := new(dummyPage)
+	routes = routeList{}
+	routes.add("/sports/", dummy)
+	routes.add("/sports/leagues", dummy)
+	routes.add("/dyn/:name/foo", dummy)
+	routes.add("/dyn/:name/foo/bar", dummy)
+	routes.add("/dyn/:name/quux", dummy)
+	routes.add("/nested/", dummy)
+	routes.add("/nested/foo", dummy)
+	routes.add("/nested/foo/bar", dummy)
+	tests := []struct {
+		mainRoute   string
+		partialPath string
+		requestPath string
+		want        bool
+	}{
+		{mainRoute: "/sports/", partialPath: "leagues", requestPath: "/sports/", want: true},
+		{mainRoute: "/sports/", partialPath: "leagues", requestPath: "/sports/leagues", want: true},
+		{mainRoute: "/dyn/:name", partialPath: "foo", requestPath: "/dyn/world", want: true},
+		{mainRoute: "/dyn/:name", partialPath: "foo", requestPath: "/dyn/world/foo", want: true},
+		{mainRoute: "/dyn/:name", partialPath: "foo/bar", requestPath: "/dyn/world/foo", want: true},
+		{mainRoute: "/dyn/:name", partialPath: "foo/bar", requestPath: "/dyn/world/foo/bar", want: true},
+		{mainRoute: "/dyn/:name", partialPath: "quux", requestPath: "/dyn/world/foo", want: false},
+		{mainRoute: "/nested/", partialPath: "foo", requestPath: "/nested/", want: true},
+		{mainRoute: "/nested/", partialPath: "foo/bar", requestPath: "/nested/", want: true},
+		{mainRoute: "/nested/", partialPath: "foo", requestPath: "/nested/foo", want: true},
+		{mainRoute: "/nested/", partialPath: "foo/bar", requestPath: "/nested/foo", want: true},
+		{mainRoute: "/nested/", partialPath: "foo", requestPath: "/nested/foo/bar", want: false},
+		{mainRoute: "/nested/", partialPath: "foo/bar", requestPath: "/nested/foo/bar", want: true},
+	}
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+			got := displayPartialHere(test.mainRoute, test.partialPath, test.requestPath)
+			if test.want != got {
+				t.Errorf("want %t, got %t", test.want, got)
+			}
+		})
+	}
+}
+
+func TestMatchURLPathSegmentPrefix(t *testing.T) {
+	const segmatch = `([^/]+)`
+	tests := []struct {
+		re   string
+		url  string
+		want bool
+	}{
+		{re: "/", url: "/", want: true},
+		{re: "/", url: "/foo", want: false},
+		{re: "/", url: "/foo/bar", want: false},
+		{re: "/", url: "/foo/bar/", want: false},
+		{re: "/foo/bar", url: "/foo", want: true},
+		{re: "/foo/bar", url: "/foo/bar", want: true},
+		{re: "/dyn/" + segmatch + "/", url: "/dyn/world/", want: true},
+		{re: "/dyn/" + segmatch + "/", url: "/dyn/world/extra", want: false},
+		{re: "/dyn/" + segmatch + "/extra", url: "/dyn/world/something/else", want: false},
+	}
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+			got := matchURLPathSegmentPrefix(regexp.MustCompile(test.re), test.url)
+			if test.want != got {
+				t.Errorf("want %t, got %t", test.want, got)
 			}
 		})
 	}
