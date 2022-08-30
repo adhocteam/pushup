@@ -5,4 +5,5 @@
 <h1>Inline partials</h1>
 <ul>
     <li><a href="./architects/">Architects</a></li>
+    <li><a href="./nested">Nested</a></li>
 </ul>

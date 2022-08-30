@@ -1,0 +1,34 @@
+<h1>Inline partials</h1>
+
+<h2>Nested partials</h2>
+
+<p><a href="./nested/foo">^(req.URL.Path + "/foo")</a></p>
+<p><a href="./nested/foo/bar">^(req.URL.Path + "/foo/bar")</a></p>
+^partial foo {
+    <ul>
+        <li>Foo</li>
+        ^partial bar {
+            <ul><li>Bar</li></ul>
+        }
+    </ul>
+}
+
+<hr>
+
+<p><a href="./nested/first">^(req.URL.Path + "/first")</a></p>
+<p><a href="./nested/first/second">^(req.URL.Path + "/first/second")</a></p>
+<p><a href="./nested/first/second/third">^(req.URL.Path + "/first/second/third")</a></p>
+^partial first {
+    <ul>
+        <li>First</li>
+        ^partial second {
+            <ul>
+                <li>Second</li>
+                ^partial third {
+                    <ul><li>Third</li></ul>
+                }
+            </ul>
+        }
+    </ul>
+}
+
