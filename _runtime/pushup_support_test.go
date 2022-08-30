@@ -62,23 +62,23 @@ func TestMostSpecificMatch(t *testing.T) {
 	}{
 		{
 			[]*route{
-				newRoute("/", nil),
+				newRoute("/", nil, routePage),
 			},
 			"/",
 			0,
 		},
 		{
 			[]*route{
-				newRoute("/:id", nil),
-				newRoute("/new", nil),
+				newRoute("/:id", nil, routePage),
+				newRoute("/new", nil, routePage),
 			},
 			"/new",
 			1,
 		},
 		{
 			[]*route{
-				newRoute("/:name/:thing1/:thing2", nil),
-				newRoute("/:name/foo/baz", nil),
+				newRoute("/:name/:thing1/:thing2", nil, routePage),
+				newRoute("/:name/foo/baz", nil, routePage),
 			},
 			"/foo/bar/baz",
 			1,
@@ -114,10 +114,10 @@ func TestIsPartialRoute(t *testing.T) {
 	}()
 	dummy := new(dummyPage)
 	routes = routeList{}
-	routes.add("/sports/leagues/", dummy)
-	routes.add("/sports/leagues/teams", dummy)
-	routes.add("/fruits/:name/", dummy)
-	routes.add("/fruits/:name/nutrition", dummy)
+	routes.add("/sports/leagues/", dummy, routePage)
+	routes.add("/sports/leagues/teams", dummy, routePartial)
+	routes.add("/fruits/:name/", dummy, routePage)
+	routes.add("/fruits/:name/nutrition", dummy, routePartial)
 	tests := []struct {
 		mainRoute string
 		path      string
@@ -145,14 +145,15 @@ func TestDisplayPartialHere(t *testing.T) {
 	}()
 	dummy := new(dummyPage)
 	routes = routeList{}
-	routes.add("/sports/", dummy)
-	routes.add("/sports/leagues", dummy)
-	routes.add("/dyn/:name/foo", dummy)
-	routes.add("/dyn/:name/foo/bar", dummy)
-	routes.add("/dyn/:name/quux", dummy)
-	routes.add("/nested/", dummy)
-	routes.add("/nested/foo", dummy)
-	routes.add("/nested/foo/bar", dummy)
+	routes.add("/sports/", dummy, routePage)
+	routes.add("/sports/leagues", dummy, routePartial)
+	routes.add("/dyn/:name", dummy, routePage)
+	routes.add("/dyn/:name/foo", dummy, routePartial)
+	routes.add("/dyn/:name/foo/bar", dummy, routePartial)
+	routes.add("/dyn/:name/quux", dummy, routePartial)
+	routes.add("/nested/", dummy, routePage)
+	routes.add("/nested/foo", dummy, routePartial)
+	routes.add("/nested/foo/bar", dummy, routePartial)
 	tests := []struct {
 		mainRoute   string
 		partialPath string
