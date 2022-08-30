@@ -2,39 +2,45 @@
 
 ![workflow status](https://github.com/AdHocRandD/pushup/actions/workflows/go.yml/badge.svg)
 
-* [What is Pushup?](#what-is-pushup)
-* [Getting started](#getting-started)
-+ [Installing Pushup](#installing-pushup)
-  - [Prerequisites](#prerequisites)
-  - [Install via git](#install-via-git)
-  - [Install via `go install`](#install-via-go-install)
-+ [Creating a new Pushup project](#creating-a-new-pushup-project)
-* [Example demo app](#example-demo-app)
-* [Go modules and Pushup projects](#go-modules-and-pushup-projects)
-* [Project directory structure](#project-directory-structure)
-* [Pages](#pages)
-* [Layouts](#layouts)
-* [Static media](#static-media)
-* [File-based routing](#file-based-routing)
-+ [Dynamic routes](#dynamic-routes)
-* [Pushup syntax](#pushup-syntax)
-+ [How it works](#how-it-works)
-+ [Directives](#directives)
-  - [`^import`](#import)
-  - [`^layout`](#layout)
-  - [`^contents`](#contents)
-+ [Code blocks](#code-blocks)
-  - [`^{`](#)
-  - [`^handler`](#handler)
-+ [Control flow statements](#control-flow-statements)
-  - [`^if`](#if)
-  - [`^for`](#for)
-+ [Expressions](#expressions)
-  - [Simple expressions](#simple-expressions)
-  - [Explicit expressions](#explicit-expressions)
-+ [Layout](#layout)
-  - [`^section`](#section)
-* [Vim syntax file](#vim-syntax-file)
+-   [What is Pushup?](#what-is-pushup)
+-   [Getting started](#getting-started)
+
+*   [Installing Pushup](#installing-pushup)
+    -   [Prerequisites](#prerequisites)
+    -   [Install via git](#install-via-git)
+    -   [Install via `go install`](#install-via-go-install)
+*   [Creating a new Pushup project](#creating-a-new-pushup-project)
+
+-   [Example demo app](#example-demo-app)
+-   [Go modules and Pushup projects](#go-modules-and-pushup-projects)
+-   [Project directory structure](#project-directory-structure)
+-   [Pages](#pages)
+-   [Layouts](#layouts)
+-   [Static media](#static-media)
+-   [File-based routing](#file-based-routing)
+
+*   [Dynamic routes](#dynamic-routes)
+
+-   [Pushup syntax](#pushup-syntax)
+
+*   [How it works](#how-it-works)
+*   [Directives](#directives)
+    -   [`^import`](#import)
+    -   [`^layout`](#layout)
+    -   [`^contents`](#contents)
+*   [Code blocks](#code-blocks)
+    -   [`^{`](#)
+    -   [`^handler`](#handler)
+*   [Control flow statements](#control-flow-statements)
+    -   [`^if`](#if)
+    -   [`^for`](#for)
+*   [Expressions](#expressions)
+    -   [Simple expressions](#simple-expressions)
+    -   [Explicit expressions](#explicit-expressions)
+*   [Layout](#layout)
+    -   [`^section`](#section)
+
+-   [Vim syntax file](#vim-syntax-file)
 
 Pushup is an experimental new project that is exploring the viability of a new
 approach to web frameworks in Go.
@@ -254,6 +260,29 @@ to `/products/:pid/details`.
 Multiple named parameters are allowed, for example, `app/pages/users/$uid/projects/$pid.pushup`
 maps to `/users/:uid/projects/:pid`.
 
+## Enhanced hypertext
+
+### Inline partials
+
+Inline partials allow pages to denote subsections of themselves, and allow
+for these subsections (the inline partials) to be rendered and returned to
+the client independently, without having to render the entire enclosing page.
+
+Typically, partials in templating languages are stored in their own files,
+which are then transcluded into other templates. Inline partials, however, are
+partials declared and defined in-line a parent or including template.
+
+Inline partials are useful when combined with enhanced hypertext solutions
+(eg., [htmx](https://htmx.org/)). The reason is that these sites make AJAX
+requests for partial HTML responses to update portions of an already-loaded
+document. Partial responses should not have enclosing markup such as base
+templates applied by the templating engine, since that would break the of the
+document they are being inserted into. Inline partials in Pushup automatically
+disable layouts so that partial responses have just the content they define.
+
+The ability to quickly define partials, and not have to deal with complexities
+like toggling off layouts, makes it easier to build enhanced hypertext sites.
+
 ## Pushup syntax
 
 ### How it works
@@ -285,11 +314,7 @@ Docs TKTK
 
 Docs TKTK
 
-#### `^contents`
-
-Docs TKTK
-
-### Code blocks
+### Go code blocks
 
 #### `^{`
 
@@ -380,7 +405,7 @@ Outputs:
 <p>With 4 people there are 8 hands</p>
 ```
 
-### Layout
+### Layout and templates
 
 #### `^section`
 
@@ -433,6 +458,63 @@ default markup that can be overridden by a page.
 }
 ```
 
+#### `^partial`
+
+Pushup pages can declare and define inline partials with the `^partial`
+keyword.
+
+```pushup
+...
+<section>
+    <p>Elements</p>
+    ^partial list {
+            <ul>
+                <li>Ag</li>
+                <li>Na</li>
+                <li>C</li>
+            </ul>
+    }
+</section>
+...
+```
+
+A request to the page containing the initial partial will render normally,
+as if the block where not wrapped in `^partial list {` ... `}`.
+
+A request to the page with the name of the partial appended to the URL path
+will respond with just the content scoped by the partial block.
+
+For example, if the page above had the route `/elements/`, then a request to
+`/elements/list` would output:
+
+```html
+<ul>
+    <li>Ag</li>
+    <li>Na</li>
+    <li>C</li>
+</ul>
+```
+
+Inline partials can nest arbitrarily deep.
+
+```pushup
+...
+^partial leagues {
+    <p>Leagues</p>
+    ^partial teams {
+        <p>Teams</p>
+        ^partial players {
+            <p>Players</p>
+        }
+    }
+}
+...
+```
+
+To request a nested partial, make sure the URL path is preceded by
+each containing partial's name and a forward slash, for example,
+`/sports/leagues/teams/players`.
+
 [token]: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
 [scannerpkg]: https://pkg.go.dev/go/scanner#Scanner
 [htmlpkg]: https://pkg.go.dev/golang.org/x/net/html#Tokenizer
@@ -441,7 +523,7 @@ default markup that can be overridden by a page.
 
 There is a vim syntax file at the root of the repository, `pushup.vim`. To install it:
 
-- Locate or create a `syntax` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
-- Copy [`pushup.vim`](https://github.com/AdHocRandD/pushup/blob/main/pushup.vim) into that directory
-- Locate or create a `ftdetect` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
-- Create a file `pushup.vim` with this line of code: `au BufRead,BufNewFile *.pushup set filetype=pushup`
+-   Locate or create a `syntax` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
+-   Copy [`pushup.vim`](https://github.com/AdHocRandD/pushup/blob/main/pushup.vim) into that directory
+-   Locate or create a `ftdetect` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
+-   Create a file `pushup.vim` with this line of code: `au BufRead,BufNewFile *.pushup set filetype=pushup`
