@@ -1,20 +1,3 @@
-/*
-
-Inline partials TODO
-
-- [x] add "partial" keyword
-	- [x] add partial to parser unit tests
-- [x] add parsePartialKeyword method
-- [x] add nodePartial type
-- [x] update code gen
-	- [x] in regular page, just handle like a block
-	- [ ] if routed to as a partial, skip non-partial content and disable layout
-		- [ ] this has to work in an arbitrarily nested context as well
-- [x] add routes to partials
-- [x] update pretty-printer to handle nodePartial
-
-*/
-
 // Pushup web framework
 package main
 
