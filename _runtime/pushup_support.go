@@ -100,6 +100,9 @@ func Respond(w http.ResponseWriter, r *http.Request) error {
 		route := routeMatch.route
 		matches := route.regex.FindStringSubmatch(r.URL.Path)
 		params := zipMap(route.slugs, matches[1:])
+		if route.role == routePartial {
+			w.Header().Set("Pushup-Partial", "true")
+		}
 		// NOTE(paulsmith): since we totally control the Respond() method on
 		// the component interface, we probably should pass the params to
 		// Respond instead of wrapping the request object with context values.

@@ -801,7 +801,10 @@ func modifyResponseAddDevReload(res *http.Response) error {
 
 	// FIXME(paulsmith): we might not want to skip injecting in the case of a
 	// hx-boost link
-	if mediatype == "text/html" && res.Header.Get("HX-Response") != "true" {
+	if mediatype == "text/html" {
+		if res.Header.Get("Pushup-Partial") == "true" || res.Header.Get("HX-Response") == "true" {
+			return nil
+		}
 		doc, err := appendDevReloaderScript(res.Body)
 		if err != nil {
 			return fmt.Errorf("appending dev reloading script: %w", err)
