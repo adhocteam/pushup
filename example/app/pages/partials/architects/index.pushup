@@ -40,6 +40,7 @@
         <button
             hx-get="./list?page=^(page + 1)"
             hx-target="closest div"
+            hx-push-url="./?page=^(page + 1)"
         >
             Next
         </button>
