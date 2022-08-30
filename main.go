@@ -799,7 +799,12 @@ func modifyResponseAddDevReload(res *http.Response) error {
 		return fmt.Errorf("parsing MIME type: %w", err)
 	}
 
-	if mediatype == "text/html" && res.Header.Get("HX-Response") != "true" {
+	// FIXME(paulsmith): we might not want to skip injecting in the case of a
+	// hx-boost link
+	if mediatype == "text/html" {
+		if res.Header.Get("Pushup-Partial") == "true" || res.Header.Get("HX-Response") == "true" {
+			return nil
+		}
 		doc, err := appendDevReloaderScript(res.Body)
 		if err != nil {
 			return fmt.Errorf("appending dev reloading script: %w", err)
@@ -1432,6 +1437,8 @@ func walk(v visitor, n node) {
 		// no children
 	case nodeList:
 		walkNodeList(v, n)
+	case *nodePartial:
+		walk(v, n.block)
 	default:
 		panic(fmt.Sprintf("unhandled type %T", n))
 	}
@@ -1500,7 +1507,19 @@ func (e nodeSection) Pos() span { return e.pos }
 
 var _ node = (*nodeSection)(nil)
 
-// A nodeBlock represents a block of nodes, i.e., a sequence of nodes that
+// nodePartial is a syntax tree node representing an inline partial in a Pushup
+// page.
+type nodePartial struct {
+	name  string
+	pos   span
+	block *nodeBlock
+}
+
+func (e nodePartial) Pos() span { return e.pos }
+
+var _ node = (*nodePartial)(nil)
+
+// nodeBlock represents a block of nodes, i.e., a sequence of nodes that
 // appear in order in the source syntax.
 type nodeBlock struct {
 	nodes []node
@@ -1585,6 +1604,9 @@ type page struct {
 	handler  *nodeGoCode
 	nodes    []node
 	sections map[string]*nodeBlock
+	// partialRoutes is a list of all (potentially nested) routes to inline
+	// partials in this page
+	partialRoutes []string
 }
 
 // newPageFromTree produces a page which is the main prepared object for code
@@ -1593,7 +1615,10 @@ type page struct {
 // sequentially in the source file, but need to be reorganized for access in
 // the code generator.
 func newPageFromTree(tree *syntaxTree) (*page, error) {
-	page := &page{layout: "default", sections: make(map[string]*nodeBlock)}
+	page := &page{
+		layout:   "default",
+		sections: make(map[string]*nodeBlock),
+	}
 	layoutSet := false
 	n := 0
 	var err error
@@ -1641,6 +1666,55 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	{
+		var partialPath []string
+		var f inspector
+		f = func(e node) bool {
+			switch e := e.(type) {
+			case *nodeLiteral:
+			case *nodeElement:
+				f(nodeList(e.startTagNodes))
+				f(nodeList(e.children))
+				return false
+			case *nodeGoStrExpr:
+			case *nodeGoCode:
+			case *nodeIf:
+				f(e.then)
+				if e.alt != nil {
+					f(e.alt)
+				}
+				return false
+			case nodeList:
+				for _, x := range e {
+					f(x)
+				}
+				return false
+			case *nodeFor:
+				f(e.block)
+				return false
+			case *nodeBlock:
+				f(nodeList(e.nodes))
+				return false
+			case *nodeSection:
+				f(e.block)
+				return false
+			case *nodePartial:
+				partialPath = append(partialPath, e.name)
+				page.partialRoutes = append(page.partialRoutes, strings.Join(partialPath, "/"))
+				f(e.block)
+				partialPath = partialPath[:len(partialPath)-1]
+				return false
+			case *nodeLayout:
+				// nothing to do
+			case *nodeImport:
+				// nothing to do
+			}
+			return true
+		}
+		inspect(nodeList(tree.nodes), f)
+	}
+
 	page.nodes = tree.nodes[:n]
 	return page, nil
 }
@@ -1708,14 +1782,17 @@ func (c *layoutCodeGen) lineNo(s span) int {
 	return lineCount(c.source[:s.start+1])
 }
 
+const methodReceiverName = "up"
+
 type codeGenerator struct {
-	c           codeGenUnit
-	strategy    compilationStrategy
-	basename    string
-	imports     map[importDecl]bool
-	outb        bytes.Buffer
-	bodyb       bytes.Buffer
-	ioWriterVar string
+	c                codeGenUnit
+	strategy         compilationStrategy
+	basename         string
+	imports          map[importDecl]bool
+	outb             bytes.Buffer
+	bodyb            bytes.Buffer
+	ioWriterVar      string
+	partialGuardCond string
 }
 
 func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrategy) *codeGenerator {
@@ -1757,10 +1834,18 @@ func (g *codeGenerator) bodyPrintf(format string, args ...any) {
 
 func (g *codeGenerator) generate() {
 	nodes := g.c.nodes()
+	g.partialGuardCond = fmt.Sprintf("!isPartialRoute(%s.mainRoute, req.URL.Path)", methodReceiverName)
+	if _, ok := g.c.(*pageCodeGen); ok {
+		g.bodyPrintf("if %s {\n", g.partialGuardCond)
+	}
 	g.genFromNode(nodeList(nodes))
+	if _, ok := g.c.(*pageCodeGen); ok {
+		g.bodyPrintf("}\n")
+	}
 }
 
 func (g *codeGenerator) genFromNode(n node) {
+	var partialPath []string
 	var f inspector
 	f = func(e node) bool {
 		switch e := e.(type) {
@@ -1782,6 +1867,7 @@ func (g *codeGenerator) genFromNode(n node) {
 			if e.context != inlineGoCode {
 				panic(fmt.Sprintf("assertion failure: expected inlineGoCode, got %v", e.context))
 			}
+			g.bodyPrintf("}\n") // close partial rendering guard `if`
 			srcLineNo := g.c.lineNo(e.Pos())
 			lines := strings.Split(e.code, "\n")
 			for _, line := range lines {
@@ -1789,6 +1875,7 @@ func (g *codeGenerator) genFromNode(n node) {
 				g.bodyPrintf("%s\n", line)
 				srcLineNo++
 			}
+			g.bodyPrintf("if %s {\n", g.partialGuardCond)
 		case *nodeIf:
 			g.bodyPrintf("if %s {\n", e.cond.expr)
 			f(e.then)
@@ -1815,6 +1902,19 @@ func (g *codeGenerator) genFromNode(n node) {
 			return false
 		case *nodeSection:
 			f(e.block)
+			return false
+		case *nodePartial:
+			if _, ok := g.c.(*pageCodeGen); !ok {
+				panic("partials are not defined in layouts")
+			}
+			partialPath = append(partialPath, e.name)
+			g.bodyPrintf("}\n") // closes opening if
+			path := strconv.Quote(strings.Join(partialPath, "/"))
+			g.bodyPrintf("if displayPartialHere(%s.mainRoute, %s, req.URL.Path) {\n", methodReceiverName, path)
+			f(e.block)
+			g.bodyPrintf("}\n")
+			g.bodyPrintf("if %s {\n", g.partialGuardCond)
+			partialPath = partialPath[:len(partialPath)-1]
 			return false
 		case *nodeLayout:
 			// nothing to do
@@ -1845,6 +1945,7 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 
 	fields := []field{
 		{name: "pushupFilePath", typ: "string"},
+		{name: "mainRoute", typ: "string"},
 	}
 
 	if strategy == compileLayout {
@@ -1858,22 +1959,33 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 	}
 	g.bodyPrintf("}\n")
 
-	const receiver = "up"
-
-	g.bodyPrintf("func (%s *%s) buildCliArgs() []string {\n", receiver, typename)
+	g.bodyPrintf("func (%s *%s) buildCliArgs() []string {\n", methodReceiverName, typename)
 	g.bodyPrintf("  return %#v\n", os.Args)
 	g.bodyPrintf("}\n\n")
 
 	switch strategy {
 	case compilePushupPage:
 		p := c.(*pageCodeGen)
-		g.bodyPrintf("func (up *%s) register() {\n", typename)
-		g.bodyPrintf("  routes.add(\"%s\", %s)\n", p.route, receiver)
+		g.bodyPrintf("func (%s *%s) register() {\n", methodReceiverName, typename)
+		g.bodyPrintf("  routes.add(%[1]s.mainRoute, %[1]s, routePage)\n", methodReceiverName)
+		if len(p.page.partialRoutes) > 0 {
+			g.bodyPrintf("  // partial routes\n")
+		}
+		for _, partialPath := range p.page.partialRoutes {
+			var path string
+			if p.route[len(p.route)-1] == '/' {
+				path = partialPath
+			} else {
+				path = "/" + partialPath
+			}
+			g.bodyPrintf("  routes.add(%[1]s.mainRoute + \"%[2]s\", %[1]s, routePartial)\n", methodReceiverName, path)
+		}
 		g.bodyPrintf("}\n\n")
 
 		g.bodyPrintf("func init() {\n")
 		g.bodyPrintf("  page := new(%s)\n", typename)
 		g.bodyPrintf("  page.pushupFilePath = %s\n", strconv.Quote(c.filePath()))
+		g.bodyPrintf("  page.mainRoute = %s\n", strconv.Quote(p.route))
 		g.bodyPrintf("  page.register()\n")
 		g.bodyPrintf("}\n\n")
 	case compileLayout:
@@ -1889,7 +2001,7 @@ func (%s *%s) section(name string) template.HTML {
 	return <-up.sections[name]
 }
 
-`, receiver, typename)
+`, methodReceiverName, typename)
 
 		g.bodyPrintf(`
 func (%s *%s) sectionSet(name string) bool {
@@ -1897,23 +2009,23 @@ func (%s *%s) sectionSet(name string) bool {
 	return ok
 }
 
-`, receiver, typename)
+`, methodReceiverName, typename)
 
 	}
 
 	// FIXME(paulsmith): feels a bit hacky to have this method in the page interface
-	g.bodyPrintf("func (%s *%s) filePath() string {\n", receiver, typename)
-	g.bodyPrintf("  return %s.pushupFilePath\n", receiver)
+	g.bodyPrintf("func (%s *%s) filePath() string {\n", methodReceiverName, typename)
+	g.bodyPrintf("  return %s.pushupFilePath\n", methodReceiverName)
 	g.bodyPrintf("}\n\n")
 
 	g.used("net/http")
 	switch strategy {
 	case compilePushupPage:
-		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", receiver, typename)
+		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
 	case compileLayout:
 		g.used("html/template")
-		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {\n", receiver, typename)
-		g.bodyPrintf("  %s.sections = sections\n", receiver)
+		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {\n", methodReceiverName, typename)
+		g.bodyPrintf("  %s.sections = sections\n", methodReceiverName)
 	default:
 		panic("")
 	}
@@ -1922,6 +2034,11 @@ func (%s *%s) sectionSet(name string) bool {
 		p := c.(*pageCodeGen)
 		if p.layout != "" {
 			g.bodyPrintf("  renderLayout := true\n")
+			g.bodyPrintf("  {\n")
+			g.bodyPrintf("    if isPartialRoute(%s.mainRoute, req.URL.Path) {\n", methodReceiverName)
+			g.bodyPrintf("      renderLayout = false\n")
+			g.bodyPrintf("    }\n")
+			g.bodyPrintf("  }\n")
 		}
 
 		// NOTE(paulsmith): we might want to encapsulate this in its own
@@ -2682,6 +2799,9 @@ func (p *codeParser) parseCode() node {
 	} else if p.peek().tok == token.IDENT && p.peek().lit == "section" {
 		p.advance()
 		e = p.parseSectionKeyword()
+	} else if p.peek().tok == token.IDENT && p.peek().lit == "partial" {
+		p.advance()
+		e = p.parsePartialKeyword()
 	} else if p.peek().tok == token.LBRACE {
 		e = p.parseCodeBlock()
 	} else if p.peek().tok == token.IMPORT {
@@ -2838,6 +2958,20 @@ func (p *codeParser) parseSectionKeyword() *nodeSection {
 		return nil
 	}
 	result := &nodeSection{name: p.peek().lit}
+	result.pos.start = p.parser.offset
+	p.advance()
+	result.pos.end = p.parser.offset
+	result.block = p.parseStmtBlock()
+	return result
+}
+
+func (p *codeParser) parsePartialKeyword() *nodePartial {
+	// enter function one past the "partial" IDENT token
+	if p.peek().tok != token.IDENT {
+		p.parser.errorf("expected IDENT, got %s", p.peek().tok.String())
+		return nil
+	}
+	result := &nodePartial{name: p.peek().lit}
 	result.pos.start = p.parser.offset
 	p.advance()
 	result.pos.end = p.parser.offset
@@ -3078,6 +3212,11 @@ func prettyPrintTree(t *syntaxTree) {
 			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.tag.end())
 			return false
 		case *nodeSection:
+			fmt.Fprintf(w, "SECTION %s\n", n.name)
+			f(n.block)
+			return false
+		case *nodePartial:
+			fmt.Fprintf(w, "PARTIAL %s\n", n.name)
 			f(n.block)
 			return false
 		case *nodeBlock:

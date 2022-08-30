@@ -1,0 +1,29 @@
+<p><a href="/partials/">Inline partials</a></p>
+
+<h2>Nested partials</h2>
+
+^partial foo {
+    <ul>
+        <li><a href="/partials/nested/foo">Foo</a></li>
+        ^partial bar {
+            <ul><li><a href="/partials/nested/foo/bar">Bar</a></li></ul>
+        }
+    </ul>
+}
+
+<hr>
+
+^partial first {
+    <ul>
+        <li><a href="/partials/nested/first">First</a></li>
+        ^partial second {
+            <ul>
+                <li><a href="/partials/nested/first/second">Second</a></li>
+                ^partial third {
+                    <ul><li><a href="/partials/nested/first/second/third">Third</a></li></ul>
+                }
+            </ul>
+        }
+    </ul>
+}
+

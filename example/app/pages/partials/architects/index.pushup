@@ -1,0 +1,47 @@
+^import "strconv"
+
+^{
+    db := []string {
+        "Mies van der Rohe",
+        "Jeanne Gang",
+        "Le Courbosier",
+        "Zaha Hadid",
+        "Frank Gehry",
+        "Rem Koolhaas",
+    }
+    pageQuery := req.FormValue("page")
+    var page int
+    if pageQuery != "" {
+        var err error
+        page, err = strconv.Atoi(pageQuery)
+        if err != nil {
+            panic(err)
+        }
+    }
+    if page > (len(db) / 2) - 1 {
+        page = 0
+    }
+    architects := db[page * 2:page * 2 + 2]
+}
+
+<p><a href="/partials/">Inline partials</a></p>
+
+<h2>Architects</h2>
+<a href="./list">^(req.URL.Path + "list")</a>
+^partial list {
+    <div>
+        <ul>
+            ^for _, architect := range architects {
+                <li>^architect</li>
+            }
+        </ul>
+        <button
+            hx-get="./list?page=^(page + 1)"
+            hx-target="closest div"
+            hx-push-url="./?page=^(page + 1)"
+        >
+            Next
+        </button>
+    </div>
+}
+
