@@ -2,45 +2,42 @@
 
 ![workflow status](https://github.com/AdHocRandD/pushup/actions/workflows/go.yml/badge.svg)
 
--   [What is Pushup?](#what-is-pushup)
--   [Getting started](#getting-started)
-
-*   [Installing Pushup](#installing-pushup)
-    -   [Prerequisites](#prerequisites)
-    -   [Install via git](#install-via-git)
-    -   [Install via `go install`](#install-via-go-install)
-*   [Creating a new Pushup project](#creating-a-new-pushup-project)
-
--   [Example demo app](#example-demo-app)
--   [Go modules and Pushup projects](#go-modules-and-pushup-projects)
--   [Project directory structure](#project-directory-structure)
--   [Pages](#pages)
--   [Layouts](#layouts)
--   [Static media](#static-media)
--   [File-based routing](#file-based-routing)
-
-*   [Dynamic routes](#dynamic-routes)
-
--   [Pushup syntax](#pushup-syntax)
-
-*   [How it works](#how-it-works)
-*   [Directives](#directives)
-    -   [`^import`](#import)
-    -   [`^layout`](#layout)
-    -   [`^contents`](#contents)
-*   [Code blocks](#code-blocks)
-    -   [`^{`](#)
-    -   [`^handler`](#handler)
-*   [Control flow statements](#control-flow-statements)
-    -   [`^if`](#if)
-    -   [`^for`](#for)
-*   [Expressions](#expressions)
-    -   [Simple expressions](#simple-expressions)
-    -   [Explicit expressions](#explicit-expressions)
-*   [Layout](#layout)
-    -   [`^section`](#section)
-
--   [Vim syntax file](#vim-syntax-file)
+-   [Pushup - a page-oriented web framework for Go](#pushup---a-page-oriented-web-framework-for-go)
+    -   [What is Pushup?](#what-is-pushup)
+    -   [Getting started](#getting-started)
+        -   [Installing Pushup](#installing-pushup)
+            -   [Prerequisites](#prerequisites)
+            -   [Install via git](#install-via-git)
+            -   [Install via `go install`](#install-via-go-install)
+        -   [Creating a new Pushup project](#creating-a-new-pushup-project)
+    -   [Example demo app](#example-demo-app)
+    -   [Go modules and Pushup projects](#go-modules-and-pushup-projects)
+    -   [Project directory structure](#project-directory-structure)
+    -   [Pages](#pages)
+    -   [Layouts](#layouts)
+    -   [Static media](#static-media)
+    -   [File-based routing](#file-based-routing)
+        -   [Dynamic routes](#dynamic-routes)
+    -   [Enhanced hypertext](#enhanced-hypertext)
+        -   [Inline partials](#inline-partials)
+    -   [Pushup syntax](#pushup-syntax)
+        -   [How it works](#how-it-works)
+        -   [Directives](#directives)
+            -   [`^import`](#import)
+            -   [`^layout`](#layout)
+        -   [Go code blocks](#go-code-blocks)
+            -   [`^{`](#)
+            -   [`^handler`](#handler)
+        -   [Control flow statements](#control-flow-statements)
+            -   [`^if`](#if)
+            -   [`^for`](#for)
+        -   [Expressions](#expressions)
+            -   [Simple expressions](#simple-expressions)
+            -   [Explicit expressions](#explicit-expressions)
+        -   [Layout and templates](#layout-and-templates)
+            -   [`^section`](#section)
+            -   [`^partial`](#partial)
+    -   [Vim syntax file](#vim-syntax-file)
 
 Pushup is an experimental new project that is exploring the viability of a new
 approach to web frameworks in Go.
@@ -489,9 +486,9 @@ For example, if the page above had the route `/elements/`, then a request to
 
 ```html
 <ul>
-    <li>Ag</li>
-    <li>Na</li>
-    <li>C</li>
+	<li>Ag</li>
+	<li>Na</li>
+	<li>C</li>
 </ul>
 ```
 
