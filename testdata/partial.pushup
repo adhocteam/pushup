@@ -1,4 +1,9 @@
 <h1>Partial test</h1>
 ^partial inline {
-    <p>Inline</p>
+    <p>
+        Inline
+        ^partial nested {
+            <p>Nested</p>
+        }
+    </p>
 }

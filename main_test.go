@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -22,6 +23,12 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sync/errgroup"
 )
+
+type testRequest struct {
+	name           string
+	path           string
+	expectedOutput string
+}
 
 func TestPushup(t *testing.T) {
 	tmpdir := t.TempDir()
@@ -41,15 +48,61 @@ func TestPushup(t *testing.T) {
 		if strings.HasSuffix(entry.Name(), ".pushup") {
 			t.Run(entry.Name(), func(t *testing.T) {
 				basename, _ := splitExt(entry.Name())
-				// FIXME(paulsmith): add metadata to the testdata files with the
-				// desired path to avoid these hacks
-				requestPath := "/testdata/" + basename
-				if basename == "index" {
-					requestPath = "/testdata/"
-				} else if basename == "$name" {
-					requestPath = "/testdata/world"
+
+				var requests []testRequest
+
+				extendedDir := filepath.Join(testdataDir, basename)
+				if dirExists(extendedDir) {
+					entries, err := os.ReadDir(extendedDir)
+					if err != nil {
+						t.Fatalf("reading extended dir: %v", err)
+					}
+					for _, entry := range entries {
+						if strings.HasSuffix(entry.Name(), ".conf") {
+							config := testRequest{name: entry.Name()}
+							req, _ := splitExt(entry.Name())
+							outFile := filepath.Join(extendedDir, req+".out")
+							if !fileExists(outFile) {
+								t.Fatalf("request file %v needs a matching output file", entry.Name())
+							}
+							reqFile := filepath.Join(extendedDir, entry.Name())
+							{
+								b, err := os.ReadFile(reqFile)
+								if err != nil {
+									t.Fatalf("reading request file %v: %v", reqFile, err)
+								}
+								s := string(b)
+								lines := strings.Split(s, "\n")
+								for _, line := range lines {
+									line := strings.TrimSpace(line)
+									if line != "" {
+										pair := strings.Split(line, "=")
+										if len(pair) != 2 {
+											t.Fatalf("illegal request key-value pair: %q", line)
+										}
+										switch pair[0] {
+										case "requestPath":
+											config.path = pair[1]
+										default:
+											log.Printf("unhandled request config key: %q", pair[0])
+										}
+									}
+								}
+							}
+							{
+								b, err := os.ReadFile(outFile)
+								if err != nil {
+									t.Fatalf("reading output file %v: %v", outFile, err)
+								}
+								config.expectedOutput = string(b)
+							}
+							requests = append(requests, config)
+						}
+					}
 				}
+
 				pushupFile := filepath.Join(testdataDir, entry.Name())
+
 				outFile := filepath.Join(testdataDir, basename+".out")
 				if _, err := os.Stat(outFile); err != nil {
 					if errors.Is(err, fs.ErrNotExist) {
@@ -58,135 +111,153 @@ func TestPushup(t *testing.T) {
 						t.Fatalf("stat'ing output file: %v", err)
 					}
 				}
-
-				want, err := os.ReadFile(outFile)
+				output, err := os.ReadFile(outFile)
 				if err != nil {
 					t.Fatalf("reading output file: %v", err)
 				}
 
-				g, ctx0 := errgroup.WithContext(context.Background())
-				ctx, cancel := context.WithTimeout(ctx0, 5*time.Second)
-				defer cancel()
-
-				ready := make(chan bool)
-				done := make(chan bool)
-
-				tmpdir, err := ioutil.TempDir("", "pushuptests")
-				if err != nil {
-					t.Fatalf("creating temp dir: %v", err)
+				// FIXME(paulsmith): add metadata to the testdata files with the
+				// desired path to avoid these hacks
+				requestPath := "/testdata/" + basename
+				if basename == "index" {
+					requestPath = "/testdata/"
+				} else if basename == "$name" {
+					requestPath = "/testdata/world"
 				}
-				defer os.RemoveAll(tmpdir)
-				socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+"-"+strconv.Itoa(int(rand.Uint32()))+".sock")
 
-				var errb bytes.Buffer
+				requests = append(requests, testRequest{
+					path:           requestPath,
+					expectedOutput: string(output),
+				})
 
-				g.Go(func() error {
-					cmd := exec.Command(pushup, "run", "-build-pkg", "github.com/AdHocRandD/pushup/build", "-page", pushupFile, "-unix-socket", socketPath)
-					sysProcAttr(cmd)
+				for _, request := range requests {
+					t.Run(request.name, func(t *testing.T) {
 
-					stdout, err := cmd.StdoutPipe()
-					if err != nil {
-						return err
-					}
+						g, ctx0 := errgroup.WithContext(context.Background())
+						ctx, cancel := context.WithTimeout(ctx0, 5*time.Second)
+						defer cancel()
 
-					cmd.Stderr = &errb
+						ready := make(chan bool)
+						done := make(chan bool)
 
-					if err := cmd.Start(); err != nil {
-						return err
-					}
+						tmpdir, err := ioutil.TempDir("", "pushuptests")
+						if err != nil {
+							t.Fatalf("creating temp dir: %v", err)
+						}
+						defer os.RemoveAll(tmpdir)
+						socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+"-"+strconv.Itoa(int(rand.Uint32()))+".sock")
 
-					g.Go(func() error {
-						var buf [256]byte
-						// NOTE(paulsmith): keep this in sync with the string in main.go
-						needle := []byte("Pushup ready and listening on ")
-						select {
-						case <-ctx.Done():
-							err := ctx.Err()
-							return err
-						default:
-							for {
-								n, err := stdout.Read(buf[:])
-								if n > 0 {
-									if bytes.Contains(buf[:], needle) {
-										ready <- true
-										return nil
+						var errb bytes.Buffer
+
+						g.Go(func() error {
+							cmd := exec.Command(pushup, "run", "-build-pkg", "github.com/AdHocRandD/pushup/build", "-page", pushupFile, "-unix-socket", socketPath)
+							sysProcAttr(cmd)
+
+							stdout, err := cmd.StdoutPipe()
+							if err != nil {
+								return err
+							}
+
+							cmd.Stderr = &errb
+
+							if err := cmd.Start(); err != nil {
+								return err
+							}
+
+							g.Go(func() error {
+								var buf [256]byte
+								// NOTE(paulsmith): keep this in sync with the string in main.go
+								needle := []byte("Pushup ready and listening on ")
+								select {
+								case <-ctx.Done():
+									err := ctx.Err()
+									return err
+								default:
+									for {
+										n, err := stdout.Read(buf[:])
+										if n > 0 {
+											if bytes.Contains(buf[:], needle) {
+												ready <- true
+												return nil
+											}
+										} else {
+											if errors.Is(err, io.EOF) {
+												return nil
+											}
+											return err
+										}
 									}
-								} else {
-									if errors.Is(err, io.EOF) {
-										return nil
-									}
+								}
+							})
+
+							g.Go(func() error {
+								select {
+								case <-done:
+									syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+									cmd.Wait()
+									return nil
+								case <-ctx.Done():
+									err := ctx.Err()
 									return err
 								}
+							})
+
+							if err := cmd.Wait(); err != nil {
+								return err
+							}
+
+							return nil
+						})
+
+						var allgood bool
+
+						g.Go(func() error {
+							select {
+							case <-ready:
+							case <-ctx.Done():
+								err := ctx.Err()
+								return err
+							}
+							client := &http.Client{
+								Transport: &http.Transport{
+									Dial: func(proto, addr string) (net.Conn, error) {
+										return net.Dial("unix", socketPath)
+									},
+								},
+							}
+							resp, err := client.Get("http://dummy" + request.path)
+							if err != nil {
+								return nil
+							}
+							defer resp.Body.Close()
+							got, err := io.ReadAll(resp.Body)
+							if err != nil {
+								return nil
+							}
+							done <- true
+							if diff := cmp.Diff(request.expectedOutput, string(got)); diff != "" {
+								t.Errorf("expected render diff (-want +got)\n%s", diff)
+							} else {
+								allgood = true
+							}
+							return nil
+						})
+
+						go func() {
+							g.Wait()
+							close(ready)
+							close(done)
+						}()
+
+						if err := g.Wait(); err != nil {
+							if _, ok := err.(*exec.ExitError); ok && allgood {
+								// no-op
+							} else {
+								t.Logf("stderr:\n%s\n", errb.String())
+								t.Fatalf("error: %T %v", err, err)
 							}
 						}
 					})
-
-					g.Go(func() error {
-						select {
-						case <-done:
-							syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
-							cmd.Wait()
-							return nil
-						case <-ctx.Done():
-							err := ctx.Err()
-							return err
-						}
-					})
-
-					if err := cmd.Wait(); err != nil {
-						return err
-					}
-
-					return nil
-				})
-
-				var allgood bool
-
-				g.Go(func() error {
-					select {
-					case <-ready:
-					case <-ctx.Done():
-						err := ctx.Err()
-						return err
-					}
-					client := &http.Client{
-						Transport: &http.Transport{
-							Dial: func(proto, addr string) (net.Conn, error) {
-								return net.Dial("unix", socketPath)
-							},
-						},
-					}
-					resp, err := client.Get("http://dummy" + requestPath)
-					if err != nil {
-						return nil
-					}
-					defer resp.Body.Close()
-					got, err := io.ReadAll(resp.Body)
-					if err != nil {
-						return nil
-					}
-					done <- true
-					if diff := cmp.Diff(string(want), string(got)); diff != "" {
-						t.Errorf("expected render diff (-want +got)\n%s", diff)
-					} else {
-						allgood = true
-					}
-					return nil
-				})
-
-				go func() {
-					g.Wait()
-					close(ready)
-					close(done)
-				}()
-
-				if err := g.Wait(); err != nil {
-					if _, ok := err.(*exec.ExitError); ok && allgood {
-						// no-op
-					} else {
-						t.Logf("stderr:\n%s\n", errb.String())
-						t.Fatalf("error: %T %v", err, err)
-					}
 				}
 			})
 		}
