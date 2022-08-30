@@ -10,7 +10,7 @@ Inline partials TODO
 	- [x] in regular page, just handle like a block
 	- [ ] if routed to as a partial, skip non-partial content and disable layout
 		- [ ] this has to work in an arbitrarily nested context as well
-- [ ] add routes to partials
+- [x] add routes to partials
 - [x] update pretty-printer to handle nodePartial
 
 */
@@ -1795,13 +1795,14 @@ func (c *layoutCodeGen) lineNo(s span) int {
 }
 
 type codeGenerator struct {
-	c           codeGenUnit
-	strategy    compilationStrategy
-	basename    string
-	imports     map[importDecl]bool
-	outb        bytes.Buffer
-	bodyb       bytes.Buffer
-	ioWriterVar string
+	c                codeGenUnit
+	strategy         compilationStrategy
+	basename         string
+	imports          map[importDecl]bool
+	outb             bytes.Buffer
+	bodyb            bytes.Buffer
+	ioWriterVar      string
+	partialGuardCond string
 }
 
 func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrategy) *codeGenerator {
@@ -1843,7 +1844,14 @@ func (g *codeGenerator) bodyPrintf(format string, args ...any) {
 
 func (g *codeGenerator) generate() {
 	nodes := g.c.nodes()
+	g.partialGuardCond = "!up.isPartialRoute(req.URL.Path)" // FIXME: put receiver in codeGenerator
+	if _, ok := g.c.(*pageCodeGen); ok {
+		g.bodyPrintf("if %s {\n", g.partialGuardCond)
+	}
 	g.genFromNode(nodeList(nodes))
+	if _, ok := g.c.(*pageCodeGen); ok {
+		g.bodyPrintf("}\n")
+	}
 }
 
 func (g *codeGenerator) genFromNode(n node) {
@@ -1869,6 +1877,7 @@ func (g *codeGenerator) genFromNode(n node) {
 			if e.context != inlineGoCode {
 				panic(fmt.Sprintf("assertion failure: expected inlineGoCode, got %v", e.context))
 			}
+			g.bodyPrintf("}\n") // close partial rendering guard `if`
 			srcLineNo := g.c.lineNo(e.Pos())
 			lines := strings.Split(e.code, "\n")
 			for _, line := range lines {
@@ -1876,6 +1885,7 @@ func (g *codeGenerator) genFromNode(n node) {
 				g.bodyPrintf("%s\n", line)
 				srcLineNo++
 			}
+			g.bodyPrintf("if %s {\n", g.partialGuardCond)
 		case *nodeIf:
 			g.bodyPrintf("if %s {\n", e.cond.expr)
 			f(e.then)
@@ -1904,8 +1914,15 @@ func (g *codeGenerator) genFromNode(n node) {
 			f(e.block)
 			return false
 		case *nodePartial:
+			if _, ok := g.c.(*pageCodeGen); !ok {
+				panic("partials are not defined in layouts")
+			}
 			partialPath = append(partialPath, e.name)
+			g.bodyPrintf("}\n") // closes opening if
+			g.bodyPrintf("if %[1]s.displayPartialHere(%[1]s.mainRoute + %[2]s, req.URL.Path) {\n", "up", strconv.Quote(strings.Join(partialPath, "/")))
 			f(e.block)
+			g.bodyPrintf("}\n")
+			g.bodyPrintf("if %s {\n", g.partialGuardCond)
 			partialPath = partialPath[:len(partialPath)-1]
 			return false
 		case *nodeLayout:
@@ -1937,6 +1954,7 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 
 	fields := []field{
 		{name: "pushupFilePath", typ: "string"},
+		{name: "mainRoute", typ: "string"},
 	}
 
 	if strategy == compileLayout {
@@ -1959,22 +1977,48 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 	switch strategy {
 	case compilePushupPage:
 		p := c.(*pageCodeGen)
-		g.bodyPrintf("func (up *%s) register() {\n", typename)
-		g.bodyPrintf("  routes.add(\"%s\", %s)\n", p.route, receiver)
+		g.bodyPrintf("func (%s *%s) register() {\n", receiver, typename)
+		g.bodyPrintf("  routes.add(%[1]s.mainRoute, %[1]s)\n", receiver)
+		if len(p.page.partialRoutes) > 0 {
+			g.bodyPrintf("  // partial routes\n")
+		}
 		for _, partialPath := range p.page.partialRoutes {
 			var path string
 			if p.route[len(p.route)-1] == '/' {
-				path = p.route + partialPath
+				path = partialPath
 			} else {
-				path = p.route + "/" + partialPath
+				path = "/" + partialPath
 			}
-			g.bodyPrintf("  // routes.add(\"%s\", %s)\n", path, receiver)
+			// FIXME(paulsmith): add a param to routes.add() that indicates this is a partial route
+			g.bodyPrintf("  routes.add(%[1]s.mainRoute + \"%[2]s\", %[1]s)\n", receiver, path)
 		}
+		g.bodyPrintf("}\n\n")
+
+		// FIXME(paulsmith): move this to an API package and not codegen
+		g.bodyPrintf("func (%s *%s) isPartialRoute(path string) bool {\n", receiver, typename)
+		g.bodyPrintf("  if path == %s.mainRoute {\n", receiver)
+		g.bodyPrintf("    return false\n")
+		g.used("strings")
+		g.bodyPrintf("  } else if strings.HasPrefix(path, %s.mainRoute) {\n", receiver)
+		g.bodyPrintf("    return true\n")
+		g.bodyPrintf("  } else {\n")
+		g.bodyPrintf("    panic(\"internal error: unexpected path\")\n")
+		g.bodyPrintf("  }\n")
+		g.bodyPrintf("}\n\n")
+
+		// FIXME(paulsmith): move this to an API package and not codegen
+		g.bodyPrintf("func (%s *%s) displayPartialHere(partialPath string, path string) bool {\n", receiver, typename)
+		g.used("strings")
+		g.bodyPrintf("  if strings.HasPrefix(partialPath, path) {\n")
+		g.bodyPrintf("    return true\n")
+		g.bodyPrintf("  }\n")
+		g.bodyPrintf("  return false\n")
 		g.bodyPrintf("}\n\n")
 
 		g.bodyPrintf("func init() {\n")
 		g.bodyPrintf("  page := new(%s)\n", typename)
 		g.bodyPrintf("  page.pushupFilePath = %s\n", strconv.Quote(c.filePath()))
+		g.bodyPrintf("  page.mainRoute = %s\n", strconv.Quote(p.route))
 		g.bodyPrintf("  page.register()\n")
 		g.bodyPrintf("}\n\n")
 	case compileLayout:
@@ -2023,6 +2067,11 @@ func (%s *%s) sectionSet(name string) bool {
 		p := c.(*pageCodeGen)
 		if p.layout != "" {
 			g.bodyPrintf("  renderLayout := true\n")
+			g.bodyPrintf("  {\n")
+			g.bodyPrintf("    if %s.isPartialRoute(req.URL.Path) {\n", receiver)
+			g.bodyPrintf("      renderLayout = false\n")
+			g.bodyPrintf("    }\n")
+			g.bodyPrintf("  }\n")
 		}
 
 		// NOTE(paulsmith): we might want to encapsulate this in its own

@@ -9,7 +9,10 @@
     }
 }
 
+<p>This page: ^req.URL.Path</p>
+
 <h1>Architects</h1>
+<a href="./list">^(req.URL.Path + "list")</a>
 ^partial list {
     <ul>
         ^for _, architect := range architects {
@@ -18,25 +21,34 @@
     </ul>
 }
 
+<hr>
+
+<p><a href="./foo">^(req.URL.Path + "foo")</a></p>
+<p><a href="./foo/bar">^(req.URL.Path + "foo/bar")</a></p>
 ^partial foo {
-    <p>
-        Foo
+    <ul>
+        <li>Foo</li>
         ^partial bar {
-            <p>Bar</p>
+            <ul><li>Bar</li></ul>
         }
-    </p>
+    </ul>
 }
 
+<hr>
+
+<p><a href="./first">^(req.URL.Path + "first")</a></p>
+<p><a href="./first/second">^(req.URL.Path + "first/second")</a></p>
+<p><a href="./first/second/third">^(req.URL.Path + "first/second/third")</a></p>
 ^partial first {
-    <p>
-        Foo
+    <ul>
+        <li>First</li>
         ^partial second {
-            <p>
-                Bar
+            <ul>
+                <li>Second</li>
                 ^partial third {
-                    <p>Quux</p>
+                    <ul><li>Third</li></ul>
                 }
-            </p>
+            </ul>
         }
-    </p>
+    </ul>
 }
