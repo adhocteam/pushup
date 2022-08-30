@@ -1979,6 +1979,7 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 
 		// FIXME(paulsmith): move this to an API package and not codegen
 		g.bodyPrintf("func (%s *%s) isPartialRoute(path string) bool {\n", receiver, typename)
+		// FIXME(paulsmith): replace with getRouteFromPath (for dynamic routes)
 		g.bodyPrintf("  if path == %s.mainRoute {\n", receiver)
 		g.bodyPrintf("    return false\n")
 		g.used("strings")

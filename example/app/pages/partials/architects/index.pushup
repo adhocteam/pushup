@@ -1,5 +1,7 @@
+^import "strconv"
+
 ^{
-    architects := []string {
+    db := []string {
         "Mies van der Rohe",
         "Jeanne Gang",
         "Le Courbosier",
@@ -7,48 +9,40 @@
         "Frank Gehry",
         "Rem Koolhaas",
     }
+    pageQuery := req.FormValue("page")
+    var page int
+    if pageQuery != "" {
+        var err error
+        page, err = strconv.Atoi(pageQuery)
+        if err != nil {
+            panic(err)
+        }
+    }
+    if page > (len(db) / 2) - 1 {
+        page = 0
+    }
+    architects := db[page * 2:page * 2 + 2]
 }
+
+<h1>Inline partials</h1>
 
 <p>This page: ^req.URL.Path</p>
 
-<h1>Architects</h1>
+<h2>Architects</h2>
 <a href="./list">^(req.URL.Path + "list")</a>
 ^partial list {
-    <ul>
-        ^for _, architect := range architects {
-            <li>^architect</li>
-        }
-    </ul>
+    <div>
+        <ul>
+            ^for _, architect := range architects {
+                <li>^architect</li>
+            }
+        </ul>
+        <button
+            hx-get="./list?page=^(page + 1)"
+            hx-target="closest div"
+        >
+            Next
+        </button>
+    </div>
 }
 
-<hr>
-
-<p><a href="./foo">^(req.URL.Path + "foo")</a></p>
-<p><a href="./foo/bar">^(req.URL.Path + "foo/bar")</a></p>
-^partial foo {
-    <ul>
-        <li>Foo</li>
-        ^partial bar {
-            <ul><li>Bar</li></ul>
-        }
-    </ul>
-}
-
-<hr>
-
-<p><a href="./first">^(req.URL.Path + "first")</a></p>
-<p><a href="./first/second">^(req.URL.Path + "first/second")</a></p>
-<p><a href="./first/second/third">^(req.URL.Path + "first/second/third")</a></p>
-^partial first {
-    <ul>
-        <li>First</li>
-        ^partial second {
-            <ul>
-                <li>Second</li>
-                ^partial third {
-                    <ul><li>Third</li></ul>
-                }
-            </ul>
-        }
-    </ul>
-}
