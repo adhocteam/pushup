@@ -1,4 +1,4 @@
-# Pushup - a modern web framework for Go
+# Pushup - a page-oriented web framework for Go
 
 ![workflow status](https://github.com/AdHocRandD/pushup/actions/workflows/go.yml/badge.svg)
 

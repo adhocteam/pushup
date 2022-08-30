@@ -246,3 +246,22 @@ func GetPageSource(path string) []byte {
 	}
 	return data
 }
+
+// Inline partials
+
+func isPartialRoute(mainRoute string, path string) bool {
+	if path == mainRoute {
+		return false
+	} else if strings.HasPrefix(path, mainRoute) {
+		return true
+	} else {
+		panic("internal error: unexpected path")
+	}
+}
+
+func displayPartialHere(partialPath string, path string) bool {
+	if strings.HasPrefix(partialPath, path) {
+		return true
+	}
+	return false
+}

@@ -1777,6 +1777,8 @@ func (c *layoutCodeGen) lineNo(s span) int {
 	return lineCount(c.source[:s.start+1])
 }
 
+const methodReceiverName = "up"
+
 type codeGenerator struct {
 	c                codeGenUnit
 	strategy         compilationStrategy
@@ -1827,7 +1829,7 @@ func (g *codeGenerator) bodyPrintf(format string, args ...any) {
 
 func (g *codeGenerator) generate() {
 	nodes := g.c.nodes()
-	g.partialGuardCond = "!up.isPartialRoute(req.URL.Path)" // FIXME: put receiver in codeGenerator
+	g.partialGuardCond = fmt.Sprintf("!isPartialRoute(%s.mainRoute, req.URL.Path)", methodReceiverName)
 	if _, ok := g.c.(*pageCodeGen); ok {
 		g.bodyPrintf("if %s {\n", g.partialGuardCond)
 	}
@@ -1902,7 +1904,8 @@ func (g *codeGenerator) genFromNode(n node) {
 			}
 			partialPath = append(partialPath, e.name)
 			g.bodyPrintf("}\n") // closes opening if
-			g.bodyPrintf("if %[1]s.displayPartialHere(%[1]s.mainRoute + %[2]s, req.URL.Path) {\n", "up", strconv.Quote(strings.Join(partialPath, "/")))
+			path := strconv.Quote(strings.Join(partialPath, "/"))
+			g.bodyPrintf("if displayPartialHere(%s.mainRoute + %s, req.URL.Path) {\n", methodReceiverName, path)
 			f(e.block)
 			g.bodyPrintf("}\n")
 			g.bodyPrintf("if %s {\n", g.partialGuardCond)
@@ -1951,17 +1954,15 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 	}
 	g.bodyPrintf("}\n")
 
-	const receiver = "up"
-
-	g.bodyPrintf("func (%s *%s) buildCliArgs() []string {\n", receiver, typename)
+	g.bodyPrintf("func (%s *%s) buildCliArgs() []string {\n", methodReceiverName, typename)
 	g.bodyPrintf("  return %#v\n", os.Args)
 	g.bodyPrintf("}\n\n")
 
 	switch strategy {
 	case compilePushupPage:
 		p := c.(*pageCodeGen)
-		g.bodyPrintf("func (%s *%s) register() {\n", receiver, typename)
-		g.bodyPrintf("  routes.add(%[1]s.mainRoute, %[1]s)\n", receiver)
+		g.bodyPrintf("func (%s *%s) register() {\n", methodReceiverName, typename)
+		g.bodyPrintf("  routes.add(%[1]s.mainRoute, %[1]s)\n", methodReceiverName)
 		if len(p.page.partialRoutes) > 0 {
 			g.bodyPrintf("  // partial routes\n")
 		}
@@ -1973,30 +1974,8 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 				path = "/" + partialPath
 			}
 			// FIXME(paulsmith): add a param to routes.add() that indicates this is a partial route
-			g.bodyPrintf("  routes.add(%[1]s.mainRoute + \"%[2]s\", %[1]s)\n", receiver, path)
+			g.bodyPrintf("  routes.add(%[1]s.mainRoute + \"%[2]s\", %[1]s)\n", methodReceiverName, path)
 		}
-		g.bodyPrintf("}\n\n")
-
-		// FIXME(paulsmith): move this to an API package and not codegen
-		g.bodyPrintf("func (%s *%s) isPartialRoute(path string) bool {\n", receiver, typename)
-		// FIXME(paulsmith): replace with getRouteFromPath (for dynamic routes)
-		g.bodyPrintf("  if path == %s.mainRoute {\n", receiver)
-		g.bodyPrintf("    return false\n")
-		g.used("strings")
-		g.bodyPrintf("  } else if strings.HasPrefix(path, %s.mainRoute) {\n", receiver)
-		g.bodyPrintf("    return true\n")
-		g.bodyPrintf("  } else {\n")
-		g.bodyPrintf("    panic(\"internal error: unexpected path\")\n")
-		g.bodyPrintf("  }\n")
-		g.bodyPrintf("}\n\n")
-
-		// FIXME(paulsmith): move this to an API package and not codegen
-		g.bodyPrintf("func (%s *%s) displayPartialHere(partialPath string, path string) bool {\n", receiver, typename)
-		g.used("strings")
-		g.bodyPrintf("  if strings.HasPrefix(partialPath, path) {\n")
-		g.bodyPrintf("    return true\n")
-		g.bodyPrintf("  }\n")
-		g.bodyPrintf("  return false\n")
 		g.bodyPrintf("}\n\n")
 
 		g.bodyPrintf("func init() {\n")
@@ -2018,7 +1997,7 @@ func (%s *%s) section(name string) template.HTML {
 	return <-up.sections[name]
 }
 
-`, receiver, typename)
+`, methodReceiverName, typename)
 
 		g.bodyPrintf(`
 func (%s *%s) sectionSet(name string) bool {
@@ -2026,23 +2005,23 @@ func (%s *%s) sectionSet(name string) bool {
 	return ok
 }
 
-`, receiver, typename)
+`, methodReceiverName, typename)
 
 	}
 
 	// FIXME(paulsmith): feels a bit hacky to have this method in the page interface
-	g.bodyPrintf("func (%s *%s) filePath() string {\n", receiver, typename)
-	g.bodyPrintf("  return %s.pushupFilePath\n", receiver)
+	g.bodyPrintf("func (%s *%s) filePath() string {\n", methodReceiverName, typename)
+	g.bodyPrintf("  return %s.pushupFilePath\n", methodReceiverName)
 	g.bodyPrintf("}\n\n")
 
 	g.used("net/http")
 	switch strategy {
 	case compilePushupPage:
-		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", receiver, typename)
+		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
 	case compileLayout:
 		g.used("html/template")
-		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {\n", receiver, typename)
-		g.bodyPrintf("  %s.sections = sections\n", receiver)
+		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {\n", methodReceiverName, typename)
+		g.bodyPrintf("  %s.sections = sections\n", methodReceiverName)
 	default:
 		panic("")
 	}
@@ -2052,7 +2031,7 @@ func (%s *%s) sectionSet(name string) bool {
 		if p.layout != "" {
 			g.bodyPrintf("  renderLayout := true\n")
 			g.bodyPrintf("  {\n")
-			g.bodyPrintf("    if %s.isPartialRoute(req.URL.Path) {\n", receiver)
+			g.bodyPrintf("    if isPartialRoute(%s.mainRoute, req.URL.Path) {\n", methodReceiverName)
 			g.bodyPrintf("      renderLayout = false\n")
 			g.bodyPrintf("    }\n")
 			g.bodyPrintf("  }\n")
