@@ -33,7 +33,3 @@
 } else {
     <p><a href="/dyn/world">/dyn/world</a></p>
 }
-
-^partial foo {
-    <p><b>Foo</b></p>
-}
