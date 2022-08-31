@@ -1,3 +1,34 @@
+^{
+    type model struct {
+        value string
+        label string
+    }
+    makesAndModels := map[string][]model {
+        "Apple silicon": []model {
+            {value: "M1", label: "M1"},
+            {value: "M2", label: "M2"},
+        },
+        "Intel": []model {
+            {value: "i3", label: "Core i3"},
+            {value: "i5", label: "Core i5"},
+            {value: "i7", label: "Core i7"},
+        },
+        "AMD": []model {
+            {value: "ryzen5", label: "Ryzen 5"},
+            {value: "ryzen7", label: "Ryzen 7"},
+            {value: "ryzen9", label: "Ryzen 9"},
+        },
+    }
+    var models []model
+    make := req.FormValue("make")
+    if make == "" {
+        make= "Apple silicon"
+    }
+    if m, ok := makesAndModels[make]; ok {
+        models = m
+    }
+}
+
 <h1>htmx example: Value select</h1>
 
 <h2>Pick a make and model</h2>
@@ -5,16 +36,19 @@
 <div>
     <label>Make</label>
     <select name="make" hx-get="./models" hx-target="#models">
-        <option value="Apple silicon">Apple silicon</option>
-        <option value="Intel">Intel</option>
-        <option value="AMD">AMD</option>
+        ^for make := range makesAndModels {
+            <option value="^make">^make</option>
+        }
     </select>
 </div>
 
 <div>
     <label>Model</label>
-    <select id="models" name="model">
-        <option value="M1">M1</option>
-        <option value="M2">M2</option>
-    </select>
+    ^partial models {
+        <select id="models" name="model">
+            ^for _, model := range models {
+                <option value="^model.value">^model.label</option>
+            }
+        </select>
+    }
 </div>
