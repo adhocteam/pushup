@@ -21,6 +21,8 @@
         -   [Dynamic routes](#dynamic-routes)
     -   [Enhanced hypertext](#enhanced-hypertext)
         -   [Inline partials](#inline-partials)
+    -   [Basic web framework functionality](#basic-web-framework-functionality)
+        -   [Escaping](#escaping)
     -   [Pushup syntax](#pushup-syntax)
         -   [How it works](#how-it-works)
         -   [Directives](#directives)
