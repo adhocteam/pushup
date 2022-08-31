@@ -1945,7 +1945,7 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 	}
 
 	fields := []field{
-		{name: "pushupFilePath", typ: "string"},
+		{name: "upFilePath", typ: "string"},
 		{name: "mainRoute", typ: "string"},
 	}
 
