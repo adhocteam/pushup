@@ -4,6 +4,7 @@
 
 -   [Pushup - a page-oriented web framework for Go](#pushup---a-page-oriented-web-framework-for-go)
     -   [What is Pushup?](#what-is-pushup)
+        -   [Pages in Pushup](#pages-in-pushup)
     -   [Getting started](#getting-started)
         -   [Installing Pushup](#installing-pushup)
             -   [Prerequisites](#prerequisites)
@@ -25,6 +26,7 @@
         -   [Directives](#directives)
             -   [`^import`](#import)
             -   [`^layout`](#layout)
+                -   [`^layout !` - no layout](#layout----no-layout)
         -   [Go code blocks](#go-code-blocks)
             -   [`^{`](#)
             -   [`^handler`](#handler)
@@ -228,7 +230,7 @@ routing.
 
 Layouts are HTML templates that used in common across multiple pages. They are
 just HTML, with Pushup syntax as necessary. Each page renders its contents, and
-then the layout inserts the page contents into the template with the 
+then the layout inserts the page contents into the template with the
 `^up.section("contents")` Pushup syntax.
 
 ## Static media
@@ -321,11 +323,49 @@ any valid syntax from either language.
 
 #### `^import`
 
-Docs TKTK
+Use `^import` to import a Go package into the current Pushup page. The syntax
+for `^import` is the same as a regular [Go import declaration](https://go.dev/ref/spec#Import_declarations)
+
+Example:
+
+```pushup
+^import "strings"
+^import "strconv"
+```
+
+```pushup
+^import . "strings"
+```
 
 #### `^layout`
 
-Docs TKTK
+Layouts are HTML templates that enclose the contents of a Pushup page.
+
+The `^layout` directive instructs Pushup what layout to apply the contents of
+the current page.
+
+The name of the layout following the directive is the filename in the
+`layouts` directory minus the `.up` extension. For example, `^layout main`
+would try to apply the layout located at `app/layouts/main.up`.
+
+`^layout` is optional - if it is not specified, pages automatically get the
+"default" layout (`app/layouts/default.up`).
+
+Example:
+
+```pushup
+^layout homepage
+```
+
+##### `^layout !` - no layout
+
+A page may choose to have no layout applied - that is, the contents of the page
+itself are sent directly to the client with no enclosing template. In this case,
+use the `!` name:
+
+```pushup
+^layout !
+```
 
 ### Go code blocks
 
