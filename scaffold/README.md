@@ -9,4 +9,11 @@ scaffold/
 │   └── default.up
 ├── pages
 │   └── index.up
+├── pkg
+│   └── app.go
+├── README.md
+└── static
+    ├── custom.css
+    ├── htmx.min.js
+    └── pico.min.css
 ```
