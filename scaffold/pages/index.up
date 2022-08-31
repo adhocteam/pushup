@@ -41,8 +41,8 @@
 
 <h4>What to do next?</h4>
 <ul>
-    <li>Design the layout template at <tt>app/layouts/default.pushup</tt></li>
-    <li>Override this file at <tt>app/pages/index.pushup</tt></li>
+    <li>Design the layout template at <tt>app/layouts/default.up</tt></li>
+    <li>Override this file at <tt>app/pages/index.up</tt></li>
     ^if !devReloadFlagSet {
         <li>Check out the live reloading mode with the CLI flag <tt>-dev</tt></li>
     } else {

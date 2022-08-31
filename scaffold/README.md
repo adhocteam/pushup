@@ -1,12 +1,12 @@
 # scaffold
 
 This directory contains files for a newly generated scaffolded Pushup project.
-There is a sample `index.pushup` page and a `default.pushup` layout.
+There is a sample `index.up` page and a `default.up` layout.
 
 ```
 scaffold/
 ├── layouts
-│   └── default.pushup
+│   └── default.up
 ├── pages
-│   └── index.pushup
+│   └── index.up
 ```

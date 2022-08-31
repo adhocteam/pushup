@@ -11,9 +11,9 @@
     // FIXME(paulsmith): this should be a routePathToFilepath API method
     var fpath string
     if path[len(path)-1] == '/' {
-        fpath = path + "index.pushup"
+        fpath = path + "index.up"
     } else {
-        fpath = path + ".pushup"
+        fpath = path + ".up"
     }
     if fpath[0] == '/' {
         fpath = fpath[1:]
