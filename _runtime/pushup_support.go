@@ -15,9 +15,14 @@ import (
 	"strings"
 )
 
-type page interface {
-	// FIXME(paulsmith): return a pushup.Response object instead and don't take a writer
+type Responder interface {
+	// TODO(paulsmith): return a pushup.Response object instead and don't take
+	// a writer
 	Respond(http.ResponseWriter, *http.Request) error
+}
+
+type page interface {
+	Responder
 	filePath() string
 }
 
