@@ -2909,7 +2909,7 @@ func (p *codeParser) parseStmtBlock() *nodeBlock {
 	// we should be at the closing '}' token here
 	if p.peek().tok != token.RBRACE {
 		if p.peek().tok == token.LSS {
-			p.parser.errorf("there must be a single HTML element inside a Go code block, try wrapping them")
+			p.parser.errorf("there must be a single HTML element inside a Go code block, try wrapping them in a <text></text> pseudo-element")
 		} else {
 			p.parser.errorf("expected closing '}', got %v", p.peek())
 		}

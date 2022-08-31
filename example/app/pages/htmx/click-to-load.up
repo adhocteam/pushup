@@ -1,4 +1,16 @@
-^import "math/rand"
+^import "strconv"
+
+^handler{
+    pageQuery := req.FormValue("page")
+    if pageQuery == "" {
+        pageQuery = "1"
+    }
+
+    page, err := strconv.Atoi(pageQuery)
+    if err != nil {
+        return err
+    }
+}
 
 <style>
 table { width: 100%; border-collapse: collapse; }
@@ -6,17 +18,6 @@ th, td { padding: 5px 8px; }
 thead tr { border-bottom: 2px solid #ccc; }
 tbody tr { border-bottom: 1px solid #ccc; }
 </style>
-
-^{
-    var alphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-    uid := func() string{
-        b := make([]rune, 16)
-        for i := range b {
-            b[i] = alphabet[rand.Intn(len(alphabet))]
-        }
-        return string(b)
-    }
-}
 
 <h1>htmx example: Click to load</h1>
 
@@ -29,19 +30,23 @@ tbody tr { border-bottom: 1px solid #ccc; }
         </tr>
     </thead>
     <tbody>
-        ^for i := 0; i < 5; i++ {
-            <tr>
-                <td>Agent Smith</td>
-                <td>void^i@pizza.null</td>
-                <td>^uid()</td>
-            </tr>
+        ^partial rows {
+            <text>
+                ^for i := 0; i < 5; i++ {
+                    <tr>
+                        <td>Agent Smith</td>
+                        <td>void^i@pizza.null</td>
+                        <td>^uid()</td>
+                    </tr>
+                }
+                <tr id="replace-me">
+                    <td colspan=3>
+                        <button hx-get="./click-to-load/rows?page=^(page + 1)" hx-target="#replace-me" hx-swap="outerHTML">
+                            Load more agents
+                        </button>
+                    </td>
+                </tr>
+            </text>
         }
-        <tr id="replace-me">
-            <td colspan=3>
-                <button hx-get="./contacts?page=1" hx-target="#replace-me" hx-swap="outerHTML">
-                    Load more agents
-                </button>
-            </td>
-        </tr>
     </tbody>
 </table>

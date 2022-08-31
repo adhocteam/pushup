@@ -3,6 +3,7 @@ package build
 import (
 	"database/sql"
 	"fmt"
+	"math/rand"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -319,4 +320,14 @@ var fakeNames = []string{
 	"Anne Gloindian",
 	"Dulcie Veeta",
 	"Abby Normal",
+}
+
+var alphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+func uid() string {
+	b := make([]rune, 16)
+	for i := range b {
+		b[i] = alphabet[rand.Intn(len(alphabet))]
+	}
+	return string(b)
 }
