@@ -212,8 +212,9 @@ routing.
 ## Layouts
 
 Layouts are HTML templates that used in common across multiple pages. They are
-just HTML, with the exception of the required Pushup directive `^contents`,
-which indicates where individual page content will be insert when rendered.
+just HTML, with Pushup syntax as necessary. Each page renders its contents, and
+then the layout inserts the page contents into the template with the 
+`^up.section("contents")` Pushup syntax.
 
 ## Static media
 
