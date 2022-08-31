@@ -48,17 +48,32 @@ apps and their improvements to UI interactivity over previous generations.
 
 ## What is Pushup?
 
+Pushup is a program that compiles projects developed with the Pushup markup
+language into standalone web app servers.
+
 There are three main aspects to Pushup:
 
 1. An opinionated project/app directory structure that enables **file-based
    routing**,
-1. A **lightweight syntax** alternative to traditional web framework templates
+1. A **lightweight markup** alternative to traditional web framework templates
    that combines Go code for control flow and imperative, view-controller-like
    code with HTML markup, and
-1. A **compiler** that parses that syntax and generates pure Go code,
+1. A **compiler** that parses that markup and generates pure Go code,
    building standalone web apps on top of the Go stdlib `net/http` package.
 
-The syntax looks like this:
+### Pages in Pushup
+
+The core object in Pushup is the "page": a file with the `.up` extension that
+is a mix of HTML, Go code, and a lightweight markup language that glues them
+together. Pushup pages participate in URL routing by virtue of their path in
+the filesystem. Pushup pages are compiled into pure Go which is then built
+along with a thin runtime into a standalone web app server (which is all
+`net/http` under the hood).
+
+The main proposition motivating Pushup is that the page is the right level of
+abstraction for most kinds of server-side web apps.
+
+The syntax of the Pushup markup language looks like this:
 
 ```pushup
 
