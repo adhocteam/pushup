@@ -298,6 +298,27 @@ disable layouts so that partial responses have just the content they define.
 The ability to quickly define partials, and not have to deal with complexities
 like toggling off layouts, makes it easier to build enhanced hypertext sites.
 
+## Basic web framework functionality
+
+All modern web frameworks should implement a standard set of functionality,
+spanning from safety to convenience. As of this writing, Pushup does not yet
+implement them all, but aspires to prior to any public release.
+
+### Escaping
+
+By default, all content is HTML-escaped, so in general it is safe to directly
+place user-supplied data into Pushup pages. (Note that the framework does
+not (yet) do this in your Go code, data from form submissions and URL queries
+should be validated and treated as unsafe.)
+
+For example, if you wanted to display on the page the query a user searched for,
+this is safe:
+
+```pushup
+^{ query := req.FormValue("query") }
+<p>You search for: <b>^query</b></p>
+```
+
 ## Pushup syntax
 
 ### How it works
@@ -371,21 +392,96 @@ use the `!` name:
 
 #### `^{`
 
-Docs TKTK
+To include statements of Go in a Pushup page, type `^{` followed by your
+Go code, terminating with a closing `}`.
+
+The scope of a `^{ ... }` in the compiled Go code is equal to its surrounding
+markup, so you can define a variable and immediately use it:
+
+```pushup
+^{
+	name := "world"
+}
+<h1>Hello, ^name!</h1>
+```
+
+Because the Pushup parser is only looking for a balanced closing `}`, blocks
+can be one-liners:
+
+```pushup
+^{ name := "world"; greeting := "Hello" }
+<h1>^greeting, ^name!</h1>
+```
+
+A Pushup page can have zero or many `^{ ... }` blocks.
 
 #### `^handler`
 
-Docs TKTK
+A handler is similar to `^{ ... }`. The difference is that there may be at most
+one handler per page, and it is run prior to any other code or markup on the
+page.
+
+A handler is the appropriate place to do "controller"-like (in the MVC sense)
+actions, such as HTTP redirects and errors. In other words, any control flow
+based on the nature of the request, for example, redirecting after a successful
+POST to create a new object in a CRUD operation.
+
+Example:
+
+```pushup
+^handler {
+    if req.Method == "POST" && formValid(req) {
+		if err := createObjectFromForm(req.Form); err == nil {
+			return http.Redirect(w, req, "/success/", http.StatusSeeOther)
+			return nil
+		} else {
+			// error handling
+			...
+	}
+	...
+}
+...
+```
+
+Note that handlers (and all Pushup code) run in a method on a receiver that
+implements Pushup's `Responder` interface, which is
+
+```go
+interface Responder {
+	Respond(http.ResponseWriter, *http.Request) error
+}
+```
+
+To exit from a page early in a handler (i.e., prior to any normal content being
+rendered), return from the method with a nil (for success) or an error (which
+will in general respond with HTTP 500 to the client).
 
 ### Control flow statements
 
 #### `^if`
 
-Docs TKTK
+`^if` takes a boolean Go expression and a block to conditionally render.
+
+Example:
+
+```pushup
+^if query := req.FormValue("query"); query != "" {
+	<p>Query: ^query</p>
+}
+```
 
 #### `^for`
 
-Docs TKTK
+`^for` takes a Go "for" statement condition, clause, or range, and a block,
+and repeatedly executes the block.
+
+Example:
+
+```pushup
+^for i := 0; i < 10; i++ {
+	<p>Number ^i</p>
+}
+```
 
 ### Expressions
 
