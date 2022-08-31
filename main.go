@@ -153,8 +153,9 @@ func (n *newCmd) do() error {
 		}
 	}
 
-	scaffoldFiles := []string{"layouts/default.pushup",
-		"pages/index.pushup",
+	scaffoldFiles := []string{
+		"layouts/default.up",
+		"pages/index.up",
 		"static/pico.min.css",
 		"static/custom.css",
 		"static/htmx.min.js",
@@ -213,7 +214,7 @@ func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
 	flags.BoolVar(&b.codeGenOnly, "codegen-only", false, "codegen only, don't compile")
 	flags.BoolVar(&b.compileOnly, "compile-only", false, "compile only, don't start web server after")
 	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory")
-	flags.BoolVar(&b.embedSource, "embed-source", true, "embed the source .pushup files in executable")
+	flags.BoolVar(&b.embedSource, "embed-source", true, "embed the source .up files in executable")
 	flags.Var(&b.pages, "page", "path to a Pushup page. mulitple can be given")
 }
 
@@ -465,9 +466,9 @@ func newPushupContext(parent context.Context) *pushupContext {
 
 // projectFiles represents all the source files in a Pushup project.
 type projectFiles struct {
-	// paths to .pushup page files
+	// paths to .up page files
 	pages []string
-	// paths to .pushup layout files
+	// paths to .up layout files
 	layouts []string
 	// paths to static files like JS, CSS, etc.
 	static []string
@@ -509,7 +510,7 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 		}
 
 		for _, entry := range entries {
-			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".pushup") {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".up") {
 				path := filepath.Join(layoutsDir, entry.Name())
 				pf.layouts = append(pf.layouts, path)
 			}
@@ -519,7 +520,7 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 	pagesDir := filepath.Join(appDir, "pages")
 	{
 		if err := fs.WalkDir(os.DirFS(pagesDir), ".", func(path string, d fs.DirEntry, err error) error {
-			if !d.IsDir() && filepath.Ext(path) == ".pushup" {
+			if !d.IsDir() && filepath.Ext(path) == ".up" {
 				pf.pages = append(pf.pages, filepath.Join(pagesDir, path))
 			}
 			return nil
@@ -593,7 +594,7 @@ type compileProjectParams struct {
 	// flag to enable layouts (FIXME)
 	enableLayout bool
 
-	// embed .pushup source files in project executable
+	// embed .up source files in project executable
 	embedSource bool
 }
 
@@ -1043,7 +1044,7 @@ func (s *cancellationSource) Value(key any) any {
 func getPushupPagePaths(root string) []string {
 	var paths []string
 	err := fs.WalkDir(os.DirFS(root), ".", func(path string, d fs.DirEntry, err error) error {
-		if !d.IsDir() && filepath.Ext(path) == ".pushup" {
+		if !d.IsDir() && filepath.Ext(path) == ".up" {
 			paths = append(paths, filepath.Join(root, path))
 		}
 		return nil
@@ -1100,7 +1101,7 @@ type buildParams struct {
 	buildDir          string
 }
 
-// buildProject builds the Go program made up of the user's compiled .pushup
+// buildProject builds the Go program made up of the user's compiled .up
 // files and .go code, as well as Pushup's library APIs.
 func buildProject(ctx context.Context, b buildParams) error {
 	mainExeDir := filepath.Join(b.compiledOutputDir, "cmd", b.projectName)
@@ -1234,7 +1235,7 @@ type compileParams struct {
 	enableLayout       bool
 }
 
-// compilePushup compiles a single .pushup file to Go code.
+// compilePushup compiles a single .up file to Go code.
 func compilePushup(c compileParams) error {
 	if err := os.MkdirAll(c.targetDir, 0755); err != nil {
 		return fmt.Errorf("creating output directory %s: %w", c.targetDir, err)
@@ -1821,7 +1822,7 @@ func (g *codeGenerator) nodeLineNo(e node) {
 }
 
 func (g *codeGenerator) lineNo(n int) {
-	g.bodyPrintf("//line %s:%d\n", g.basename+".pushup", n)
+	g.bodyPrintf("//line %s:%d\n", g.basename+".up", n)
 }
 
 func (g *codeGenerator) outPrintf(format string, args ...any) {
@@ -1944,7 +1945,7 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 	}
 
 	fields := []field{
-		{name: "pushupFilePath", typ: "string"},
+		{name: "upFilePath", typ: "string"},
 		{name: "mainRoute", typ: "string"},
 	}
 
@@ -1984,14 +1985,14 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 
 		g.bodyPrintf("func init() {\n")
 		g.bodyPrintf("  page := new(%s)\n", typename)
-		g.bodyPrintf("  page.pushupFilePath = %s\n", strconv.Quote(c.filePath()))
+		g.bodyPrintf("  page.upFilePath = %s\n", strconv.Quote(c.filePath()))
 		g.bodyPrintf("  page.mainRoute = %s\n", strconv.Quote(p.route))
 		g.bodyPrintf("  page.register()\n")
 		g.bodyPrintf("}\n\n")
 	case compileLayout:
 		g.bodyPrintf("func init() {\n")
 		g.bodyPrintf("  layout := new(%s)\n", typename)
-		g.bodyPrintf("  layout.pushupFilePath = %s\n", strconv.Quote(c.filePath()))
+		g.bodyPrintf("  layout.upFilePath = %s\n", strconv.Quote(c.filePath()))
 		g.bodyPrintf("  layouts[\"%s\"] = layout\n", basename)
 		g.bodyPrintf("}\n\n")
 
@@ -2015,7 +2016,7 @@ func (%s *%s) sectionSet(name string) bool {
 
 	// FIXME(paulsmith): feels a bit hacky to have this method in the page interface
 	g.bodyPrintf("func (%s *%s) filePath() string {\n", methodReceiverName, typename)
-	g.bodyPrintf("  return %s.pushupFilePath\n", methodReceiverName)
+	g.bodyPrintf("  return %s.upFilePath\n", methodReceiverName)
 	g.bodyPrintf("}\n\n")
 
 	g.used("net/http")
@@ -2169,7 +2170,7 @@ func (%s *%s) sectionSet(name string) bool {
 		return nil, fmt.Errorf("reading all buffers: %w", err)
 	}
 
-	//fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
+	// fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
 
 	formatted, err := format.Source(raw)
 	if err != nil {

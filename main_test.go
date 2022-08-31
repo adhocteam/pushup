@@ -45,7 +45,7 @@ func TestPushup(t *testing.T) {
 		t.Fatalf("reading testdata dir: %v", err)
 	}
 	for _, entry := range entries {
-		if strings.HasSuffix(entry.Name(), ".pushup") {
+		if strings.HasSuffix(entry.Name(), ".up") {
 			t.Run(entry.Name(), func(t *testing.T) {
 				basename, _ := splitExt(entry.Name())
 
@@ -132,7 +132,6 @@ func TestPushup(t *testing.T) {
 
 				for _, request := range requests {
 					t.Run(request.name, func(t *testing.T) {
-
 						g, ctx0 := errgroup.WithContext(context.Background())
 						ctx, cancel := context.WithTimeout(ctx0, 5*time.Second)
 						defer cancel()
@@ -302,19 +301,19 @@ func TestTrimCommonPrefix(t *testing.T) {
 		want string
 	}{
 		{
-			"app/pages/index.pushup",
+			"app/pages/index.up",
 			"app/pages",
-			"index.pushup",
+			"index.up",
 		},
 		{
-			"./app/pages/index.pushup",
+			"./app/pages/index.up",
 			"app/pages",
-			"index.pushup",
+			"index.up",
 		},
 		{
-			"index.pushup",
+			"index.up",
 			".",
-			"index.pushup",
+			"index.up",
 		},
 	}
 
@@ -334,27 +333,27 @@ func TestRouteFromPath(t *testing.T) {
 		want string
 	}{
 		{
-			"app/pages/index.pushup",
+			"app/pages/index.up",
 			"app/pages",
 			"/",
 		},
 		{
-			"app/pages/about.pushup",
+			"app/pages/about.up",
 			"app/pages",
 			"/about",
 		},
 		{
-			"app/pages/x/sub.pushup",
+			"app/pages/x/sub.up",
 			"app/pages",
 			"/x/sub",
 		},
 		{
-			"testdata/foo.pushup",
+			"testdata/foo.up",
 			".",
 			"/testdata/foo",
 		},
 		{
-			"app/pages/x/$name.pushup",
+			"app/pages/x/$name.up",
 			"app/pages",
 			"/x/:name",
 		},
@@ -364,7 +363,7 @@ func TestRouteFromPath(t *testing.T) {
 			"/:projectId/:productId",
 		},
 		{
-			"app/pages/blah/index.pushup",
+			"app/pages/blah/index.up",
 			"app/pages",
 			"/blah/",
 		},
@@ -387,31 +386,31 @@ func TestGeneratedFilename(t *testing.T) {
 		strategy compilationStrategy
 	}{
 		{
-			"app/pages/index.pushup",
+			"app/pages/index.up",
 			"app/pages",
 			"index.up.go",
 			compilePushupPage,
 		},
 		{
-			"app/pages/about.pushup",
+			"app/pages/about.up",
 			"app/pages",
 			"about.up.go",
 			compilePushupPage,
 		},
 		{
-			"app/pages/x/sub.pushup",
+			"app/pages/x/sub.up",
 			"app/pages",
 			"x__sub.up.go",
 			compilePushupPage,
 		},
 		{
-			"testdata/foo.pushup",
+			"testdata/foo.up",
 			".",
 			"testdata__foo.up.go",
 			compilePushupPage,
 		},
 		{
-			"app/layouts/default.pushup",
+			"app/layouts/default.up",
 			"app/layouts",
 			"default.layout.up.go",
 			compileLayout,
@@ -455,11 +454,11 @@ func TestGeneratedTypename(t *testing.T) {
 		strategy compilationStrategy
 		want     string
 	}{
-		{"index.pushup", ".", compilePushupPage, "IndexPage"},
-		{"foo-bar.pushup", ".", compilePushupPage, "FooBarPage"},
-		{"foo_bar.pushup", ".", compilePushupPage, "FooBarPage"},
-		{"a/b/c.pushup", ".", compilePushupPage, "ABCPage"},
-		{"a/b/$c.pushup", ".", compilePushupPage, "ABDollarSignCPage"},
+		{"index.up", ".", compilePushupPage, "IndexPage"},
+		{"foo-bar.up", ".", compilePushupPage, "FooBarPage"},
+		{"foo_bar.up", ".", compilePushupPage, "FooBarPage"},
+		{"a/b/c.up", ".", compilePushupPage, "ABCPage"},
+		{"a/b/$c.up", ".", compilePushupPage, "ABDollarSignCPage"},
 	}
 
 	for _, test := range tests {
@@ -571,7 +570,8 @@ func TestParse(t *testing.T) {
 					&nodeLiteral{str: "\n", pos: span{start: 20, end: 21}},
 					&nodeGoCode{code: "name := \"world\"\n", pos: span{start: 23, end: 39}},
 					&nodeLiteral{str: "\n", pos: span{start: 42, end: 43}},
-				}},
+				},
+			},
 		},
 		{
 			`^if name != "" {
@@ -597,7 +597,8 @@ func TestParse(t *testing.T) {
 										&nodeLiteral{str: "Hello, ", pos: span{start: 22, end: 29}},
 										&nodeGoStrExpr{expr: "name", pos: span{start: 30, end: 34}},
 										&nodeLiteral{str: "!", pos: span{start: 34, end: 35}},
-									}},
+									},
+								},
 							},
 						},
 						alt: &nodeBlock{
@@ -609,7 +610,8 @@ func TestParse(t *testing.T) {
 									pos:           span{start: 51, end: 55},
 									children: []node{
 										&nodeLiteral{str: "Hello, world!", pos: span{start: 55, end: 68}},
-									}},
+									},
+								},
 							},
 						},
 					},
@@ -724,7 +726,8 @@ func TestParse(t *testing.T) {
 							pkgName: "",
 							path:    "\"time\"",
 						},
-						pos: span{}},
+						pos: span{},
+					},
 				},
 			},
 		},

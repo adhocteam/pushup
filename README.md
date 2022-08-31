@@ -81,7 +81,7 @@ The syntax looks like this:
 ```
 
 You would then place this code in a file somewhere in your `app/pages`
-directory, like `hello.pushup`. The `.pushup` extension is important and tells
+directory, like `hello.up`. The `.up` extension is important and tells
 the compiler that it is a Pushup page. Once you build and run your Pushup app,
 that page is automatically mapped to the URL path `/hello`.
 
@@ -143,7 +143,7 @@ pushup new myproject
 ```
 
 The scaffolded new project directory consists of a directory structure for
-.pushup files and auxiliary project Go code, and a go.mod file.
+.up files and auxiliary project Go code, and a go.mod file.
 
 Change to the new project directory if necessary, then do a `pushup run`,
 which compiles the Pushup project to Go code, builds the app, and starts up
@@ -173,8 +173,8 @@ many of the concepts in Pushup and implements a few small common patterns like
 some HTMX examples and a simple CRUD app.
 
 Click on "view source" at the bottom of any page in the example app to see the
-source of the .pushup page for that route, including the source of the "view
-source" .pushup page itself. This is a good way to see how to write Pushup
+source of the .up page for that route, including the source of the "view
+source" .up page itself. This is a good way to see how to write Pushup
 syntax.
 
 ## Go modules and Pushup projects
@@ -193,7 +193,7 @@ before building. The most minimal Pushup project would look like:
 app
 ├── layouts
 ├── pages
-│   └── index.pushup
+│   └── index.up
 ├── pkg
 └── static
 go.mod
@@ -206,7 +206,7 @@ content. It may be helpful to think of them as both the controller and the view
 in a MVC-like system, but colocated together in the same file.
 
 They are also the basis of file-based routing: the name of the Pushup file,
-minus the .pushup extension, is mapped to the portion of the URL path for
+minus the .up extension, is mapped to the portion of the URL path for
 routing.
 
 ## Layouts
@@ -224,8 +224,8 @@ when it is built, and are accessed via a straightforward mapping under the
 
 ## File-based routing
 
-Pushup maps file locations to URL route paths. So `about.pushup` becomes
-`/about`, and `foo/bar/baz.pushup` becomes `/foo/bar/baz`. More TK ...
+Pushup maps file locations to URL route paths. So `about.up` becomes
+`/about`, and `foo/bar/baz.up` becomes `/foo/bar/baz`. More TK ...
 
 ### Dynamic routes
 
@@ -233,7 +233,7 @@ If the filename of a Pushup page starts with a `$` dollar sign, the portion
 of the URL path that matches will be available to the page via the `getParam()`
 Pushup API method.
 
-For example, let's say there is a Pushup page at `app/pages/people/$id.pushup`.
+For example, let's say there is a Pushup page at `app/pages/people/$id.up`.
 If a browser visits the URL `/people/1234`, the page can access it like a named
 parameter with the API method `getParam()`, for example:
 
@@ -251,10 +251,10 @@ The name of the parameter is the word following the `$` dollar sign, up to a dot
 or a slash. Conceptually, the URL route is `/people/:id`, where `:id` is the
 named parameter that is substituted for the actual value in the request URL.
 
-Directories can be dynamic, too. `app/pages/products/$pid/details.pushup` maps
+Directories can be dynamic, too. `app/pages/products/$pid/details.up` maps
 to `/products/:pid/details`.
 
-Multiple named parameters are allowed, for example, `app/pages/users/$uid/projects/$pid.pushup`
+Multiple named parameters are allowed, for example, `app/pages/users/$uid/projects/$pid.up`
 maps to `/users/:uid/projects/:pid`.
 
 ## Enhanced hypertext
@@ -287,7 +287,7 @@ like toggling off layouts, makes it easier to build enhanced hypertext sites.
 Pushup is a mix of a new syntax consisting of Pushup directives and keywords,
 Go code, and HTML markup.
 
-Parsing a .pushup file always starts out in HTML mode, so you can just put
+Parsing a .up file always starts out in HTML mode, so you can just put
 plain HTML in a file and that's a valid Pushup page.
 
 When the parser encounters a '^' character (caret, ASCII 0x5e) while in
@@ -523,4 +523,4 @@ There is a vim syntax file at the root of the repository, `pushup.vim`. To insta
 -   Locate or create a `syntax` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
 -   Copy [`pushup.vim`](https://github.com/AdHocRandD/pushup/blob/main/pushup.vim) into that directory
 -   Locate or create a `ftdetect` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
--   Create a file `pushup.vim` with this line of code: `au BufRead,BufNewFile *.pushup set filetype=pushup`
+-   Create a file `pushup.vim` with this line of code: `au BufRead,BufNewFile *.up set filetype=pushup`

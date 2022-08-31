@@ -1,6 +1,6 @@
 <h2>Dynamic path segments</h2>
 
-<p>This page lives at <tt>dyn/$name.pushup</tt> in the project directory.</p>
+<p>This page lives at <tt>dyn/$name.up</tt> in the project directory.</p>
 
 <p>The <tt>$name</tt> part matches that part of the path, and is made available
     to Pushup pages with <tt>getParam(req, "name")</tt>.
@@ -12,13 +12,13 @@
 </p>
 
 <p>This also works with directories named starting with a '$'. For example,
-    <tt>users/$userID/projects/$projectID.pushup</tt>
+    <tt>users/$userID/projects/$projectID.up</tt>
 </p>
 
 <hr/>
 
 <dl>
-    <dd>Filesystem:</dd> <dt><tt>&lt;project root&gt;/pages/dyn/$name.pushup</tt></dt>
+    <dd>Filesystem:</dd> <dt><tt>&lt;project root&gt;/pages/dyn/$name.up</tt></dt>
     <dd>Generated route:</dd> <dt><tt>/dyn/([^^/]+)</tt></dt>
 </dl>
 
