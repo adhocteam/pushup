@@ -22,7 +22,7 @@
     source := string(GetPageSource(fpath))
 }
 
-<p>Source code for Pushup page <a href="^path"><b>^path</b></a>:</p>
+<p>Source code for Pushup page <tt>^fpath</tt> for the route <a href="^path"><b>^path</b></a>:</p>
 
 <style>
 pre {
