@@ -234,13 +234,7 @@ func newBuildCmd(arguments []string) *buildCmd {
 	return b
 }
 
-func (b *buildCmd) do() error {
-	if err := os.RemoveAll(b.outDir); err != nil {
-		return fmt.Errorf("removing build dir: %w", err)
-	}
-
-	// FIXME(paulsmith): remove singleFile (and -single flag) and replace with
-	// configurable project root, leading path strip, and optional file paths.
+func (b *buildCmd) rescanProjectFiles() error {
 	if len(b.pages) == 0 {
 		var err error
 		b.files, err = findProjectFiles(b.appDir)
@@ -250,10 +244,22 @@ func (b *buildCmd) do() error {
 	} else {
 		b.files = &projectFiles{pages: []string(b.pages)}
 	}
-	// b.files.debug()
+	return nil
+}
+
+func (b *buildCmd) do() error {
+	if err := os.RemoveAll(b.outDir); err != nil {
+		return fmt.Errorf("removing build dir: %w", err)
+	}
+
+	// FIXME(paulsmith): remove singleFile (and -single flag) and replace with
+	// configurable project root, leading path strip, and optional file paths.
+	if err := b.rescanProjectFiles(); err != nil {
+		return err
+	}
 
 	// FIXME(paulsmith): dedupe this with runCmd.do()
-	compileParams := compileProjectParams{
+	compileParams := &compileProjectParams{
 		root:               b.projectDir,
 		appDir:             b.appDir,
 		outDir:             b.outDir,
@@ -318,7 +324,12 @@ func (r *runCmd) do() error {
 		return fmt.Errorf("build command: %w", err)
 	}
 
-	compileParams := compileProjectParams{
+	if r.compileOnly {
+		return nil
+	}
+
+	// FIXME(paulsmith): dedupe this with buildCmd.do()
+	compileParams := &compileProjectParams{
 		root:               r.projectDir,
 		appDir:             r.appDir,
 		outDir:             r.outDir,
@@ -331,87 +342,92 @@ func (r *runCmd) do() error {
 
 	// TODO(paulsmith): add a linkOnly flag (or a releaseMode flag,
 	// alternatively?)
-	if !r.compileOnly {
-		buildParams := buildParams{
-			projectName:       r.projectName.String(),
-			pkgName:           r.buildPkg,
-			compiledOutputDir: r.outDir,
-			buildDir:          r.outDir,
+	buildParams := buildParams{
+		projectName:       r.projectName.String(),
+		pkgName:           r.buildPkg,
+		compiledOutputDir: r.outDir,
+		buildDir:          r.outDir,
+	}
+
+	ctx := newPushupContext(context.Background())
+
+	if r.devReload {
+		var mu sync.Mutex
+		buildComplete := sync.NewCond(&mu)
+		reload := make(chan struct{})
+		tmpdir, err := ioutil.TempDir("", "pushupdev")
+		if err != nil {
+			return fmt.Errorf("creating temp dir: %v", err)
 		}
-
-		ctx := newPushupContext(context.Background())
-
-		if r.devReload {
-			var mu sync.Mutex
-			buildComplete := sync.NewCond(&mu)
-			reload := make(chan struct{})
-			tmpdir, err := ioutil.TempDir("", "pushupdev")
-			if err != nil {
-				return fmt.Errorf("creating temp dir: %v", err)
-			}
-			defer os.RemoveAll(tmpdir)
-			socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+".sock")
-			if err := startReloadRevProxy(socketPath, buildComplete, r.port); err != nil {
-				return fmt.Errorf("starting reverse proxy: %v", err)
-			}
-			ln, err := net.Listen("unix", socketPath)
-			if err != nil {
-				return fmt.Errorf("listening on Unix socket: %v", err)
-			}
-			go func() {
-				for {
-					select {
-					case <-reload:
-						ctx.fileChangeCancel()
-					case <-ctx.sigNotifyCtx.Done():
-						ctx.sigStop()
-						return
-					}
-				}
-			}()
+		defer os.RemoveAll(tmpdir)
+		socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+".sock")
+		if err := startReloadRevProxy(socketPath, buildComplete, r.port); err != nil {
+			return fmt.Errorf("starting reverse proxy: %v", err)
+		}
+		ln, err := net.Listen("unix", socketPath)
+		if err != nil {
+			return fmt.Errorf("listening on Unix socket: %v", err)
+		}
+		go func() {
 			for {
 				select {
+				case <-reload:
+					ctx.fileChangeCancel()
 				case <-ctx.sigNotifyCtx.Done():
 					ctx.sigStop()
-					return nil
-				default:
-				}
-				if err := compileProject(compileParams); err != nil {
-					return fmt.Errorf("parsing and compiling: %v", err)
-				}
-				ctx = newPushupContext(context.Background())
-				if err := buildProject(ctx, buildParams); err != nil {
-					return fmt.Errorf("building Pushup project: %v", err)
-				}
-				buildComplete.Broadcast()
-				go func() {
-					watchForReload(ctx, ctx.fileChangeCancel, r.appDir, reload)
-				}()
-				if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()+".exe"), ln); err != nil {
-					return fmt.Errorf("building and running generated Go code: %v", err)
+					return
 				}
 			}
-		} else {
-			var err error
-			var ln net.Listener
-			if r.unixSocket != "" {
-				ln, err = net.Listen("unix", r.unixSocket)
-				if err != nil {
-					return fmt.Errorf("listening on Unix socket: %v", err)
-				}
-			} else {
-				addr := fmt.Sprintf("%s:%s", r.host, r.port)
-				ln, err = net.Listen("tcp4", addr)
-				if err != nil {
-					return fmt.Errorf("listening on TCP socket: %v", err)
-				}
+		}()
+		for {
+			select {
+			case <-ctx.sigNotifyCtx.Done():
+				ctx.sigStop()
+				return nil
+			default:
 			}
+			if err := r.rescanProjectFiles(); err != nil {
+				return fmt.Errorf("scanning for project files: %v", err)
+			}
+			// FIXME(paulsmith): this is a bit of a hack, compileParams has a
+			// pointer to the projectFiles, but it isn't being updated after
+			// calling rescanProjectFiles()
+			compileParams.files = r.files
+			if err := compileProject(compileParams); err != nil {
+				return fmt.Errorf("parsing and compiling: %v", err)
+			}
+			ctx = newPushupContext(context.Background())
 			if err := buildProject(ctx, buildParams); err != nil {
 				return fmt.Errorf("building Pushup project: %v", err)
 			}
+			buildComplete.Broadcast()
+			go func() {
+				watchForReload(ctx, ctx.fileChangeCancel, r.appDir, reload)
+			}()
 			if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()+".exe"), ln); err != nil {
 				return fmt.Errorf("building and running generated Go code: %v", err)
 			}
+		}
+	} else {
+		var err error
+		var ln net.Listener
+		if r.unixSocket != "" {
+			ln, err = net.Listen("unix", r.unixSocket)
+			if err != nil {
+				return fmt.Errorf("listening on Unix socket: %v", err)
+			}
+		} else {
+			addr := fmt.Sprintf("%s:%s", r.host, r.port)
+			ln, err = net.Listen("tcp4", addr)
+			if err != nil {
+				return fmt.Errorf("listening on TCP socket: %v", err)
+			}
+		}
+		if err := buildProject(ctx, buildParams); err != nil {
+			return fmt.Errorf("building Pushup project: %v", err)
+		}
+		if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()+".exe"), ln); err != nil {
+			return fmt.Errorf("building and running generated Go code: %v", err)
 		}
 	}
 
@@ -598,7 +614,7 @@ type compileProjectParams struct {
 	embedSource bool
 }
 
-func compileProject(c compileProjectParams) error {
+func compileProject(c *compileProjectParams) error {
 	if c.parseOnly {
 		for _, path := range append(c.files.pages, c.files.layouts...) {
 			b, err := os.ReadFile(path)
@@ -642,6 +658,7 @@ func compileProject(c compileProjectParams) error {
 			enableLayout:       c.enableLayout,
 		}
 		for _, path := range c.files.pages {
+			log.Printf("COMPILING PAGE: %v", path)
 			params.sourcePath = path
 			if err := compilePushup(params); err != nil {
 				return fmt.Errorf("compiling pushup file %s: %w", path, err)
@@ -707,8 +724,11 @@ func watchForReload(ctx context.Context, cancel context.CancelFunc, root string,
 	}
 
 	go debounceEvents(ctx, 125*time.Millisecond, watcher, func(event fsnotify.Event) {
-		// log.Printf("name: %s\top: %s", event.Name, event.Op)
-		if event.Op == fsnotify.Create && isDir(event.Name) {
+		//log.Printf("name: %s\top: %s", event.Name, event.Op)
+		if event.Op != fsnotify.Create {
+			return
+		}
+		if isDir(event.Name) {
 			if err := watchDirRecursively(watcher, event.Name); err != nil {
 				panic(err)
 			}
@@ -1131,6 +1151,10 @@ func buildProject(ctx context.Context, b buildParams) error {
 	return nil
 }
 
+// runProject runs the generated Pushup project executable, taking a listener
+// from the caller for its server. this is meant to be used primarily during
+// development with `pushup run`, as a production deployment can merely deploy
+// the executable and run it directly.
 func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 	var file *os.File
 	var err error
@@ -1185,7 +1209,7 @@ func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 	g.Go(func() error {
 		defer close(done)
 		// NOTE(paulsmith): we have to wait() the child process(es) in any case,
-		// regardless of how they were exited. this is also way there is a
+		// regardless of how they were exited. this is also why there is a
 		// `done' channel in this function, to signal to the other goroutine
 		// waiting for context cancellation.
 		if err := cmd.Wait(); err != nil {
@@ -2958,6 +2982,9 @@ loop:
 
 func (p *codeParser) parseSectionKeyword() *nodeSection {
 	// enter function one past the "section" IDENT token
+	// FIXME(paulsmith): we are currently requiring that the name of the
+	// partial be a valid Go identifier, but there is no reason that need be
+	// the case. perhaps a string is better here.
 	if p.peek().tok != token.IDENT {
 		p.parser.errorf("expected IDENT, got %s", p.peek().tok.String())
 		return nil
@@ -2972,6 +2999,11 @@ func (p *codeParser) parseSectionKeyword() *nodeSection {
 
 func (p *codeParser) parsePartialKeyword() *nodePartial {
 	// enter function one past the "partial" IDENT token
+	// FIXME(paulsmith): we are currently requiring that the name of the
+	// partial be a valid Go identifier, but there is no reason that need be
+	// the case. authors may want to, for example, have a name that is contains
+	// dashes or other punctuation (which would need to be URL-escaped for the
+	// routing of partials). perhaps a string is better here.
 	if p.peek().tok != token.IDENT {
 		p.parser.errorf("expected IDENT, got %s", p.peek().tok.String())
 		return nil
