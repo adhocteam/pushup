@@ -31,6 +31,10 @@ type testRequest struct {
 }
 
 func TestPushup(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
 	tmpdir := t.TempDir()
 	pushup := filepath.Join(tmpdir, "pushup.exe")
 
@@ -904,4 +908,48 @@ var unexported = []any{
 	stringPos{},
 	syntaxTree{},
 	tag{},
+}
+
+func TestCodeGenFromNode(t *testing.T) {
+	tests := []struct {
+		node node
+		want string
+	}{
+		{
+			node: &nodeElement{
+				tag: tag{name: "div", attrs: []*attr{&attr{name: stringPos{string: "id"}, value: stringPos{string: "foo"}}}},
+				startTagNodes: []node{
+					&nodeLiteral{str: "<div "},
+					&nodeLiteral{str: "id=\""},
+					&nodeLiteral{str: "foo"},
+					&nodeLiteral{str: "\">"},
+				},
+				children: []node{&nodeLiteral{str: "bar"}},
+			},
+			want: `io.WriteString(w, "<div ")
+io.WriteString(w, "id=\"")
+io.WriteString(w, "foo")
+io.WriteString(w, "\">")
+io.WriteString(w, "bar")
+io.WriteString(w, "</div>")
+`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+			page, err := newPageFromTree(&syntaxTree{nodes: []node{test.node}})
+			if err != nil {
+				t.Fatalf("new page from tree: %v", err)
+			}
+			unit := &pageCodeGen{page: page}
+			codegen := newCodeGenerator(unit, "test", compilePushupPage)
+			codegen.sourceLineEnabled = false
+			codegen.genFromNode(test.node)
+			got := codegen.bodyb.String()
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("expected code gen diff (-want +got):\n%s", diff)
+			}
+		})
+	}
 }

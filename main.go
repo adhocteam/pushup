@@ -1786,14 +1786,15 @@ func (c *layoutCodeGen) lineNo(s span) int {
 const methodReceiverName = "up"
 
 type codeGenerator struct {
-	c                codeGenUnit
-	strategy         compilationStrategy
-	basename         string
-	imports          map[importDecl]bool
-	outb             bytes.Buffer
-	bodyb            bytes.Buffer
-	ioWriterVar      string
-	partialGuardCond string
+	c                 codeGenUnit
+	strategy          compilationStrategy
+	basename          string
+	imports           map[importDecl]bool
+	outb              bytes.Buffer
+	bodyb             bytes.Buffer
+	ioWriterVar       string
+	partialGuardCond  string
+	sourceLineEnabled bool
 }
 
 func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrategy) *codeGenerator {
@@ -1808,6 +1809,7 @@ func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrate
 		}
 	}
 	g.ioWriterVar = "w"
+	g.sourceLineEnabled = true
 	return &g
 }
 
@@ -1818,7 +1820,9 @@ func (g *codeGenerator) used(path ...string) {
 }
 
 func (g *codeGenerator) nodeLineNo(e node) {
-	g.lineNo(g.c.lineNo(e.Pos()))
+	if g.sourceLineEnabled {
+		g.lineNo(g.c.lineNo(e.Pos()))
+	}
 }
 
 func (g *codeGenerator) lineNo(n int) {
@@ -2556,7 +2560,7 @@ func (t tag) start() string {
 }
 
 func (t tag) end() string {
-	return "</" + t.String() + ">"
+	return "</" + t.name + ">"
 }
 
 func newTag(tagname []byte, attrs []*attr) tag {

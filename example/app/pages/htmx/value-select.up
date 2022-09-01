@@ -35,7 +35,7 @@
 
 <div>
     <label>Make</label>
-    <select name="make" hx-get="./models" hx-target="#models">
+    <select name="make" hx-get="./value-select/models" hx-target="#models">
         ^for make := range makesAndModels {
             <option value="^make">^make</option>
         }
@@ -44,11 +44,13 @@
 
 <div>
     <label>Model</label>
-    ^partial models {
-        <select id="models" name="model">
-            ^for _, model := range models {
-                <option value="^model.value">^model.label</option>
-            }
-        </select>
-    }
+    <select id="models" name="model">
+        ^partial models {
+            <text>
+                ^for _, model := range models {
+                    <option value="^model.value">^model.label</option>
+                }
+            </text>
+        }
+    </select>
 </div>
