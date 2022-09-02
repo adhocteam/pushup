@@ -652,7 +652,7 @@ func compileProject(c *compileProjectParams) error {
 	{
 		params := compileParams{
 			rootDir:            filepath.Join(c.appDir, "pages"),
-			strategy:           compilePushupPage,
+			strategy:           compilePage,
 			targetDir:          c.outDir,
 			applyOptimizations: c.applyOptimizations,
 			enableLayout:       c.enableLayout,
@@ -1246,7 +1246,7 @@ func dirExists(path string) bool {
 type compilationStrategy int
 
 const (
-	compilePushupPage compilationStrategy = iota
+	compilePage compilationStrategy = iota
 	compileLayout
 )
 
@@ -1289,7 +1289,7 @@ func compilePushup(c compileParams) error {
 
 	var cg codeGenUnit
 	switch c.strategy {
-	case compilePushupPage:
+	case compilePage:
 		page, err := newPageFromTree(tree)
 		if err != nil {
 			return fmt.Errorf("post-processing tree: %w", err)
@@ -1346,7 +1346,7 @@ func generatedTypename(path string, root string, strategy compilationStrategy) s
 	typename := typenameFromPath(path)
 	var suffix string
 	switch strategy {
-	case compilePushupPage:
+	case compilePage:
 		suffix = "Page"
 	case compileLayout:
 		suffix = "Layout"
@@ -1993,7 +1993,7 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 	g.bodyPrintf("}\n\n")
 
 	switch strategy {
-	case compilePushupPage:
+	case compilePage:
 		p := c.(*pageCodeGen)
 		g.bodyPrintf("func (%s *%s) register() {\n", methodReceiverName, typename)
 		g.bodyPrintf("  routes.add(%[1]s.mainRoute, %[1]s, routePage)\n", methodReceiverName)
@@ -2049,7 +2049,7 @@ func (%s *%s) sectionSet(name string) bool {
 
 	g.used("net/http")
 	switch strategy {
-	case compilePushupPage:
+	case compilePage:
 		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
 	case compileLayout:
 		g.used("html/template")
@@ -2059,7 +2059,7 @@ func (%s *%s) sectionSet(name string) bool {
 		panic("")
 	}
 
-	if strategy == compilePushupPage {
+	if strategy == compilePage {
 		p := c.(*pageCodeGen)
 		if p.layout != "" {
 			g.bodyPrintf("  renderLayout := true\n")
@@ -2123,7 +2123,7 @@ func (%s *%s) sectionSet(name string) bool {
 	g.bodyPrintf("{\n")
 
 	switch strategy {
-	case compilePushupPage:
+	case compilePage:
 		p := c.(*pageCodeGen)
 
 		if p.layout == "" {
@@ -2172,7 +2172,7 @@ func (%s *%s) sectionSet(name string) bool {
 	g.bodyPrintf("// End user Go code and HTML\n")
 	g.bodyPrintf("}\n")
 
-	if strategy == compilePushupPage {
+	if strategy == compilePage {
 		p := c.(*pageCodeGen)
 		if p.layout != "" {
 			g.bodyPrintf("wg.Wait()\n")

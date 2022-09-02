@@ -393,25 +393,25 @@ func TestGeneratedFilename(t *testing.T) {
 			"app/pages/index.up",
 			"app/pages",
 			"index.up.go",
-			compilePushupPage,
+			compilePage,
 		},
 		{
 			"app/pages/about.up",
 			"app/pages",
 			"about.up.go",
-			compilePushupPage,
+			compilePage,
 		},
 		{
 			"app/pages/x/sub.up",
 			"app/pages",
 			"x__sub.up.go",
-			compilePushupPage,
+			compilePage,
 		},
 		{
 			"testdata/foo.up",
 			".",
 			"testdata__foo.up.go",
-			compilePushupPage,
+			compilePage,
 		},
 		{
 			"app/layouts/default.up",
@@ -458,11 +458,11 @@ func TestGeneratedTypename(t *testing.T) {
 		strategy compilationStrategy
 		want     string
 	}{
-		{"index.up", ".", compilePushupPage, "IndexPage"},
-		{"foo-bar.up", ".", compilePushupPage, "FooBarPage"},
-		{"foo_bar.up", ".", compilePushupPage, "FooBarPage"},
-		{"a/b/c.up", ".", compilePushupPage, "ABCPage"},
-		{"a/b/$c.up", ".", compilePushupPage, "ABDollarSignCPage"},
+		{"index.up", ".", compilePage, "IndexPage"},
+		{"foo-bar.up", ".", compilePage, "FooBarPage"},
+		{"foo_bar.up", ".", compilePage, "FooBarPage"},
+		{"a/b/c.up", ".", compilePage, "ABCPage"},
+		{"a/b/$c.up", ".", compilePage, "ABDollarSignCPage"},
 	}
 
 	for _, test := range tests {
@@ -943,7 +943,7 @@ io.WriteString(w, "</div>")
 				t.Fatalf("new page from tree: %v", err)
 			}
 			unit := &pageCodeGen{page: page}
-			codegen := newCodeGenerator(unit, "test", compilePushupPage)
+			codegen := newCodeGenerator(unit, "test", compilePage)
 			codegen.sourceLineEnabled = false
 			codegen.genFromNode(test.node)
 			got := codegen.bodyb.String()
