@@ -796,17 +796,25 @@ func compile(params compileParams) error {
 	}
 
 	var code []byte
+	buf := bytes.NewBuffer(code)
 
 	switch params.ftype {
 	case upFileLayout:
+		codeGen := &layoutCodeGen{path: params.pfile.relpath(), source: string(b), tree: tree}
+		if err := generateCodeToFile(codeGen, params.pfile.relpath(), generatedTypename(params.pfile, params.ftype), buf, params.ftype); err != nil {
+			return fmt.Errorf("generating code layout: %w", err)
+		}
 	case upFilePage:
 		page, err := newPageFromTree(tree)
 		if err != nil {
 			return fmt.Errorf("getting page from tree: %w", err)
 		}
 		route := routeFromPath(params.pfile.path)
-		params := &pageCodeGen{path: params.pfile.path, source: src, page: page, route: route}
-		code, err = genCodePage(params)
+		codeGen := &pageCodeGen{path: params.pfile.relpath(), source: string(b), page: page, route: route}
+		if err := generateCodeToFile(codeGen, params.pfile.relpath(), generatedTypename(params.pfile, params.ftype), buf, params.ftype); err != nil {
+			return fmt.Errorf("generating code layout: %w", err)
+		}
+		//code, err = genCodePage(params)
 	}
 
 	if _, err := params.dest.Write(code); err != nil {
@@ -1868,14 +1876,15 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 	return page, nil
 }
 
-func generateCodeToFile(c codeGenUnit, basename string, typename string, outputPath string, ftype upFileType) error {
+// FIXME(paulsmith): collapse into compileUpFile
+func generateCodeToFile(c codeGenUnit, basename string, typename string, w io.Writer, ftype upFileType) error {
 	code, err := genCode(c, basename, typename, ftype)
 	if err != nil {
 		return fmt.Errorf("code gen: %w", err)
 	}
 
-	if err := os.WriteFile(outputPath, code, 0644); err != nil {
-		return fmt.Errorf("writing out generated code to file: %w", err)
+	if _, err := w.Write(code); err != nil {
+		return fmt.Errorf("writing code: %w", err)
 	}
 
 	return nil
