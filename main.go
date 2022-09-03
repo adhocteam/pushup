@@ -242,7 +242,11 @@ func (b *buildCmd) rescanProjectFiles() error {
 			return err
 		}
 	} else {
-		b.files = &projectFiles{pages: []string(b.pages)}
+		pfiles := &projectFiles{}
+		for _, page := range b.pages {
+			pfiles.pages = append(pfiles.pages, projectFile{path: page, projectFilesSubdir: ""})
+		}
+		b.files = pfiles
 	}
 	return nil
 }
@@ -259,33 +263,37 @@ func (b *buildCmd) do() error {
 	}
 
 	// FIXME(paulsmith): dedupe this with runCmd.do()
-	compileParams := &compileProjectParams{
-		root:               b.projectDir,
-		appDir:             b.appDir,
-		outDir:             b.outDir,
-		parseOnly:          b.parseOnly,
-		files:              b.files,
-		applyOptimizations: b.applyOptimizations,
-		enableLayout:       len(b.pages) == 0, // FIXME
-		embedSource:        b.embedSource,
-	}
+	{
+		params := &compileProjectParams{
+			root:               b.projectDir,
+			appDir:             b.appDir,
+			outDir:             b.outDir,
+			parseOnly:          b.parseOnly,
+			files:              b.files,
+			applyOptimizations: b.applyOptimizations,
+			enableLayout:       len(b.pages) == 0, // FIXME
+			embedSource:        b.embedSource,
+		}
 
-	if err := compileProject(compileParams); err != nil {
-		return fmt.Errorf("parsing and compiling: %w", err)
+		if err := compileProject(params); err != nil {
+			return fmt.Errorf("parsing and compiling: %w", err)
+		}
 	}
 
 	if b.parseOnly || b.codeGenOnly {
 		return nil
 	}
 
-	buildParams := buildParams{
-		projectName:       b.projectName.String(),
-		pkgName:           b.buildPkg,
-		compiledOutputDir: b.outDir,
-		buildDir:          b.outDir,
-	}
-	if err := buildProject(context.Background(), buildParams); err != nil {
-		return fmt.Errorf("building project: %w", err)
+	{
+		params := buildParams{
+			projectName:       b.projectName.String(),
+			pkgName:           b.buildPkg,
+			compiledOutputDir: b.outDir,
+			buildDir:          b.outDir,
+		}
+		if err := buildProject(context.Background(), params); err != nil {
+			return fmt.Errorf("building project: %w", err)
+		}
 	}
 
 	return nil
@@ -328,27 +336,8 @@ func (r *runCmd) do() error {
 		return nil
 	}
 
-	// FIXME(paulsmith): dedupe this with buildCmd.do()
-	compileParams := &compileProjectParams{
-		root:               r.projectDir,
-		appDir:             r.appDir,
-		outDir:             r.outDir,
-		parseOnly:          r.parseOnly,
-		files:              r.files,
-		applyOptimizations: r.applyOptimizations,
-		enableLayout:       len(r.pages) == 0, // FIXME
-		embedSource:        r.embedSource,
-	}
-
 	// TODO(paulsmith): add a linkOnly flag (or a releaseMode flag,
 	// alternatively?)
-	buildParams := buildParams{
-		projectName:       r.projectName.String(),
-		pkgName:           r.buildPkg,
-		compiledOutputDir: r.outDir,
-		buildDir:          r.outDir,
-	}
-
 	ctx := newPushupContext(context.Background())
 
 	if r.devReload {
@@ -386,20 +375,41 @@ func (r *runCmd) do() error {
 				return nil
 			default:
 			}
+
 			if err := r.rescanProjectFiles(); err != nil {
 				return fmt.Errorf("scanning for project files: %v", err)
 			}
-			// FIXME(paulsmith): this is a bit of a hack, compileParams has a
-			// pointer to the projectFiles, but it isn't being updated after
-			// calling rescanProjectFiles()
-			compileParams.files = r.files
-			if err := compileProject(compileParams); err != nil {
-				return fmt.Errorf("parsing and compiling: %v", err)
+
+			{
+				params := &compileProjectParams{
+					root:               r.projectDir,
+					appDir:             r.appDir,
+					outDir:             r.outDir,
+					parseOnly:          r.parseOnly,
+					files:              r.files,
+					applyOptimizations: r.applyOptimizations,
+					enableLayout:       len(r.pages) == 0, // FIXME
+					embedSource:        r.embedSource,
+				}
+				if err := compileProject(params); err != nil {
+					return fmt.Errorf("parsing and compiling: %v", err)
+				}
 			}
+
 			ctx = newPushupContext(context.Background())
-			if err := buildProject(ctx, buildParams); err != nil {
-				return fmt.Errorf("building Pushup project: %v", err)
+
+			{
+				params := buildParams{
+					projectName:       r.projectName.String(),
+					pkgName:           r.buildPkg,
+					compiledOutputDir: r.outDir,
+					buildDir:          r.outDir,
+				}
+				if err := buildProject(ctx, params); err != nil {
+					return fmt.Errorf("building Pushup project: %v", err)
+				}
 			}
+
 			buildComplete.Broadcast()
 			go func() {
 				watchForReload(ctx, ctx.fileChangeCancel, r.appDir, reload)
@@ -423,7 +433,13 @@ func (r *runCmd) do() error {
 				return fmt.Errorf("listening on TCP socket: %v", err)
 			}
 		}
-		if err := buildProject(ctx, buildParams); err != nil {
+		params := buildParams{
+			projectName:       r.projectName.String(),
+			pkgName:           r.buildPkg,
+			compiledOutputDir: r.outDir,
+			buildDir:          r.outDir,
+		}
+		if err := buildProject(ctx, params); err != nil {
 			return fmt.Errorf("building Pushup project: %v", err)
 		}
 		if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()+".exe"), ln); err != nil {
@@ -480,26 +496,43 @@ func newPushupContext(parent context.Context) *pushupContext {
 	return c
 }
 
+// project file represents an .up file in a Pushup project context.
+type projectFile struct {
+	// path from cwd to the .up file
+	path string
+	// directory structure that may be part of the path of the .up file
+	// like app/pages, app/layouts, or (empty string)
+	projectFilesSubdir string
+}
+
+func (f *projectFile) trimmedPath() string {
+	path, err := filepath.Rel(f.projectFilesSubdir, f.path)
+	if err != nil {
+		panic("internal error: calling filepath.Rel(): " + err.Error())
+	}
+	return path
+}
+
 // projectFiles represents all the source files in a Pushup project.
 type projectFiles struct {
-	// paths to .up page files
-	pages []string
-	// paths to .up layout files
-	layouts []string
+	// list of .up page files
+	pages []projectFile
+	// list of .up layout files
+	layouts []projectFile
 	// paths to static files like JS, CSS, etc.
-	static []string
+	static []string // TODO(paulsmith): convert to projectFile
 	// paths to user-contributed .go code
-	gofiles []string
+	gofiles []string // TODO(paulsmith): convert to projectFile
 }
 
 func (f *projectFiles) debug() {
 	fmt.Println("pages:")
 	for _, p := range f.pages {
-		fmt.Printf("\t%s\n", p)
+		fmt.Printf("\t%v\n", p)
 	}
 	fmt.Println("layouts:")
 	for _, p := range f.layouts {
-		fmt.Printf("\t%s\n", p)
+		fmt.Printf("\t%v\n", p)
 	}
 	fmt.Println("static:")
 	for _, p := range f.static {
@@ -526,9 +559,10 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 		}
 
 		for _, entry := range entries {
-			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".up") {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), upFileExt) {
 				path := filepath.Join(layoutsDir, entry.Name())
-				pf.layouts = append(pf.layouts, path)
+				pfile := projectFile{path: path, projectFilesSubdir: layoutsDir}
+				pf.layouts = append(pf.layouts, pfile)
 			}
 		}
 	}
@@ -536,8 +570,9 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 	pagesDir := filepath.Join(appDir, "pages")
 	{
 		if err := fs.WalkDir(os.DirFS(pagesDir), ".", func(path string, d fs.DirEntry, err error) error {
-			if !d.IsDir() && filepath.Ext(path) == ".up" {
-				pf.pages = append(pf.pages, filepath.Join(pagesDir, path))
+			if !d.IsDir() && filepath.Ext(path) == upFileExt {
+				pfile := projectFile{path: filepath.Join(pagesDir, path), projectFilesSubdir: pagesDir}
+				pf.pages = append(pf.pages, pfile)
 			}
 			return nil
 		}); err != nil {
@@ -614,9 +649,38 @@ type compileProjectParams struct {
 	embedSource bool
 }
 
+const upFileExt = ".up"
+
+func compileUpFile(pfile projectFile, ftype upFileType, applyOptimizations bool) error {
+	path := pfile.path
+	sourceFile, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("opening source file %s: %w", path, err)
+	}
+	defer sourceFile.Close()
+	destPath := compiledOutputPath(pfile, ftype)
+	destFile, err := os.Open(destPath)
+	if err != nil {
+		return fmt.Errorf("opening destination file %s: %w", destPath, err)
+	}
+	defer destFile.Close()
+	params := compileParams{
+		source:             sourceFile,
+		dest:               destFile,
+		pfile:              pfile,
+		ftype:              ftype,
+		applyOptimizations: applyOptimizations,
+	}
+	if err := compile(params); err != nil {
+		return fmt.Errorf("compiling page file %s: %w", path, err)
+	}
+	return nil
+}
+
 func compileProject(c *compileProjectParams) error {
 	if c.parseOnly {
-		for _, path := range append(c.files.pages, c.files.layouts...) {
+		for _, pfile := range append(c.files.pages, c.files.layouts...) {
+			path := pfile.path
 			b, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("reading file %s: %w", path, err)
@@ -633,35 +697,20 @@ func compileProject(c *compileProjectParams) error {
 		os.Exit(0)
 	}
 
+	// compile layouts
 	{
-		params := compileParams{
-			rootDir:            filepath.Join(c.appDir, "layouts"),
-			strategy:           compileLayout,
-			targetDir:          c.outDir,
-			applyOptimizations: c.applyOptimizations,
-			enableLayout:       c.enableLayout, // FIXME: need better mechanism
-		}
-		for _, path := range c.files.layouts {
-			params.sourcePath = path
-			if err := compilePushup(params); err != nil {
-				return fmt.Errorf("compiling layout file %s: %w", path, err)
+		for _, pfile := range c.files.layouts {
+			if err := compileUpFile(pfile, upFileLayout, c.applyOptimizations); err != nil {
+				return err
 			}
 		}
 	}
 
+	// compile pages
 	{
-		params := compileParams{
-			rootDir:            filepath.Join(c.appDir, "pages"),
-			strategy:           compilePage,
-			targetDir:          c.outDir,
-			applyOptimizations: c.applyOptimizations,
-			enableLayout:       c.enableLayout,
-		}
-		for _, path := range c.files.pages {
-			log.Printf("COMPILING PAGE: %v", path)
-			params.sourcePath = path
-			if err := compilePushup(params); err != nil {
-				return fmt.Errorf("compiling pushup file %s: %w", path, err)
+		for _, pfile := range c.files.pages {
+			if err := compileUpFile(pfile, upFilePage, c.applyOptimizations); err != nil {
+				return err
 			}
 		}
 	}
@@ -700,21 +749,81 @@ func compileProject(c *compileProjectParams) error {
 
 	if c.embedSource {
 		outSrcDir := filepath.Join(c.outDir, "src")
-		for _, path := range c.files.pages {
-			relativePath := trimCommonPrefix(path, filepath.Join(c.appDir, "pages"))
-			relativeDir := filepath.Dir(relativePath)
-			dir := filepath.Join(outSrcDir, "pages", relativeDir)
+		for _, pfile := range c.files.pages {
+			path := pfile.trimmedPath()
+			dir := filepath.Dir(path)
+			dir = filepath.Join(outSrcDir, "pages", dir)
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				return err
 			}
-			dest := filepath.Join(outSrcDir, "pages", relativePath)
-			if err := copyFile(dest, path); err != nil {
-				return fmt.Errorf("copying page file %s to %s: %v", path, dest, err)
+			dest := filepath.Join(outSrcDir, "pages", pfile.path)
+			if err := copyFile(dest, pfile.path); err != nil {
+				return fmt.Errorf("copying page file %s to %s: %v", pfile.path, dest, err)
 			}
 		}
 	}
 
 	return nil
+}
+
+type compileParams struct {
+	source             io.Reader
+	dest               io.Writer
+	pfile              projectFile
+	ftype              upFileType
+	applyOptimizations bool
+}
+
+func compile(params compileParams) error {
+	b, err := io.ReadAll(params.source)
+	if err != nil {
+		return fmt.Errorf("reading source: %w", err)
+	}
+	src := string(b)
+
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("panic while parsing: %v", err)
+			panic(err)
+		}
+	}()
+
+	tree, err := parse(src)
+	if err != nil {
+		return fmt.Errorf("parsing source: %w", err)
+	}
+
+	if params.applyOptimizations {
+		tree = optimize(tree)
+	}
+
+	var code []byte
+
+	switch params.ftype {
+	case upFileLayout:
+	case upFilePage:
+		page, err := newPageFromTree(tree)
+		if err != nil {
+			return fmt.Errorf("getting page from tree: %w", err)
+		}
+		route := routeFromPath(params.pfile.path)
+		params := &pageCodeGen{path: params.pfile.path, source: src, page: page, route: route}
+		code, err = genCodePage(params)
+	}
+
+	if _, err := params.dest.Write(code); err != nil {
+		return fmt.Errorf("writing generated page code: %w", err)
+	}
+
+	return nil
+}
+
+func genCodeLayout(tree *syntaxTree) ([]byte, error) {
+	return nil, nil
+}
+
+func genCodePage(params *pageCodeGen) ([]byte, error) {
+	return nil, nil
 }
 
 func watchForReload(ctx context.Context, cancel context.CancelFunc, root string, reload chan struct{}) {
@@ -1064,7 +1173,7 @@ func (s *cancellationSource) Value(key any) any {
 func getPushupPagePaths(root string) []string {
 	var paths []string
 	err := fs.WalkDir(os.DirFS(root), ".", func(path string, d fs.DirEntry, err error) error {
-		if !d.IsDir() && filepath.Ext(path) == ".up" {
+		if !d.IsDir() && filepath.Ext(path) == upFileExt {
 			paths = append(paths, filepath.Join(root, path))
 		}
 		return nil
@@ -1243,24 +1352,15 @@ func dirExists(path string) bool {
 	return fi.IsDir()
 }
 
-type compilationStrategy int
+type upFileType int
 
 const (
-	compilePage compilationStrategy = iota
-	compileLayout
+	upFilePage upFileType = iota
+	upFileLayout
 )
 
-type compileParams struct {
-	sourcePath         string
-	rootDir            string
-	strategy           compilationStrategy
-	targetDir          string
-	applyOptimizations bool
-	enableLayout       bool
-}
-
-// compilePushup compiles a single .up file to Go code.
-func compilePushup(c compileParams) error {
+/*
+func XXX_compileUpFile(c compileParams) error {
 	if err := os.MkdirAll(c.targetDir, 0755); err != nil {
 		return fmt.Errorf("creating output directory %s: %w", c.targetDir, err)
 	}
@@ -1285,6 +1385,23 @@ func compilePushup(c compileParams) error {
 
 	if c.applyOptimizations {
 		tree = optimize(tree)
+	}
+
+	switch c.strategy {
+	case compilePage:
+		page, err := newPageFromTree(tree)
+		if err != nil {
+			return err
+		}
+		layoutName := page.layout
+		if !c.enableLayout {
+			layoutName = ""
+		}
+		route := routeFromPath(c.sourcePath, c.rootDir)
+		cg = &pageCodeGen{path: trimCommonPrefix(c.sourcePath, c.rootDir), source: source, layout: layoutName, page: page, route: route}
+	case compileLayout:
+	default:
+		panic("unknown compilation strategy")
 	}
 
 	var cg codeGenUnit
@@ -1317,20 +1434,24 @@ func compilePushup(c compileParams) error {
 
 	return nil
 }
+*/
 
-// generatedFilename returns the filename for the .go file containing the
+// compiledOutputPath returns the filename for the .go file containing the
 // generated code for the Pushup page.
-func generatedFilename(path string, root string, strategy compilationStrategy) string {
-	path = trimCommonPrefix(path, root)
+func compiledOutputPath(pfile projectFile, ftype upFileType) string {
+	rel, err := filepath.Rel(pfile.projectFilesSubdir, pfile.path)
+	if err != nil {
+		panic("internal error: relative path from project files subdir to .up file: " + err.Error())
+	}
 	var dirs []string
-	dir := filepath.Dir(path)
+	dir := filepath.Dir(rel)
 	if dir != "." {
 		dirs = strings.Split(dir, string([]rune{os.PathSeparator}))
 	}
-	file := filepath.Base(path)
+	file := filepath.Base(rel)
 	base := strings.TrimSuffix(file, filepath.Ext(file))
-	suffix := ".up"
-	if strategy == compileLayout {
+	suffix := upFileExt
+	if ftype == upFileLayout {
 		suffix = ".layout.up"
 	}
 	result := strings.Join(append(dirs, base), "__") + suffix + ".go"
@@ -1339,29 +1460,29 @@ func generatedFilename(path string, root string, strategy compilationStrategy) s
 
 // generatedTypename returns the name of the type of the Go struct that
 // holds the generated code for the Pushup page and related methods.
-func generatedTypename(path string, root string, strategy compilationStrategy) string {
+func generatedTypename(path string, root string, ftype upFileType) string {
 	path = trimCommonPrefix(path, root)
 	ext := filepath.Ext(path)
 	path = path[:len(path)-len(ext)]
 	typename := typenameFromPath(path)
 	var suffix string
-	switch strategy {
-	case compilePage:
+	switch ftype {
+	case upFilePage:
 		suffix = "Page"
-	case compileLayout:
+	case upFileLayout:
 		suffix = "Layout"
 	default:
-		panic("unhandled compilation strategy")
+		panic("unhandled file type")
 	}
 	result := typename + suffix
 	return result
 }
 
 // routeFromPath produces the URL path route from the name of the Pushup page.
-// path is the path to the Pushup file. root is the path of the root of the
-// Pushup project.
-func routeFromPath(path string, root string) string {
-	path = trimCommonPrefix(path, root)
+// path is the path to the Pushup file, relative to its containing app
+// directory in the Pushup project (so that part should not be part of the
+// path).
+func routeFromPath(path string) string {
 	var dirs []string
 	dir := filepath.Dir(path)
 	if dir != "." {
@@ -1386,6 +1507,7 @@ func routeFromPath(path string, root string) string {
 	return route
 }
 
+// trimCommonPrefix removes prefix from path, which are both filepaths.
 func trimCommonPrefix(path string, prefix string) string {
 	path = filepath.Clean(path)
 	prefix = filepath.Clean(prefix)
@@ -1602,6 +1724,8 @@ func optimize(tree *syntaxTree) *syntaxTree {
 
 // coalesceLiterals is an optimization that coalesces consecutive HTML literal
 // nodes together by concatenating their strings together in a single node.
+// TODO(paulsmith): further optimization could be had by descending in to child
+// nodes, refactor this using inspect().
 func coalesceLiterals(nodes []node) []node {
 	// before := len(nodes)
 	if len(nodes) > 0 {
@@ -1623,14 +1747,16 @@ func coalesceLiterals(nodes []node) []node {
 	return nodes
 }
 
+// page represents a Pushup page that has been parsed and is ready for code
+// generation.
 type page struct {
 	layout   string
 	imports  []importDecl
 	handler  *nodeGoCode
 	nodes    []node
 	sections map[string]*nodeBlock
-	// partialRoutes is a list of all (potentially nested) routes to inline
-	// partials in this page
+	// partialRoutes is a list of all (potentially nested) URL path routes to
+	// inline partials in this page
 	partialRoutes []string
 }
 
@@ -1644,9 +1770,16 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 		layout:   "default",
 		sections: make(map[string]*nodeBlock),
 	}
+
 	layoutSet := false
 	n := 0
 	var err error
+
+	// this pass over the syntax tree nodes enforces invariants (only one
+	// handler may be declared per page, layout may only be set once) and
+	// aggregates imports and sections for easier access in the subsequent
+	// code generation phase. as a result, some nodes are removed from the
+	// tree.
 	var f inspector
 	f = func(e node) bool {
 		switch e := e.(type) {
@@ -1692,6 +1825,8 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 		return nil, err
 	}
 
+	// this pass is for inline partials. it needs to be separate because the
+	// traversal of the tree is slightly different than the pass above.
 	{
 		var partialPath []string
 		var f inspector
@@ -1744,8 +1879,8 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 	return page, nil
 }
 
-func generateCodeToFile(c codeGenUnit, basename string, typename string, outputPath string, strategy compilationStrategy) error {
-	code, err := genCode(c, basename, typename, strategy)
+func generateCodeToFile(c codeGenUnit, basename string, typename string, outputPath string, ftype upFileType) error {
+	code, err := genCode(c, basename, typename, ftype)
 	if err != nil {
 		return fmt.Errorf("code gen: %w", err)
 	}
@@ -1811,7 +1946,7 @@ const methodReceiverName = "up"
 
 type codeGenerator struct {
 	c                 codeGenUnit
-	strategy          compilationStrategy
+	ftype             upFileType
 	basename          string
 	imports           map[importDecl]bool
 	outb              bytes.Buffer
@@ -1821,10 +1956,10 @@ type codeGenerator struct {
 	sourceLineEnabled bool
 }
 
-func newCodeGenerator(c codeGenUnit, basename string, strategy compilationStrategy) *codeGenerator {
+func newCodeGenerator(c codeGenUnit, basename string, ftype upFileType) *codeGenerator {
 	var g codeGenerator
 	g.c = c
-	g.strategy = strategy
+	g.ftype = ftype
 	g.basename = basename
 	g.imports = make(map[importDecl]bool)
 	if p, ok := c.(*pageCodeGen); ok {
@@ -1850,7 +1985,7 @@ func (g *codeGenerator) nodeLineNo(e node) {
 }
 
 func (g *codeGenerator) lineNo(n int) {
-	g.bodyPrintf("//line %s:%d\n", g.basename+".up", n)
+	g.bodyPrintf("//line %s:%d\n", g.basename+upFileExt, n)
 }
 
 func (g *codeGenerator) outPrintf(format string, args ...any) {
@@ -1955,8 +2090,8 @@ func (g *codeGenerator) genFromNode(n node) {
 	inspect(n, f)
 }
 
-func genCode(c codeGenUnit, basename string, typename string, strategy compilationStrategy) ([]byte, error) {
-	g := newCodeGenerator(c, basename, strategy)
+func genCode(c codeGenUnit, basename string, typename string, ftype upFileType) ([]byte, error) {
+	g := newCodeGenerator(c, basename, ftype)
 
 	// FIXME(paulsmith): need way to specify this as user
 	packageName := "build"
@@ -1977,7 +2112,7 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 		{name: "mainRoute", typ: "string"},
 	}
 
-	if strategy == compileLayout {
+	if ftype == upFileLayout {
 		g.used("html/template")
 		fields = append(fields, field{name: "sections", typ: "map[string]chan template.HTML"})
 	}
@@ -1992,8 +2127,8 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 	g.bodyPrintf("  return %#v\n", os.Args)
 	g.bodyPrintf("}\n\n")
 
-	switch strategy {
-	case compilePage:
+	switch ftype {
+	case upFilePage:
 		p := c.(*pageCodeGen)
 		g.bodyPrintf("func (%s *%s) register() {\n", methodReceiverName, typename)
 		g.bodyPrintf("  routes.add(%[1]s.mainRoute, %[1]s, routePage)\n", methodReceiverName)
@@ -2017,7 +2152,7 @@ func genCode(c codeGenUnit, basename string, typename string, strategy compilati
 		g.bodyPrintf("  page.mainRoute = %s\n", strconv.Quote(p.route))
 		g.bodyPrintf("  page.register()\n")
 		g.bodyPrintf("}\n\n")
-	case compileLayout:
+	case upFileLayout:
 		g.bodyPrintf("func init() {\n")
 		g.bodyPrintf("  layout := new(%s)\n", typename)
 		g.bodyPrintf("  layout.upFilePath = %s\n", strconv.Quote(c.filePath()))
@@ -2048,10 +2183,10 @@ func (%s *%s) sectionSet(name string) bool {
 	g.bodyPrintf("}\n\n")
 
 	g.used("net/http")
-	switch strategy {
-	case compilePage:
+	switch ftype {
+	case upFilePage:
 		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
-	case compileLayout:
+	case upFileLayout:
 		g.used("html/template")
 		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {\n", methodReceiverName, typename)
 		g.bodyPrintf("  %s.sections = sections\n", methodReceiverName)
@@ -2059,7 +2194,7 @@ func (%s *%s) sectionSet(name string) bool {
 		panic("")
 	}
 
-	if strategy == compilePage {
+	if ftype == upFilePage {
 		p := c.(*pageCodeGen)
 		if p.layout != "" {
 			g.bodyPrintf("  renderLayout := true\n")
@@ -2122,8 +2257,8 @@ func (%s *%s) sectionSet(name string) bool {
 	g.bodyPrintf("// Begin user Go code and HTML\n")
 	g.bodyPrintf("{\n")
 
-	switch strategy {
-	case compilePage:
+	switch ftype {
+	case upFilePage:
 		p := c.(*pageCodeGen)
 
 		if p.layout == "" {
@@ -2164,7 +2299,7 @@ func (%s *%s) sectionSet(name string) bool {
 				g.ioWriterVar = save
 			}
 		}
-	case compileLayout:
+	case upFileLayout:
 		g.generate()
 	}
 
@@ -2172,7 +2307,7 @@ func (%s *%s) sectionSet(name string) bool {
 	g.bodyPrintf("// End user Go code and HTML\n")
 	g.bodyPrintf("}\n")
 
-	if strategy == compilePage {
+	if ftype == upFilePage {
 		p := c.(*pageCodeGen)
 		if p.layout != "" {
 			g.bodyPrintf("wg.Wait()\n")
