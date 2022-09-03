@@ -505,7 +505,7 @@ type projectFile struct {
 	projectFilesSubdir string
 }
 
-func (f *projectFile) trimmedPath() string {
+func (f *projectFile) relpath() string {
 	path, err := filepath.Rel(f.projectFilesSubdir, f.path)
 	if err != nil {
 		panic("internal error: calling filepath.Rel(): " + err.Error())
@@ -651,15 +651,19 @@ type compileProjectParams struct {
 
 const upFileExt = ".up"
 
-func compileUpFile(pfile projectFile, ftype upFileType, applyOptimizations bool) error {
+func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compileProjectParams) error {
 	path := pfile.path
 	sourceFile, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("opening source file %s: %w", path, err)
 	}
 	defer sourceFile.Close()
-	destPath := compiledOutputPath(pfile, ftype)
-	destFile, err := os.Open(destPath)
+	destPath := filepath.Join(projectParams.outDir, compiledOutputPath(pfile, ftype))
+	destDir := filepath.Dir(destPath)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("making destination file's directory %s: %w", destDir, err)
+	}
+	destFile, err := os.Create(destPath)
 	if err != nil {
 		return fmt.Errorf("opening destination file %s: %w", destPath, err)
 	}
@@ -669,7 +673,7 @@ func compileUpFile(pfile projectFile, ftype upFileType, applyOptimizations bool)
 		dest:               destFile,
 		pfile:              pfile,
 		ftype:              ftype,
-		applyOptimizations: applyOptimizations,
+		applyOptimizations: projectParams.applyOptimizations,
 	}
 	if err := compile(params); err != nil {
 		return fmt.Errorf("compiling page file %s: %w", path, err)
@@ -698,31 +702,29 @@ func compileProject(c *compileProjectParams) error {
 	}
 
 	// compile layouts
-	{
-		for _, pfile := range c.files.layouts {
-			if err := compileUpFile(pfile, upFileLayout, c.applyOptimizations); err != nil {
-				return err
-			}
+	for _, pfile := range c.files.layouts {
+		if err := compileUpFile(pfile, upFileLayout, c); err != nil {
+			return err
 		}
 	}
 
 	// compile pages
-	{
-		for _, pfile := range c.files.pages {
-			if err := compileUpFile(pfile, upFilePage, c.applyOptimizations); err != nil {
-				return err
-			}
+	for _, pfile := range c.files.pages {
+		if err := compileUpFile(pfile, upFilePage, c); err != nil {
+			return err
 		}
 	}
 
+	// "compile" user Go code
 	for _, path := range c.files.gofiles {
 		if err := copyFile(filepath.Join(c.outDir, filepath.Base(path)), path); err != nil {
 			return fmt.Errorf("copying Go package file %s: %w", path, err)
 		}
 	}
 
+	// "compile" static files
 	for _, pfile := range c.files.static {
-		relpath := pfile.trimmedPath()
+		relpath := pfile.relpath()
 		destDir := filepath.Join(c.outDir, filepath.Dir(relpath))
 		if err := os.MkdirAll(destDir, 0755); err != nil {
 			return fmt.Errorf("making intermediate directory in static dir %s: %v", destDir, err)
@@ -733,10 +735,7 @@ func compileProject(c *compileProjectParams) error {
 		}
 	}
 
-	if err := copyFileFS(runtimeFiles, filepath.Join(c.outDir, "pushup_support.go"), filepath.Join("_runtime", "pushup_support.go")); err != nil {
-		return fmt.Errorf("copying runtime file: %w", err)
-	}
-
+	// copy over Pushup runtime support Go code
 	t := template.Must(template.ParseFS(runtimeFiles, filepath.Join("_runtime", "pushup_support.go")))
 	f, err := os.Create(filepath.Join(c.outDir, "pushup_support.go"))
 	if err != nil {
@@ -750,13 +749,12 @@ func compileProject(c *compileProjectParams) error {
 	if c.embedSource {
 		outSrcDir := filepath.Join(c.outDir, "src")
 		for _, pfile := range c.files.pages {
-			path := pfile.trimmedPath()
-			dir := filepath.Dir(path)
-			dir = filepath.Join(outSrcDir, "pages", dir)
+			relpath := pfile.relpath()
+			dir := filepath.Join(outSrcDir, "pages", filepath.Dir(relpath))
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				return err
 			}
-			dest := filepath.Join(outSrcDir, "pages", pfile.path)
+			dest := filepath.Join(outSrcDir, "pages", relpath)
 			if err := copyFile(dest, pfile.path); err != nil {
 				return fmt.Errorf("copying page file %s to %s: %v", pfile.path, dest, err)
 			}
@@ -1461,7 +1459,7 @@ func compiledOutputPath(pfile projectFile, ftype upFileType) string {
 // generatedTypename returns the name of the type of the Go struct that
 // holds the generated code for the Pushup page and related methods.
 func generatedTypename(pfile projectFile, ftype upFileType) string {
-	relpath := pfile.trimmedPath()
+	relpath := pfile.relpath()
 	ext := filepath.Ext(relpath)
 	relpath = relpath[:len(relpath)-len(ext)]
 	typename := typenameFromPath(relpath)
