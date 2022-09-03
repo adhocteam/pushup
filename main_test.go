@@ -298,38 +298,6 @@ func TestTagString(t *testing.T) {
 	}
 }
 
-func TestTrimCommonPrefix(t *testing.T) {
-	tests := []struct {
-		path string
-		root string
-		want string
-	}{
-		{
-			"app/pages/index.up",
-			"app/pages",
-			"index.up",
-		},
-		{
-			"./app/pages/index.up",
-			"app/pages",
-			"index.up",
-		},
-		{
-			"index.up",
-			".",
-			"index.up",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run("", func(t *testing.T) {
-			if got := trimCommonPrefix(test.path, test.root); test.want != got {
-				t.Errorf("want %q, got %q", test.want, got)
-			}
-		})
-	}
-}
-
 func TestRouteFromPath(t *testing.T) {
 	tests := []struct {
 		path string

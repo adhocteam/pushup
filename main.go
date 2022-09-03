@@ -1507,15 +1507,6 @@ func routeFromPath(path string) string {
 	return route
 }
 
-// trimCommonPrefix removes prefix from path, which are both filepaths.
-func trimCommonPrefix(path string, prefix string) string {
-	path = filepath.Clean(path)
-	prefix = filepath.Clean(prefix)
-	stripped := strings.TrimPrefix(path, prefix)
-	stripped = strings.TrimPrefix(stripped, "/")
-	return stripped
-}
-
 // node represents a portion of the Pushup syntax, like a chunk of HTML,
 // or a Go expression to be evaluated, or a control flow construct like `if'
 // or `for'.
