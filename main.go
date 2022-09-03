@@ -520,7 +520,7 @@ type projectFiles struct {
 	// list of .up layout files
 	layouts []projectFile
 	// paths to static files like JS, CSS, etc.
-	static []string // TODO(paulsmith): convert to projectFile
+	static []projectFile
 	// paths to user-contributed .go code
 	gofiles []string // TODO(paulsmith): convert to projectFile
 }
@@ -536,7 +536,7 @@ func (f *projectFiles) debug() {
 	}
 	fmt.Println("static:")
 	for _, p := range f.static {
-		fmt.Printf("\t%s\n", p)
+		fmt.Printf("\t%v\n", p)
 	}
 	fmt.Println("gofiles:")
 	for _, p := range f.gofiles {
@@ -608,7 +608,7 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 		if err := fs.WalkDir(os.DirFS(staticDir), ".", func(path string, d fs.DirEntry, _ error) error {
 			if !d.IsDir() {
 				path := filepath.Join(staticDir, path)
-				pf.static = append(pf.static, path)
+				pf.static = append(pf.static, projectFile{path: path, projectFilesSubdir: staticDir})
 			}
 			return nil
 		}); err != nil {
@@ -721,15 +721,15 @@ func compileProject(c *compileProjectParams) error {
 		}
 	}
 
-	for _, path := range c.files.static {
-		relativePath := trimCommonPrefix(path, appDirName)
-		destDir := filepath.Join(c.outDir, filepath.Dir(relativePath))
+	for _, pfile := range c.files.static {
+		relpath := pfile.trimmedPath()
+		destDir := filepath.Join(c.outDir, filepath.Dir(relpath))
 		if err := os.MkdirAll(destDir, 0755); err != nil {
 			return fmt.Errorf("making intermediate directory in static dir %s: %v", destDir, err)
 		}
-		destPath := filepath.Join(destDir, filepath.Base(path))
-		if err := copyFile(destPath, path); err != nil {
-			return fmt.Errorf("copying static file %s to %s: %w", path, destPath, err)
+		destPath := filepath.Join(destDir, filepath.Base(relpath))
+		if err := copyFile(destPath, pfile.path); err != nil {
+			return fmt.Errorf("copying static file %s to %s: %w", pfile.path, destPath, err)
 		}
 	}
 
@@ -1460,11 +1460,11 @@ func compiledOutputPath(pfile projectFile, ftype upFileType) string {
 
 // generatedTypename returns the name of the type of the Go struct that
 // holds the generated code for the Pushup page and related methods.
-func generatedTypename(path string, root string, ftype upFileType) string {
-	path = trimCommonPrefix(path, root)
-	ext := filepath.Ext(path)
-	path = path[:len(path)-len(ext)]
-	typename := typenameFromPath(path)
+func generatedTypename(pfile projectFile, ftype upFileType) string {
+	relpath := pfile.trimmedPath()
+	ext := filepath.Ext(relpath)
+	relpath = relpath[:len(relpath)-len(ext)]
+	typename := typenameFromPath(relpath)
 	var suffix string
 	switch ftype {
 	case upFilePage:

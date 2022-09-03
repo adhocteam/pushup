@@ -407,21 +407,20 @@ func TestTypenameFromPath(t *testing.T) {
 
 func TestGeneratedTypename(t *testing.T) {
 	tests := []struct {
-		path     string
-		root     string
+		pfile    projectFile
 		strategy upFileType
 		want     string
 	}{
-		{"index.up", ".", upFilePage, "IndexPage"},
-		{"foo-bar.up", ".", upFilePage, "FooBarPage"},
-		{"foo_bar.up", ".", upFilePage, "FooBarPage"},
-		{"a/b/c.up", ".", upFilePage, "ABCPage"},
-		{"a/b/$c.up", ".", upFilePage, "ABDollarSignCPage"},
+		{projectFile{path: "index.up", projectFilesSubdir: "."}, upFilePage, "IndexPage"},
+		{projectFile{path: "foo-bar.up", projectFilesSubdir: "."}, upFilePage, "FooBarPage"},
+		{projectFile{path: "foo_bar.up", projectFilesSubdir: "."}, upFilePage, "FooBarPage"},
+		{projectFile{path: "a/b/c.up", projectFilesSubdir: "."}, upFilePage, "ABCPage"},
+		{projectFile{path: "a/b/$c.up", projectFilesSubdir: "."}, upFilePage, "ABDollarSignCPage"},
 	}
 
 	for _, test := range tests {
-		t.Run(test.path, func(t *testing.T) {
-			got := generatedTypename(test.path, test.root, test.strategy)
+		t.Run(test.pfile.path, func(t *testing.T) {
+			got := generatedTypename(test.pfile, test.strategy)
 			if diff := cmp.Diff(test.want, got); diff != "" {
 				t.Errorf("(-want, +got)\n%s", diff)
 			}
