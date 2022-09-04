@@ -870,7 +870,7 @@ func TestCodeGenFromNode(t *testing.T) {
 	}{
 		{
 			node: &nodeElement{
-				tag: tag{name: "div", attrs: []*attr{&attr{name: stringPos{string: "id"}, value: stringPos{string: "foo"}}}},
+				tag: tag{name: "div", attrs: []*attr{{name: stringPos{string: "id"}, value: stringPos{string: "foo"}}}},
 				startTagNodes: []node{
 					&nodeLiteral{str: "<div "},
 					&nodeLiteral{str: "id=\""},
@@ -895,11 +895,10 @@ io.WriteString(w, "</div>")
 			if err != nil {
 				t.Fatalf("new page from tree: %v", err)
 			}
-			unit := &pageCodeGen{page: page}
-			codegen := newCodeGenerator(unit, "test", upFilePage)
-			codegen.sourceLineEnabled = false
-			codegen.genFromNode(test.node)
-			got := codegen.bodyb.String()
+			g := newPageCodeGen(page, projectFile{}, "")
+			g.lineDirectivesEnabled = false
+			g.genFromNode(test.node)
+			got := g.bodyb.String()
 			if diff := cmp.Diff(test.want, got); diff != "" {
 				t.Errorf("expected code gen diff (-want +got):\n%s", diff)
 			}

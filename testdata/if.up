@@ -1,3 +1,4 @@
+^layout !
 ^if req.FormValue("name") != "" {
     <h1>Hello, ^req.FormValue("name")!</h1>
 } else {
