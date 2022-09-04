@@ -620,6 +620,8 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 		}
 	}
 
+	pf.debug()
+
 	return pf, nil
 }
 
@@ -725,7 +727,7 @@ func compileProject(c *compileProjectParams) error {
 	// "compile" static files
 	for _, pfile := range c.files.static {
 		relpath := pfile.relpath()
-		destDir := filepath.Join(c.outDir, filepath.Dir(relpath))
+		destDir := filepath.Join(c.outDir, "static", filepath.Dir(relpath))
 		if err := os.MkdirAll(destDir, 0755); err != nil {
 			return fmt.Errorf("making intermediate directory in static dir %s: %v", destDir, err)
 		}
@@ -796,25 +798,22 @@ func compile(params compileParams) error {
 	}
 
 	var code []byte
-	buf := bytes.NewBuffer(code)
 
 	switch params.ftype {
 	case upFileLayout:
-		codeGen := &layoutCodeGen{path: params.pfile.relpath(), source: string(b), tree: tree}
-		if err := generateCodeToFile(codeGen, params.pfile.relpath(), generatedTypename(params.pfile, params.ftype), buf, params.ftype); err != nil {
-			return fmt.Errorf("generating code layout: %w", err)
+		layout, err := newLayoutFromTree(tree)
+		if err != nil {
+			return fmt.Errorf("getting layout from tree: %w", err)
 		}
+		codeGen := newLayoutCodeGen(layout, params.pfile, src)
+		code, err = genCodeLayout(codeGen)
 	case upFilePage:
 		page, err := newPageFromTree(tree)
 		if err != nil {
 			return fmt.Errorf("getting page from tree: %w", err)
 		}
-		route := routeFromPath(params.pfile.path)
-		codeGen := &pageCodeGen{path: params.pfile.relpath(), source: string(b), page: page, route: route}
-		if err := generateCodeToFile(codeGen, params.pfile.relpath(), generatedTypename(params.pfile, params.ftype), buf, params.ftype); err != nil {
-			return fmt.Errorf("generating code layout: %w", err)
-		}
-		//code, err = genCodePage(params)
+		codeGen := newPageCodeGen(page, params.pfile, src)
+		code, err = genCodePage(codeGen)
 	}
 
 	if _, err := params.dest.Write(code); err != nil {
@@ -824,11 +823,407 @@ func compile(params compileParams) error {
 	return nil
 }
 
-func genCodeLayout(tree *syntaxTree) ([]byte, error) {
-	return nil, nil
+func (g *layoutCodeGen) outPrintf(format string, args ...any) {
+	fmt.Fprintf(&g.outb, format, args...)
 }
 
-func genCodePage(params *pageCodeGen) ([]byte, error) {
+func (g *layoutCodeGen) bodyPrintf(format string, args ...any) {
+	fmt.Fprintf(&g.bodyb, format, args...)
+}
+
+func (g *layoutCodeGen) used(path ...string) {
+	for _, p := range path {
+		g.imports[importDecl{path: strconv.Quote(p), pkgName: ""}] = true
+	}
+}
+
+func (g *layoutCodeGen) nodeLineNo(e node) {
+	if g.lineDirectivesEnabled {
+		g.emitLineDirective(g.lineNo(e.Pos()))
+	}
+}
+
+func (g *layoutCodeGen) emitLineDirective(n int) {
+	g.bodyPrintf("//line %s:%d\n", g.pfile.relpath(), n)
+}
+
+func (g *layoutCodeGen) generate() {
+	nodes := g.layout.nodes
+	g.genFromNode(nodeList(nodes))
+}
+
+func (g *layoutCodeGen) genFromNode(n node) {
+	var f inspector
+	f = func(e node) bool {
+		// TODO(paulsmith): these could be functions so they can be reused
+		switch e := e.(type) {
+		case *nodeLiteral:
+			g.used("io")
+			g.nodeLineNo(e)
+			g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.str))
+		case *nodeElement:
+			g.used("io")
+			g.nodeLineNo(e)
+			f(nodeList(e.startTagNodes))
+			f(nodeList(e.children))
+			g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.tag.end()))
+			return false
+		case *nodeGoStrExpr:
+			g.nodeLineNo(e)
+			g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, e.expr)
+		case *nodeGoCode:
+			if e.context != inlineGoCode {
+				panic(fmt.Sprintf("internal error: expected inlineGoCode, got %v", e.context))
+			}
+			srcLineNo := g.lineNo(e.Pos())
+			lines := strings.Split(e.code, "\n")
+			for _, line := range lines {
+				// FIXME(paulsmith): leaky abstraction
+				if g.lineDirectivesEnabled {
+					g.emitLineDirective(srcLineNo)
+				}
+				g.bodyPrintf("%s\n", line)
+				srcLineNo++
+			}
+		case *nodeIf:
+			g.bodyPrintf("if %s {\n", e.cond.expr)
+			f(e.then)
+			if e.alt == nil {
+				g.bodyPrintf("}\n")
+			} else {
+				g.bodyPrintf("} else {\n")
+				f(e.alt)
+				g.bodyPrintf("}\n")
+			}
+			return false
+		case nodeList:
+			for _, x := range e {
+				f(x)
+			}
+			return false
+		case *nodeFor:
+			g.bodyPrintf("for %s {\n", e.clause.code)
+			f(e.block)
+			g.bodyPrintf("}\n")
+			return false
+		case *nodeBlock:
+			f(nodeList(e.nodes))
+			return false
+		case *nodeSection:
+			f(e.block)
+			return false
+		case *nodePartial:
+			// FIXME(paulsmith): prune these out in newLayoutFromTree
+			panic("partials are not allowed in layouts")
+		case *nodeLayout:
+			// nothing to do
+		case *nodeImport:
+			// nothing to do
+		}
+		return true
+	}
+	inspect(n, f)
+}
+
+func genCodeLayout(g *layoutCodeGen) ([]byte, error) {
+	// FIXME(paulsmith): need way to specify this as user
+	packageName := "build"
+
+	g.outPrintf("// this file is mechanically generated, do not edit!\n")
+	g.outPrintf("// version: ")
+	printVersion(&g.outb)
+	g.outPrintf("\n")
+	g.outPrintf("package %s\n\n", packageName)
+
+	type field struct {
+		name string
+		typ  string
+	}
+
+	g.used("html/template")
+	fields := []field{
+		{name: "upFilePath", typ: "string"},
+		{name: "sections", typ: "map[string]chan template.HTML"},
+	}
+
+	typename := generatedTypename(g.pfile, upFileLayout)
+
+	g.bodyPrintf("type %s struct {\n", typename)
+	for _, field := range fields {
+		g.bodyPrintf("%s %s\n", field.name, field.typ)
+	}
+	g.bodyPrintf("}\n")
+
+	g.bodyPrintf("func (%s *%s) buildCliArgs() []string {\n", methodReceiverName, typename)
+	g.bodyPrintf("  return %#v\n", os.Args)
+	g.bodyPrintf("}\n\n")
+
+	g.bodyPrintf("func init() {\n")
+	g.bodyPrintf("  layout := new(%s)\n", typename)
+	g.bodyPrintf("  layout.upFilePath = %s\n", strconv.Quote(g.pfile.relpath()))
+	g.bodyPrintf("  layouts[\"%s\"] = layout\n", layoutName(g.pfile.relpath()))
+	g.bodyPrintf("}\n\n")
+
+	// FIXME(paulsmith): this is totally not safe for concurrent use!
+	g.used("html/template")
+	g.bodyPrintf(`
+func (%s *%s) section(name string) template.HTML {
+	return <-up.sections[name]
+}
+
+`, methodReceiverName, typename)
+
+	// FIXME(paulsmith): this is totally not safe for concurrent use!
+	g.bodyPrintf(`
+func (%s *%s) sectionSet(name string) bool {
+	_, ok := up.sections[name]
+	return ok
+}
+
+`, methodReceiverName, typename)
+
+	g.used("net/http", "html/template")
+	g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {\n", methodReceiverName, typename)
+	g.bodyPrintf("  %s.sections = sections\n", methodReceiverName)
+
+	// Make a new scope for the user's code block and HTML. This will help (but not fully prevent)
+	// name collisions with the surrounding code.
+	g.bodyPrintf("// Begin user Go code and HTML\n")
+	g.bodyPrintf("{\n")
+
+	g.generate()
+
+	// Close the scope we started for the user code and HTML.
+	g.bodyPrintf("// End user Go code and HTML\n")
+	g.bodyPrintf("}\n")
+
+	g.bodyPrintf("return nil\n")
+	g.bodyPrintf("}\n")
+
+	g.outPrintf("import (\n")
+	for decl, ok := range g.imports {
+		if ok {
+			if decl.pkgName != "" {
+				g.outPrintf("%s ", decl.pkgName)
+			}
+			g.outPrintf("%s\n", decl.path)
+		}
+	}
+	g.outPrintf(")\n\n")
+
+	raw, err := io.ReadAll(io.MultiReader(&g.outb, &g.bodyb))
+	if err != nil {
+		return nil, fmt.Errorf("reading all buffers: %w", err)
+	}
+
+	// fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
+
+	formatted, err := format.Source(raw)
+	if err != nil {
+		return nil, fmt.Errorf("gofmt the generated code: %w", err)
+	}
+
+	return formatted, nil
+}
+
+func genCodePage(g *pageCodeGen) ([]byte, error) {
+	// FIXME(paulsmith): need way to specify this as user
+	packageName := "build"
+
+	g.outPrintf("// this file is mechanically generated, do not edit!\n")
+	g.outPrintf("// version: ")
+	printVersion(&g.outb)
+	g.outPrintf("\n")
+	g.outPrintf("package %s\n\n", packageName)
+
+	type field struct {
+		name string
+		typ  string
+	}
+
+	fields := []field{
+		{name: "upFilePath", typ: "string"},
+		{name: "mainRoute", typ: "string"},
+	}
+
+	typename := generatedTypename(g.pfile, upFilePage)
+
+	g.bodyPrintf("type %s struct {\n", typename)
+	for _, field := range fields {
+		g.bodyPrintf("%s %s\n", field.name, field.typ)
+	}
+	g.bodyPrintf("}\n")
+
+	g.bodyPrintf("func (%s *%s) buildCliArgs() []string {\n", methodReceiverName, typename)
+	g.bodyPrintf("  return %#v\n", os.Args)
+	g.bodyPrintf("}\n\n")
+
+	g.bodyPrintf("func (%s *%s) register() {\n", methodReceiverName, typename)
+	g.bodyPrintf("  routes.add(%[1]s.mainRoute, %[1]s, routePage)\n", methodReceiverName)
+	if len(g.page.partialRoutes) > 0 {
+		g.bodyPrintf("  // partial routes\n")
+	}
+	route := routeFromPath(g.pfile.relpath())
+	for _, partialPath := range g.page.partialRoutes {
+		var path string
+		if route[len(route)-1] == '/' {
+			path = partialPath
+		} else {
+			path = "/" + partialPath
+		}
+		g.bodyPrintf("  routes.add(%[1]s.mainRoute + \"%[2]s\", %[1]s, routePartial)\n", methodReceiverName, path)
+	}
+	g.bodyPrintf("}\n\n")
+
+	g.bodyPrintf("func init() {\n")
+	g.bodyPrintf("  page := new(%s)\n", typename)
+	g.bodyPrintf("  page.upFilePath = %s\n", strconv.Quote(g.pfile.relpath()))
+	g.bodyPrintf("  page.mainRoute = %s\n", strconv.Quote(route))
+	g.bodyPrintf("  page.register()\n")
+	g.bodyPrintf("}\n\n")
+
+	// FIXME(paulsmith): feels a bit hacky to have this method in the page interface
+	g.bodyPrintf("func (%s *%s) filePath() string {\n", methodReceiverName, typename)
+	g.bodyPrintf("  return %s.upFilePath\n", methodReceiverName)
+	g.bodyPrintf("}\n\n")
+
+	g.used("net/http")
+	g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
+
+	if g.page.layout != "" {
+		g.bodyPrintf("  renderLayout := true\n")
+		g.bodyPrintf("  {\n")
+		g.bodyPrintf("    if isPartialRoute(%s.mainRoute, req.URL.Path) {\n", methodReceiverName)
+		g.bodyPrintf("      renderLayout = false\n")
+		g.bodyPrintf("    }\n")
+		g.bodyPrintf("  }\n")
+	}
+
+	// NOTE(paulsmith): we might want to encapsulate this in its own
+	// function/method, but would have to figure out the interplay between
+	// user code and control flow, i.e., return an error if the handler
+	// wants to skip rendering, redirect, etc.
+	if h := g.page.handler; h != nil {
+		srcLineNo := g.lineNo(h.Pos())
+		lines := strings.Split(h.code, "\n")
+		for _, line := range lines {
+			if g.lineDirectivesEnabled {
+				g.emitLineDirective(srcLineNo)
+			}
+			g.bodyPrintf("  %s\n", line)
+			srcLineNo++
+		}
+	}
+
+	if g.page.layout != "" {
+		g.used("html/template")
+		g.bodyPrintf("// sections\n")
+		g.bodyPrintf("sections := make(map[string]chan template.HTML)\n")
+		g.bodyPrintf("sections[\"contents\"] = make(chan template.HTML)\n")
+		for name := range g.page.sections {
+			g.bodyPrintf("sections[%s] = make(chan template.HTML)\n", strconv.Quote(name))
+		}
+
+		// TODO(paulsmith): this is where a flag that could conditionally toggle the rendering
+		// of the layout could go - maybe a special header in request object?
+		g.used("log", "sync")
+
+		g.bodyPrintf(
+			`
+				var wg sync.WaitGroup
+				if renderLayout {
+					layout := getLayout("%s")
+					wg.Add(1)
+					go func() {
+						if err := layout.Respond(w, req, sections); err != nil {
+							log.Printf("error responding with layout: %%v", err)
+							panic(err)
+						}
+						wg.Done()
+					}()
+				}
+			`, g.page.layout)
+	}
+
+	// Make a new scope for the user's code block and HTML. This will help (but not fully prevent)
+	// name collisions with the surrounding code.
+	g.bodyPrintf("// Begin user Go code and HTML\n")
+	g.bodyPrintf("{\n")
+
+	if g.page.layout == "" {
+		// if there is no layout statically, just write directly to the
+		// response writer (the default)
+		g.generate()
+	} else {
+		// render the main body contents
+		// TODO(paulsmith) could do these as a incremental stream
+		// so the receiving end is just pulling individual chunks off
+		// instead of waiting for the whole thing to be buffered
+		g.bodyPrintf("go func() {\n")
+		g.used("bytes", "html/template")
+		save := g.ioWriterVar
+		g.ioWriterVar = "b"
+		g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
+		g.generate()
+		g.bodyPrintf("  sections[\"contents\"] <- template.HTML(b.String())\n")
+		g.bodyPrintf("}()\n")
+		g.ioWriterVar = save
+
+		// NOTE(paulsmith): this is to allow for when the layout is dynamically toggled
+		// off by the user, for example, to reuse a page for htmx partial responses. it's
+		// somewhat unfortunate because the entire response is buffered, unlike in the
+		// static case.
+		g.bodyPrintf("if !renderLayout {\n")
+		g.bodyPrintf("  printEscaped(%s, <-sections[\"contents\"])\n", g.ioWriterVar)
+		g.bodyPrintf("}\n")
+
+		for name, block := range g.page.sections {
+			save := g.ioWriterVar
+			g.ioWriterVar = "b"
+			g.bodyPrintf("go func() {\n")
+			g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
+			g.genFromNode(block)
+			g.bodyPrintf("  sections[%s] <- template.HTML(b.String())\n", strconv.Quote(name))
+			g.bodyPrintf("}()\n")
+			g.ioWriterVar = save
+		}
+	}
+
+	// Close the scope we started for the user code and HTML.
+	g.bodyPrintf("// End user Go code and HTML\n")
+	g.bodyPrintf("}\n")
+
+	if g.page.layout != "" {
+		g.bodyPrintf("wg.Wait()\n")
+	}
+
+	g.bodyPrintf("return nil\n")
+	g.bodyPrintf("}\n")
+
+	g.outPrintf("import (\n")
+	for decl, ok := range g.imports {
+		if ok {
+			if decl.pkgName != "" {
+				g.outPrintf("%s ", decl.pkgName)
+			}
+			g.outPrintf("%s\n", decl.path)
+		}
+	}
+	g.outPrintf(")\n\n")
+
+	raw, err := io.ReadAll(io.MultiReader(&g.outb, &g.bodyb))
+	if err != nil {
+		return nil, fmt.Errorf("reading all buffers: %w", err)
+	}
+
+	// fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
+
+	formatted, err := format.Source(raw)
+	if err != nil {
+		return nil, fmt.Errorf("gofmt the generated code: %w", err)
+	}
+
+	return formatted, nil
 	return nil, nil
 }
 
@@ -1176,20 +1571,6 @@ func (s *cancellationSource) Value(key any) any {
 	panic("not implemented") // TODO: Implement
 }
 
-func getPushupPagePaths(root string) []string {
-	var paths []string
-	err := fs.WalkDir(os.DirFS(root), ".", func(path string, d fs.DirEntry, err error) error {
-		if !d.IsDir() && filepath.Ext(path) == upFileExt {
-			paths = append(paths, filepath.Join(root, path))
-		}
-		return nil
-	})
-	if err != nil {
-		panic(err)
-	}
-	return paths
-}
-
 func copyFile(dest, src string) error {
 	b, err := os.ReadFile(src)
 	if err != nil {
@@ -1411,13 +1792,13 @@ func generatedTypename(pfile projectFile, ftype upFileType) string {
 // path is the path to the Pushup file, relative to its containing app
 // directory in the Pushup project (so that part should not be part of the
 // path).
-func routeFromPath(path string) string {
+func routeFromPath(relpath string) string {
 	var dirs []string
-	dir := filepath.Dir(path)
+	dir := filepath.Dir(relpath)
 	if dir != "." {
 		dirs = strings.Split(dir, string([]rune{os.PathSeparator}))
 	}
-	file := filepath.Base(path)
+	file := filepath.Base(relpath)
 	base := strings.TrimSuffix(file, filepath.Ext(file))
 	var route string
 	if base != "index" {
@@ -1434,6 +1815,14 @@ func routeFromPath(path string) string {
 		route += "/"
 	}
 	return route
+}
+
+func layoutName(relpath string) string {
+	ext := filepath.Ext(relpath)
+	if ext != upFileExt {
+		panic("internal error: unexpected file extension " + ext)
+	}
+	return strings.TrimSuffix(relpath, ext)
 }
 
 // node represents a portion of the Pushup syntax, like a chunk of HTML,
@@ -1667,6 +2056,30 @@ func coalesceLiterals(nodes []node) []node {
 	return nodes
 }
 
+type layout struct {
+	imports []importDecl
+	nodes   []node
+}
+
+func newLayoutFromTree(tree *syntaxTree) (*layout, error) {
+	layout := &layout{}
+	n := 0
+	var f inspector
+	f = func(e node) bool {
+		switch e := e.(type) {
+		case *nodeImport:
+			layout.imports = append(layout.imports, e.decl)
+		default:
+			layout.nodes = append(layout.nodes, e)
+			n++
+		}
+		return false
+	}
+	inspect(nodeList(tree.nodes), f)
+	layout.nodes = layout.nodes[n:]
+	return layout, nil
+}
+
 // page represents a Pushup page that has been parsed and is ready for code
 // generation.
 type page struct {
@@ -1799,46 +2212,37 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 	return page, nil
 }
 
-// FIXME(paulsmith): collapse into compileUpFile
-func generateCodeToFile(c codeGenUnit, basename string, typename string, w io.Writer, ftype upFileType) error {
-	code, err := genCode(c, basename, typename, ftype)
-	if err != nil {
-		return fmt.Errorf("code gen: %w", err)
-	}
-
-	if _, err := w.Write(code); err != nil {
-		return fmt.Errorf("writing code: %w", err)
-	}
-
-	return nil
-}
-
-// TODO(paulsmith): probably can unify the two implementations of this and just
-// use the strategy type for discrimintating
-type codeGenUnit interface {
-	filePath() string
-	nodes() []node
-	lineNo(span) int
-}
-
 type pageCodeGen struct {
-	path   string
-	source string
-	layout string
-	page   *page
-	route  string
+	page    *page
+	pfile   projectFile
+	source  string
+	imports map[importDecl]bool
+
+	// buffer for the package clauses and import declarations at the top of
+	// a Go source file.
+	outb bytes.Buffer
+
+	// buffer for the main body of a Go source file, i.e., the top-level
+	// declarations.
+	bodyb bytes.Buffer
+
+	ioWriterVar           string
+	lineDirectivesEnabled bool
 }
 
-func (c *pageCodeGen) filePath() string {
-	return c.path
-}
-
-func (c *pageCodeGen) nodes() []node {
-	return c.page.nodes
-}
-
-func (c *pageCodeGen) lineNo(s span) int {
-	return lineCount(c.source[:s.start+1])
+func newPageCodeGen(page *page, pfile projectFile, source string) *pageCodeGen {
+	g := &pageCodeGen{
+		page:                  page,
+		pfile:                 pfile,
+		source:                source,
+		imports:               make(map[importDecl]bool),
+		ioWriterVar:           "w",
+		lineDirectivesEnabled: true,
+	}
+	for _, im := range page.imports {
+		g.imports[im] = true
+	}
+	return g
 }
 
 func lineCount(s string) int {
@@ -1846,17 +2250,39 @@ func lineCount(s string) int {
 }
 
 type layoutCodeGen struct {
-	path   string
+	layout  *layout
+	pfile   projectFile
+	imports map[importDecl]bool
+
+	// source code of .up file, needed for mapping line numbers back to
+	// original source in stack traces.
 	source string
-	tree   *syntaxTree
+
+	// buffer for the package clauses and import declarations at the top of
+	// a Go source file.
+	outb bytes.Buffer
+
+	// buffer for the main body of a Go source file, i.e., the top-level
+	// declarations.
+	bodyb bytes.Buffer
+
+	ioWriterVar           string
+	lineDirectivesEnabled bool
 }
 
-func (c *layoutCodeGen) filePath() string {
-	return c.path
-}
-
-func (c *layoutCodeGen) nodes() []node {
-	return c.tree.nodes
+func newLayoutCodeGen(layout *layout, pfile projectFile, source string) *layoutCodeGen {
+	l := &layoutCodeGen{
+		layout:                layout,
+		pfile:                 pfile,
+		source:                source,
+		imports:               make(map[importDecl]bool),
+		ioWriterVar:           "w",
+		lineDirectivesEnabled: true,
+	}
+	for _, im := range layout.imports {
+		l.imports[im] = true
+	}
+	return l
 }
 
 func (c *layoutCodeGen) lineNo(s span) int {
@@ -1865,71 +2291,45 @@ func (c *layoutCodeGen) lineNo(s span) int {
 
 const methodReceiverName = "up"
 
-type codeGenerator struct {
-	c                 codeGenUnit
-	ftype             upFileType
-	basename          string
-	imports           map[importDecl]bool
-	outb              bytes.Buffer
-	bodyb             bytes.Buffer
-	ioWriterVar       string
-	partialGuardCond  string
-	sourceLineEnabled bool
-}
-
-func newCodeGenerator(c codeGenUnit, basename string, ftype upFileType) *codeGenerator {
-	var g codeGenerator
-	g.c = c
-	g.ftype = ftype
-	g.basename = basename
-	g.imports = make(map[importDecl]bool)
-	if p, ok := c.(*pageCodeGen); ok {
-		for _, decl := range p.page.imports {
-			g.imports[decl] = true
-		}
-	}
-	g.ioWriterVar = "w"
-	g.sourceLineEnabled = true
-	return &g
-}
-
-func (g *codeGenerator) used(path ...string) {
+func (g *pageCodeGen) used(path ...string) {
 	for _, p := range path {
 		g.imports[importDecl{path: strconv.Quote(p), pkgName: ""}] = true
 	}
 }
 
-func (g *codeGenerator) nodeLineNo(e node) {
-	if g.sourceLineEnabled {
-		g.lineNo(g.c.lineNo(e.Pos()))
+func (g *pageCodeGen) nodeLineNo(e node) {
+	if g.lineDirectivesEnabled {
+		g.emitLineDirective(g.lineNo(e.Pos()))
 	}
 }
 
-func (g *codeGenerator) lineNo(n int) {
-	g.bodyPrintf("//line %s:%d\n", g.basename+upFileExt, n)
+func (c *pageCodeGen) lineNo(s span) int {
+	return lineCount(c.source[:s.start+1])
 }
 
-func (g *codeGenerator) outPrintf(format string, args ...any) {
+func (g *pageCodeGen) emitLineDirective(n int) {
+	g.bodyPrintf("//line %s:%d\n", g.pfile.relpath(), n)
+}
+
+func (g *pageCodeGen) outPrintf(format string, args ...any) {
 	fmt.Fprintf(&g.outb, format, args...)
 }
 
-func (g *codeGenerator) bodyPrintf(format string, args ...any) {
+func (g *pageCodeGen) bodyPrintf(format string, args ...any) {
 	fmt.Fprintf(&g.bodyb, format, args...)
 }
 
-func (g *codeGenerator) generate() {
-	nodes := g.c.nodes()
-	g.partialGuardCond = fmt.Sprintf("!isPartialRoute(%s.mainRoute, req.URL.Path)", methodReceiverName)
-	if _, ok := g.c.(*pageCodeGen); ok {
-		g.bodyPrintf("if %s {\n", g.partialGuardCond)
-	}
+// FIXME(paulsmith): this is going away shortly ...
+var partialGuardCond = "!isPartialRoute(" + methodReceiverName + ".mainRoute, req.URL.Path)"
+
+func (g *pageCodeGen) generate() {
+	nodes := g.page.nodes
+	g.bodyPrintf("if %s {\n", partialGuardCond)
 	g.genFromNode(nodeList(nodes))
-	if _, ok := g.c.(*pageCodeGen); ok {
-		g.bodyPrintf("}\n")
-	}
+	g.bodyPrintf("}\n")
 }
 
-func (g *codeGenerator) genFromNode(n node) {
+func (g *pageCodeGen) genFromNode(n node) {
 	var partialPath []string
 	var f inspector
 	f = func(e node) bool {
@@ -1953,14 +2353,16 @@ func (g *codeGenerator) genFromNode(n node) {
 				panic(fmt.Sprintf("assertion failure: expected inlineGoCode, got %v", e.context))
 			}
 			g.bodyPrintf("}\n") // close partial rendering guard `if`
-			srcLineNo := g.c.lineNo(e.Pos())
+			srcLineNo := g.lineNo(e.Pos())
 			lines := strings.Split(e.code, "\n")
 			for _, line := range lines {
-				g.lineNo(srcLineNo)
+				if g.lineDirectivesEnabled {
+					g.emitLineDirective(srcLineNo)
+				}
 				g.bodyPrintf("%s\n", line)
 				srcLineNo++
 			}
-			g.bodyPrintf("if %s {\n", g.partialGuardCond)
+			g.bodyPrintf("if %s {\n", partialGuardCond)
 		case *nodeIf:
 			g.bodyPrintf("if %s {\n", e.cond.expr)
 			f(e.then)
@@ -1989,16 +2391,13 @@ func (g *codeGenerator) genFromNode(n node) {
 			f(e.block)
 			return false
 		case *nodePartial:
-			if _, ok := g.c.(*pageCodeGen); !ok {
-				panic("partials are not defined in layouts")
-			}
 			partialPath = append(partialPath, e.name)
 			g.bodyPrintf("}\n") // closes opening if
 			path := strconv.Quote(strings.Join(partialPath, "/"))
 			g.bodyPrintf("if displayPartialHere(%s.mainRoute, %s, req.URL.Path) {\n", methodReceiverName, path)
 			f(e.block)
 			g.bodyPrintf("}\n")
-			g.bodyPrintf("if %s {\n", g.partialGuardCond)
+			g.bodyPrintf("if %s {\n", partialGuardCond)
 			partialPath = partialPath[:len(partialPath)-1]
 			return false
 		case *nodeLayout:
@@ -2009,259 +2408,6 @@ func (g *codeGenerator) genFromNode(n node) {
 		return true
 	}
 	inspect(n, f)
-}
-
-func genCode(c codeGenUnit, basename string, typename string, ftype upFileType) ([]byte, error) {
-	g := newCodeGenerator(c, basename, ftype)
-
-	// FIXME(paulsmith): need way to specify this as user
-	packageName := "build"
-
-	g.outPrintf("// this file is mechanically generated, do not edit!\n")
-	g.outPrintf("// version: ")
-	printVersion(&g.outb)
-	g.outPrintf("\n")
-	g.outPrintf("package %s\n\n", packageName)
-
-	type field struct {
-		name string
-		typ  string
-	}
-
-	fields := []field{
-		{name: "upFilePath", typ: "string"},
-		{name: "mainRoute", typ: "string"},
-	}
-
-	if ftype == upFileLayout {
-		g.used("html/template")
-		fields = append(fields, field{name: "sections", typ: "map[string]chan template.HTML"})
-	}
-
-	g.bodyPrintf("type %s struct {\n", typename)
-	for _, field := range fields {
-		g.bodyPrintf("%s %s\n", field.name, field.typ)
-	}
-	g.bodyPrintf("}\n")
-
-	g.bodyPrintf("func (%s *%s) buildCliArgs() []string {\n", methodReceiverName, typename)
-	g.bodyPrintf("  return %#v\n", os.Args)
-	g.bodyPrintf("}\n\n")
-
-	switch ftype {
-	case upFilePage:
-		p := c.(*pageCodeGen)
-		g.bodyPrintf("func (%s *%s) register() {\n", methodReceiverName, typename)
-		g.bodyPrintf("  routes.add(%[1]s.mainRoute, %[1]s, routePage)\n", methodReceiverName)
-		if len(p.page.partialRoutes) > 0 {
-			g.bodyPrintf("  // partial routes\n")
-		}
-		for _, partialPath := range p.page.partialRoutes {
-			var path string
-			if p.route[len(p.route)-1] == '/' {
-				path = partialPath
-			} else {
-				path = "/" + partialPath
-			}
-			g.bodyPrintf("  routes.add(%[1]s.mainRoute + \"%[2]s\", %[1]s, routePartial)\n", methodReceiverName, path)
-		}
-		g.bodyPrintf("}\n\n")
-
-		g.bodyPrintf("func init() {\n")
-		g.bodyPrintf("  page := new(%s)\n", typename)
-		g.bodyPrintf("  page.upFilePath = %s\n", strconv.Quote(c.filePath()))
-		g.bodyPrintf("  page.mainRoute = %s\n", strconv.Quote(p.route))
-		g.bodyPrintf("  page.register()\n")
-		g.bodyPrintf("}\n\n")
-	case upFileLayout:
-		g.bodyPrintf("func init() {\n")
-		g.bodyPrintf("  layout := new(%s)\n", typename)
-		g.bodyPrintf("  layout.upFilePath = %s\n", strconv.Quote(c.filePath()))
-		g.bodyPrintf("  layouts[\"%s\"] = layout\n", basename)
-		g.bodyPrintf("}\n\n")
-
-		g.used("html/template")
-		g.bodyPrintf(`
-func (%s *%s) section(name string) template.HTML {
-	return <-up.sections[name]
-}
-
-`, methodReceiverName, typename)
-
-		g.bodyPrintf(`
-func (%s *%s) sectionSet(name string) bool {
-	_, ok := up.sections[name]
-	return ok
-}
-
-`, methodReceiverName, typename)
-
-	}
-
-	// FIXME(paulsmith): feels a bit hacky to have this method in the page interface
-	g.bodyPrintf("func (%s *%s) filePath() string {\n", methodReceiverName, typename)
-	g.bodyPrintf("  return %s.upFilePath\n", methodReceiverName)
-	g.bodyPrintf("}\n\n")
-
-	g.used("net/http")
-	switch ftype {
-	case upFilePage:
-		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
-	case upFileLayout:
-		g.used("html/template")
-		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {\n", methodReceiverName, typename)
-		g.bodyPrintf("  %s.sections = sections\n", methodReceiverName)
-	default:
-		panic("")
-	}
-
-	if ftype == upFilePage {
-		p := c.(*pageCodeGen)
-		if p.layout != "" {
-			g.bodyPrintf("  renderLayout := true\n")
-			g.bodyPrintf("  {\n")
-			g.bodyPrintf("    if isPartialRoute(%s.mainRoute, req.URL.Path) {\n", methodReceiverName)
-			g.bodyPrintf("      renderLayout = false\n")
-			g.bodyPrintf("    }\n")
-			g.bodyPrintf("  }\n")
-		}
-
-		// NOTE(paulsmith): we might want to encapsulate this in its own
-		// function/method, but would have to figure out the interplay between
-		// user code and control flow, i.e., return an error if the handler
-		// wants to skip rendering, redirect, etc.
-		if h := p.page.handler; h != nil {
-			srcLineNo := g.c.lineNo(h.Pos())
-			lines := strings.Split(h.code, "\n")
-			for _, line := range lines {
-				g.lineNo(srcLineNo)
-				g.bodyPrintf("  %s\n", line)
-				srcLineNo++
-			}
-		}
-
-		if p.layout != "" {
-			g.used("html/template")
-			g.bodyPrintf("// sections\n")
-			g.bodyPrintf("sections := make(map[string]chan template.HTML)\n")
-			g.bodyPrintf("sections[\"contents\"] = make(chan template.HTML)\n")
-			for name := range p.page.sections {
-				g.bodyPrintf("sections[%s] = make(chan template.HTML)\n", strconv.Quote(name))
-			}
-		}
-
-		if p.layout != "" {
-			// TODO(paulsmith): this is where a flag that could conditionally toggle the rendering
-			// of the layout could go - maybe a special header in request object?
-			g.used("log", "sync")
-
-			g.bodyPrintf(
-				`
-				var wg sync.WaitGroup
-				if renderLayout {
-					layout := getLayout("%s")
-					wg.Add(1)
-					go func() {
-						if err := layout.Respond(w, req, sections); err != nil {
-							log.Printf("error responding with layout: %%v", err)
-							panic(err)
-						}
-						wg.Done()
-					}()
-				}
-			`, p.layout)
-		}
-	}
-
-	// Make a new scope for the user's code block and HTML. This will help (but not fully prevent)
-	// name collisions with the surrounding code.
-	g.bodyPrintf("// Begin user Go code and HTML\n")
-	g.bodyPrintf("{\n")
-
-	switch ftype {
-	case upFilePage:
-		p := c.(*pageCodeGen)
-
-		if p.layout == "" {
-			// if there is no layout statically, just write directly to the
-			// response writer (the default)
-			g.generate()
-		} else {
-			// render the main body contents
-			// TODO(paulsmith) could do these as a incremental stream
-			// so the receiving end is just pulling individual chunks off
-			// instead of waiting for the whole thing to be buffered
-			g.bodyPrintf("go func() {\n")
-			g.used("bytes", "html/template")
-			save := g.ioWriterVar
-			g.ioWriterVar = "b"
-			g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
-			g.generate()
-			g.bodyPrintf("  sections[\"contents\"] <- template.HTML(b.String())\n")
-			g.bodyPrintf("}()\n")
-			g.ioWriterVar = save
-
-			// NOTE(paulsmith): this is to allow for when the layout is dynamically toggled
-			// off by the user, for example, to reuse a page for htmx partial responses. it's
-			// somewhat unfortunate because the entire response is buffered, unlike in the
-			// static case.
-			g.bodyPrintf("if !renderLayout {\n")
-			g.bodyPrintf("  printEscaped(%s, <-sections[\"contents\"])\n", g.ioWriterVar)
-			g.bodyPrintf("}\n")
-
-			for name, block := range p.page.sections {
-				save := g.ioWriterVar
-				g.ioWriterVar = "b"
-				g.bodyPrintf("go func() {\n")
-				g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
-				g.genFromNode(block)
-				g.bodyPrintf("  sections[%s] <- template.HTML(b.String())\n", strconv.Quote(name))
-				g.bodyPrintf("}()\n")
-				g.ioWriterVar = save
-			}
-		}
-	case upFileLayout:
-		g.generate()
-	}
-
-	// Close the scope we started for the user code and HTML.
-	g.bodyPrintf("// End user Go code and HTML\n")
-	g.bodyPrintf("}\n")
-
-	if ftype == upFilePage {
-		p := c.(*pageCodeGen)
-		if p.layout != "" {
-			g.bodyPrintf("wg.Wait()\n")
-		}
-	}
-
-	g.bodyPrintf("return nil\n")
-	g.bodyPrintf("}\n")
-
-	g.outPrintf("import (\n")
-	for decl, ok := range g.imports {
-		if ok {
-			if decl.pkgName != "" {
-				g.outPrintf("%s ", decl.pkgName)
-			}
-			g.outPrintf("%s\n", decl.path)
-		}
-	}
-	g.outPrintf(")\n\n")
-
-	raw, err := io.ReadAll(io.MultiReader(&g.outb, &g.bodyb))
-	if err != nil {
-		return nil, fmt.Errorf("reading all buffers: %w", err)
-	}
-
-	// fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
-
-	formatted, err := format.Source(raw)
-	if err != nil {
-		return nil, fmt.Errorf("gofmt the generated code: %w", err)
-	}
-
-	return formatted, nil
 }
 
 func typenameFromPath(path string) string {
