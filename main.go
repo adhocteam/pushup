@@ -1225,7 +1225,6 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 	}
 
 	return formatted, nil
-	return nil, nil
 }
 
 func watchForReload(ctx context.Context, cancel context.CancelFunc, root string, reload chan struct{}) {
