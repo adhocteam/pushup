@@ -620,7 +620,7 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 		}
 	}
 
-	pf.debug()
+	//pf.debug()
 
 	return pf, nil
 }
@@ -849,6 +849,7 @@ func (g *layoutCodeGen) emitLineDirective(n int) {
 
 func (g *layoutCodeGen) generate() {
 	nodes := g.layout.nodes
+	log.Printf("NODES: %d", len(nodes))
 	g.genFromNode(nodeList(nodes))
 }
 
@@ -2076,7 +2077,7 @@ func newLayoutFromTree(tree *syntaxTree) (*layout, error) {
 		return false
 	}
 	inspect(nodeList(tree.nodes), f)
-	layout.nodes = layout.nodes[n:]
+	layout.nodes = layout.nodes[:n]
 	return layout, nil
 }
 
