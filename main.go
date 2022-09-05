@@ -849,7 +849,6 @@ func (g *layoutCodeGen) emitLineDirective(n int) {
 
 func (g *layoutCodeGen) generate() {
 	nodes := g.layout.nodes
-	log.Printf("NODES: %d", len(nodes))
 	g.genFromNode(nodeList(nodes))
 }
 
@@ -1061,19 +1060,15 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 
 	g.bodyPrintf("func (%s *%s) register() {\n", methodReceiverName, typename)
 	g.bodyPrintf("  routes.add(%[1]s.mainRoute, %[1]s, routePage)\n", methodReceiverName)
-	if len(g.page.partialRoutes) > 0 {
+	// partials - this is going away
+	if len(g.page.partials) > 0 {
 		g.bodyPrintf("  // partial routes\n")
 	}
 	route := routeFromPath(g.pfile.relpath())
-	for _, partialPath := range g.page.partialRoutes {
-		var path string
-		if route[len(route)-1] == '/' {
-			path = partialPath
-		} else {
-			path = "/" + partialPath
-		}
-		g.bodyPrintf("  routes.add(%[1]s.mainRoute + \"%[2]s\", %[1]s, routePartial)\n", methodReceiverName, path)
+	for _, partial := range g.page.partials {
+		g.bodyPrintf("  routes.add(%[1]s.mainRoute + \"%[2]s\", %[1]s, routePartial)\n", methodReceiverName, partial.urlpath())
 	}
+	// end partials
 	g.bodyPrintf("}\n\n")
 
 	g.bodyPrintf("func init() {\n")
@@ -2088,9 +2083,24 @@ type page struct {
 	handler  *nodeGoCode
 	nodes    []node
 	sections map[string]*nodeBlock
-	// partialRoutes is a list of all (potentially nested) URL path routes to
-	// inline partials in this page
-	partialRoutes []string
+
+	// partials is a list of all top-level inline partials in this page.
+	partials []*partial
+}
+
+type partial struct {
+	node     node
+	name     string
+	parent   *partial
+	children []*partial
+}
+
+func (p *partial) urlpath() string {
+	segments := []string{p.name}
+	for parent := p.parent; parent != nil; parent = parent.parent {
+		segments = append([]string{parent.name}, segments...)
+	}
+	return strings.Join(segments, "/")
 }
 
 // newPageFromTree produces a page which is the main prepared object for code
@@ -2161,7 +2171,7 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 	// this pass is for inline partials. it needs to be separate because the
 	// traversal of the tree is slightly different than the pass above.
 	{
-		var partialPath []string
+		var currentPartial *partial
 		var f inspector
 		f = func(e node) bool {
 			switch e := e.(type) {
@@ -2193,10 +2203,15 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 				f(e.block)
 				return false
 			case *nodePartial:
-				partialPath = append(partialPath, e.name)
-				page.partialRoutes = append(page.partialRoutes, strings.Join(partialPath, "/"))
+				p := &partial{node: e, name: e.name, parent: currentPartial}
+				if currentPartial != nil {
+					currentPartial.children = append(currentPartial.children, p)
+				}
+				prevPartial := currentPartial
+				currentPartial = p
 				f(e.block)
-				partialPath = partialPath[:len(partialPath)-1]
+				currentPartial = prevPartial
+				page.partials = append(page.partials, p)
 				return false
 			case *nodeLayout:
 				// nothing to do
