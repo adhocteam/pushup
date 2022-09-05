@@ -843,10 +843,10 @@ func (g *layoutCodeGen) emitLineDirective(n int) {
 
 func (g *layoutCodeGen) generate() {
 	nodes := g.layout.nodes
-	g.genFromNode(nodeList(nodes))
+	g.genNode(nodeList(nodes))
 }
 
-func (g *layoutCodeGen) genFromNode(n node) {
+func (g *layoutCodeGen) genNode(n node) {
 	var f inspector
 	f = func(e node) bool {
 		// TODO(paulsmith): these could be functions so they can be reused
@@ -1059,11 +1059,6 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 		g.bodyPrintf("  return %#v\n", os.Args)
 		g.bodyPrintf("}\n\n")
 
-		g.bodyPrintf("func init() {\n")
-		g.bodyPrintf("  page := new(%s)\n", typename)
-		g.bodyPrintf("  routes.add(%s, page, routePage)\n", strconv.Quote(route))
-		g.bodyPrintf("}\n\n")
-
 		g.used("net/http")
 		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
 
@@ -1132,7 +1127,7 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 			g.ioWriterVar = "b"
 			g.bodyPrintf("go func() {\n")
 			g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
-			g.genFromNode(block)
+			g.genNode(block)
 			g.bodyPrintf("  sections[%s] <- template.HTML(b.String())\n", strconv.Quote(name))
 			g.bodyPrintf("}()\n")
 			g.ioWriterVar = save
@@ -1188,7 +1183,7 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 
 		// FIXME(paulsmith): need to generate code for everything but emitting
 		// top-level page values to the output
-		g.generate()
+		g.genNodePartial(nodeList(g.page.nodes), partial)
 
 		// Close the scope we started for the user code and HTML.
 		g.bodyPrintf("// End user Go code and HTML\n")
@@ -2368,10 +2363,10 @@ func (g *pageCodeGen) bodyPrintf(format string, args ...any) {
 
 func (g *pageCodeGen) generate() {
 	nodes := g.page.nodes
-	g.genFromNode(nodeList(nodes))
+	g.genNode(nodeList(nodes))
 }
 
-func (g *pageCodeGen) genFromNode(n node) {
+func (g *pageCodeGen) genNode(n node) {
 	var f inspector
 	f = func(e node) bool {
 		switch e := e.(type) {
@@ -2391,7 +2386,7 @@ func (g *pageCodeGen) genFromNode(n node) {
 			g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, e.expr)
 		case *nodeGoCode:
 			if e.context != inlineGoCode {
-				panic(fmt.Sprintf("assertion failure: expected inlineGoCode, got %v", e.context))
+				panic("internal error: expected inlineGoCode")
 			}
 			srcLineNo := g.lineNo(e.Pos())
 			lines := strings.Split(e.code, "\n")
@@ -2438,6 +2433,94 @@ func (g *pageCodeGen) genFromNode(n node) {
 			// nothing to do
 		}
 		return true
+	}
+	inspect(n, f)
+}
+
+// NOTE(paulsmith): per DOM spec, "In tree order is preorder, depth-first traversal of a tree."
+
+func (g *pageCodeGen) genNodePartial(n node, p *partial) {
+	var f inspector
+	var state int
+	const (
+		stateStart int = iota
+		stateInPartialScope
+	)
+	state = stateStart
+	f = func(n node) bool {
+		if n != nil {
+			switch n := n.(type) {
+			case *nodeLiteral:
+				if state == stateInPartialScope {
+					g.used("io")
+					g.nodeLineNo(n)
+					g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(n.str))
+				}
+			case *nodeElement:
+				if state == stateInPartialScope {
+					g.used("io")
+					g.nodeLineNo(n)
+					f(nodeList(n.startTagNodes))
+				}
+				f(nodeList(n.children))
+				if state == stateInPartialScope {
+					g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(n.tag.end()))
+				}
+				return false
+			case *nodePartial:
+				if n == p.node {
+					state = stateInPartialScope
+				}
+				f(n.block)
+				state = stateStart
+				return false
+			case *nodeGoStrExpr:
+				if state == stateInPartialScope {
+					g.nodeLineNo(n)
+					g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, n.expr)
+				}
+			case *nodeFor:
+				g.bodyPrintf("for %s {\n", n.clause.code)
+				f(n.block)
+				g.bodyPrintf("}\n")
+				return false
+			case *nodeIf:
+				g.bodyPrintf("if %s {\n", n.cond.expr)
+				f(n.then)
+				if n.alt == nil {
+					g.bodyPrintf("}\n")
+				} else {
+					g.bodyPrintf("} else {\n")
+					f(n.alt)
+					g.bodyPrintf("}\n")
+				}
+				return false
+			case *nodeGoCode:
+				if n.context != inlineGoCode {
+					panic("internal error: expected inlineGoCode")
+				}
+				srcLineNo := g.lineNo(n.Pos())
+				lines := strings.Split(n.code, "\n")
+				for _, line := range lines {
+					if g.lineDirectivesEnabled {
+						g.emitLineDirective(srcLineNo)
+					}
+					g.bodyPrintf("%s\n", line)
+					srcLineNo++
+				}
+			case nodeList:
+				for _, x := range n {
+					f(x)
+				}
+			case *nodeBlock:
+				for _, x := range n.nodes {
+					f(x)
+				}
+			default:
+				log.Printf("- NODE TYPE: %T", n)
+			}
+		}
+		return false
 	}
 	inspect(n, f)
 }
@@ -3455,7 +3538,13 @@ func prettyPrintTree(t *syntaxTree) {
 		pad()
 		switch n := n.(type) {
 		case *nodeLiteral:
-			fmt.Fprintf(w, "\x1b[32m%q\x1b[0m\n", n.str)
+			if !isAllWhitespace(n.str) {
+				str := n.str
+				if len(str) > 20 {
+					str = str[:20] + "..."
+				}
+				fmt.Fprintf(w, "\x1b[32m%q\x1b[0m\n", str)
+			}
 		case *nodeGoStrExpr:
 			fmt.Fprintf(w, "\x1b[33m%s\x1b[0m\n", n.expr)
 		case *nodeGoCode:
@@ -3487,6 +3576,7 @@ func prettyPrintTree(t *syntaxTree) {
 			f(n.block)
 			return false
 		case *nodePartial:
+			fmt.Fprintf(w, "PARTIAL %s\n", n.name)
 			f(n.block)
 			return false
 		case *nodeBlock:

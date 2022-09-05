@@ -897,7 +897,7 @@ io.WriteString(w, "</div>")
 			}
 			g := newPageCodeGen(page, projectFile{}, "")
 			g.lineDirectivesEnabled = false
-			g.genFromNode(test.node)
+			g.genNode(test.node)
 			got := g.bodyb.String()
 			if diff := cmp.Diff(test.want, got); diff != "" {
 				t.Errorf("expected code gen diff (-want +got):\n%s", diff)
