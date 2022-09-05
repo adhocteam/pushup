@@ -298,7 +298,7 @@ func TestTagString(t *testing.T) {
 	}
 }
 
-func TestRouteFromPath(t *testing.T) {
+func TestRouteForPage(t *testing.T) {
 	tests := []struct {
 		path string
 		want string
@@ -335,7 +335,7 @@ func TestRouteFromPath(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run("", func(t *testing.T) {
-			if got := routeFromPath(test.path); test.want != got {
+			if got := routeForPage(test.path); test.want != got {
 				t.Errorf("want %q, got %q", test.want, got)
 			}
 		})

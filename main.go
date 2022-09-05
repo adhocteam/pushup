@@ -1021,6 +1021,13 @@ func (%s *%s) sectionSet(name string) bool {
 }
 
 func genCodePage(g *pageCodeGen) ([]byte, error) {
+	type initRoute struct {
+		typename string
+		route    string
+		role     string
+	}
+	var inits []initRoute
+
 	// FIXME(paulsmith): need way to specify this as user
 	packageName := "build"
 
@@ -1038,7 +1045,8 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 	// main page
 	{
 		typename := generatedTypename(g.pfile, upFilePage)
-		route := routeFromPath(g.pfile.relpath())
+		route := routeForPage(g.pfile.relpath())
+		inits = append(inits, initRoute{typename: typename, route: route, role: "routePage"})
 
 		g.bodyPrintf("type %s struct {\n", typename)
 		fields := []field{}
@@ -1144,7 +1152,8 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 
 	for _, partial := range g.page.partials {
 		typename := generatedTypenamePartial(partial, g.pfile)
-		route := routeFromPath(strings.Join([]string{g.pfile.relpath(), partial.urlpath()}, "/"))
+		route := routeForPartial(g.pfile.relpath(), partial.urlpath())
+		inits = append(inits, initRoute{typename: typename, route: route, role: "routePartial"})
 
 		g.bodyPrintf("type %s struct {\n", typename)
 		fields := []field{}
@@ -1152,11 +1161,6 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 			g.bodyPrintf("%s %s\n", field.name, field.typ)
 		}
 		g.bodyPrintf("}\n")
-
-		g.bodyPrintf("func init() {\n")
-		g.bodyPrintf("  partial := new(%s)\n", typename)
-		g.bodyPrintf("  routes.add(%s, partial, routePartial)\n", strconv.Quote(route))
-		g.bodyPrintf("}\n\n")
 
 		g.used("net/http")
 		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
@@ -1193,6 +1197,12 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 		g.bodyPrintf("return nil\n")
 		g.bodyPrintf("}\n")
 	}
+
+	g.bodyPrintf("\nfunc init() {\n")
+	for _, initRoute := range inits {
+		g.bodyPrintf("  routes.add(%s, new(%s), %s)\n", strconv.Quote(initRoute.route), initRoute.typename, initRoute.role)
+	}
+	g.bodyPrintf("}\n\n")
 
 	// we write out imports at the end because we need to know what was
 	// actually used by the body code
@@ -1795,11 +1805,11 @@ func generatedTypenamePartial(partial *partial, pfile projectFile) string {
 	return result
 }
 
-// routeFromPath produces the URL path route from the name of the Pushup page.
-// path is the path to the Pushup file, relative to its containing app
+// routeForPage produces the URL path route from the name of the Pushup page.
+// relpath is the path to the Pushup file, relative to its containing app
 // directory in the Pushup project (so that part should not be part of the
 // path).
-func routeFromPath(relpath string) string {
+func routeForPage(relpath string) string {
 	var dirs []string
 	dir := filepath.Dir(relpath)
 	if dir != "." {
@@ -1821,6 +1831,15 @@ func routeFromPath(relpath string) string {
 		// indexes always have a trailing slash
 		route += "/"
 	}
+	return route
+}
+
+func routeForPartial(relpath string, partialUrlpath string) string {
+	prefix := strings.TrimSuffix(relpath, filepath.Ext(relpath))
+	if filepath.Base(prefix) == "index" {
+		prefix = filepath.Dir(prefix)
+	}
+	route := routeForPage(prefix + "/" + partialUrlpath)
 	return route
 }
 
