@@ -8,6 +8,8 @@
     <body>
         <h1>No layout!</h1>
         <p>This component has no layout.</p>
-        <p><a href="/" hx-boost="false">Back home</a></p>
+        <p>This is acheived by setting <tt style="padding: 3px; margin: 4px; background: #ddd">^^layout !</tt> in the page.</p>
+        <p><a href="/">Back home</a></p>
+        <p><a href="/source?route=^req.URL.Path">view source</a></p>
     </body>
 </html>
