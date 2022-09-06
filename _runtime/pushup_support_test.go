@@ -101,11 +101,7 @@ func (p *dummyPage) Respond(http.ResponseWriter, *http.Request) error {
 	return nil
 }
 
-func (p *dummyPage) filePath() string {
-	return ""
-}
-
-var _ page = (*dummyPage)(nil)
+var _ Responder = (*dummyPage)(nil)
 
 func TestIsPartialRoute(t *testing.T) {
 	oldRoutes := routes
