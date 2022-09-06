@@ -1,3 +1,4 @@
+^layout !
 ^{
     var title = "Welcome to Pushup"
     var name = "Ad Hoc"

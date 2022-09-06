@@ -49,8 +49,14 @@ func TestPushup(t *testing.T) {
 		t.Fatalf("reading testdata dir: %v", err)
 	}
 	for _, entry := range entries {
-		if strings.HasSuffix(entry.Name(), ".up") {
+		if strings.HasSuffix(entry.Name(), upFileExt) {
 			t.Run(entry.Name(), func(t *testing.T) {
+				// FIXME(paulsmith): remove this once we have been panic
+				// handling in layouts
+				if entry.Name() == "panicking.up" {
+					t.Skip()
+				}
+
 				basename, _ := splitExt(entry.Name())
 
 				var requests []testRequest
@@ -298,132 +304,86 @@ func TestTagString(t *testing.T) {
 	}
 }
 
-func TestTrimCommonPrefix(t *testing.T) {
+func TestRouteForPage(t *testing.T) {
 	tests := []struct {
 		path string
-		root string
 		want string
 	}{
 		{
-			"app/pages/index.up",
-			"app/pages",
 			"index.up",
-		},
-		{
-			"./app/pages/index.up",
-			"app/pages",
-			"index.up",
-		},
-		{
-			"index.up",
-			".",
-			"index.up",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run("", func(t *testing.T) {
-			if got := trimCommonPrefix(test.path, test.root); test.want != got {
-				t.Errorf("want %q, got %q", test.want, got)
-			}
-		})
-	}
-}
-
-func TestRouteFromPath(t *testing.T) {
-	tests := []struct {
-		path string
-		root string
-		want string
-	}{
-		{
-			"app/pages/index.up",
-			"app/pages",
 			"/",
 		},
 		{
-			"app/pages/about.up",
-			"app/pages",
+			"about.up",
 			"/about",
 		},
 		{
-			"app/pages/x/sub.up",
-			"app/pages",
+			"x/sub.up",
 			"/x/sub",
 		},
 		{
 			"testdata/foo.up",
-			".",
 			"/testdata/foo",
 		},
 		{
-			"app/pages/x/$name.up",
-			"app/pages",
+			"x/$name.up",
 			"/x/:name",
 		},
 		{
-			"app/pages/$projectId/$productId",
-			"app/pages",
+			"$projectId/$productId",
 			"/:projectId/:productId",
 		},
 		{
-			"app/pages/blah/index.up",
-			"app/pages",
+			"blah/index.up",
 			"/blah/",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run("", func(t *testing.T) {
-			if got := routeFromPath(test.path, test.root); test.want != got {
+			if got := routeForPage(test.path); test.want != got {
 				t.Errorf("want %q, got %q", test.want, got)
 			}
 		})
 	}
 }
 
-func TestGeneratedFilename(t *testing.T) {
+func TestCompiledOutputPath(t *testing.T) {
 	tests := []struct {
-		path     string
-		root     string
+		pfile    projectFile
 		want     string
-		strategy compilationStrategy
+		strategy upFileType
 	}{
 		{
-			"app/pages/index.up",
-			"app/pages",
+			projectFile{path: "app/pages/index.up", projectFilesSubdir: "app/pages"},
 			"index.up.go",
-			compilePushupPage,
+			upFilePage,
 		},
 		{
-			"app/pages/about.up",
-			"app/pages",
+			projectFile{path: "app/pages/about.up", projectFilesSubdir: "app/pages"},
 			"about.up.go",
-			compilePushupPage,
+			upFilePage,
 		},
 		{
-			"app/pages/x/sub.up",
-			"app/pages",
+			projectFile{path: "app/pages/x/sub.up", projectFilesSubdir: "app/pages"},
 			"x__sub.up.go",
-			compilePushupPage,
+			upFilePage,
 		},
 		{
-			"testdata/foo.up",
-			".",
+			projectFile{path: "testdata/foo.up", projectFilesSubdir: ""},
 			"testdata__foo.up.go",
-			compilePushupPage,
+			upFilePage,
 		},
 		{
-			"app/layouts/default.up",
-			"app/layouts",
+			projectFile{path: "app/layouts/default.up", projectFilesSubdir: "app/layouts"},
 			"default.layout.up.go",
-			compileLayout,
+			upFileLayout,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run("", func(t *testing.T) {
-			if got := generatedFilename(test.path, test.root, test.strategy); test.want != got {
+			if got := compiledOutputPath(test.pfile, test.strategy); test.want != got {
 				t.Errorf("want %q, got %q", test.want, got)
 			}
 		})
@@ -453,21 +413,20 @@ func TestTypenameFromPath(t *testing.T) {
 
 func TestGeneratedTypename(t *testing.T) {
 	tests := []struct {
-		path     string
-		root     string
-		strategy compilationStrategy
+		pfile    projectFile
+		strategy upFileType
 		want     string
 	}{
-		{"index.up", ".", compilePushupPage, "IndexPage"},
-		{"foo-bar.up", ".", compilePushupPage, "FooBarPage"},
-		{"foo_bar.up", ".", compilePushupPage, "FooBarPage"},
-		{"a/b/c.up", ".", compilePushupPage, "ABCPage"},
-		{"a/b/$c.up", ".", compilePushupPage, "ABDollarSignCPage"},
+		{projectFile{path: "index.up", projectFilesSubdir: "."}, upFilePage, "IndexPage"},
+		{projectFile{path: "foo-bar.up", projectFilesSubdir: "."}, upFilePage, "FooBarPage"},
+		{projectFile{path: "foo_bar.up", projectFilesSubdir: "."}, upFilePage, "FooBarPage"},
+		{projectFile{path: "a/b/c.up", projectFilesSubdir: "."}, upFilePage, "ABCPage"},
+		{projectFile{path: "a/b/$c.up", projectFilesSubdir: "."}, upFilePage, "ABDollarSignCPage"},
 	}
 
 	for _, test := range tests {
-		t.Run(test.path, func(t *testing.T) {
-			got := generatedTypename(test.path, test.root, test.strategy)
+		t.Run(test.pfile.path, func(t *testing.T) {
+			got := generatedTypename(test.pfile, test.strategy)
 			if diff := cmp.Diff(test.want, got); diff != "" {
 				t.Errorf("(-want, +got)\n%s", diff)
 			}
@@ -917,7 +876,7 @@ func TestCodeGenFromNode(t *testing.T) {
 	}{
 		{
 			node: &nodeElement{
-				tag: tag{name: "div", attrs: []*attr{&attr{name: stringPos{string: "id"}, value: stringPos{string: "foo"}}}},
+				tag: tag{name: "div", attrs: []*attr{{name: stringPos{string: "id"}, value: stringPos{string: "foo"}}}},
 				startTagNodes: []node{
 					&nodeLiteral{str: "<div "},
 					&nodeLiteral{str: "id=\""},
@@ -942,11 +901,10 @@ io.WriteString(w, "</div>")
 			if err != nil {
 				t.Fatalf("new page from tree: %v", err)
 			}
-			unit := &pageCodeGen{page: page}
-			codegen := newCodeGenerator(unit, "test", compilePushupPage)
-			codegen.sourceLineEnabled = false
-			codegen.genFromNode(test.node)
-			got := codegen.bodyb.String()
+			g := newPageCodeGen(page, projectFile{}, "")
+			g.lineDirectivesEnabled = false
+			g.genNode(test.node)
+			got := g.bodyb.String()
 			if diff := cmp.Diff(test.want, got); diff != "" {
 				t.Errorf("expected code gen diff (-want +got):\n%s", diff)
 			}

@@ -21,11 +21,6 @@ type Responder interface {
 	Respond(http.ResponseWriter, *http.Request) error
 }
 
-type page interface {
-	Responder
-	filePath() string
-}
-
 // FIXME(paulsmith): add a wrapper type for easily going between a component and a http.Handler
 // TODO(paulsmith): HTTP methods? how to handle? right now, not dealt with at route level
 
@@ -42,25 +37,25 @@ const (
 	routePartial
 )
 
-func (r *routeList) add(path string, c page, role routeRole) {
-	*r = append(*r, newRoute(path, c, role))
+func (r *routeList) add(path string, responder Responder, role routeRole) {
+	*r = append(*r, newRoute(path, responder, role))
 }
 
 type route struct {
-	path  string
-	regex *regexp.Regexp
-	slugs []string
-	page  page
-	role  routeRole
+	path      string
+	regex     *regexp.Regexp
+	slugs     []string
+	responder Responder
+	role      routeRole
 }
 
-func newRoute(path string, c page, role routeRole) *route {
+func newRoute(path string, responder Responder, role routeRole) *route {
 	p := regexPatFromRoute(path)
 	result := new(route)
 	result.path = path
 	result.regex = regexp.MustCompile("^" + p.pat + "$")
 	result.slugs = p.slugs
-	result.page = c
+	result.responder = responder
 	result.role = role
 	return result
 }
@@ -112,7 +107,7 @@ func Respond(w http.ResponseWriter, r *http.Request) error {
 		// the component interface, we probably should pass the params to
 		// Respond instead of wrapping the request object with context values.
 		ctx := context.WithValue(r.Context(), ctxKey{}, params)
-		if err := route.page.Respond(w, r.WithContext(ctx)); err != nil {
+		if err := route.responder.Respond(w, r.WithContext(ctx)); err != nil {
 			return err
 		}
 		return nil
@@ -194,11 +189,25 @@ type layout interface {
 var layouts = make(map[string]layout)
 
 func getLayout(name string) layout {
+	if name == "" {
+		return new(nilLayout)
+	}
 	l, ok := layouts[name]
 	if !ok {
 		panic("couldn't find layout " + name)
 	}
 	return l
+}
+
+type nilLayout int
+
+func (l *nilLayout) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {
+	select {
+	case contents := <-sections["contents"]:
+		printEscaped(w, contents)
+	case <-req.Context().Done():
+	}
+	return nil
 }
 
 func Admin(w http.ResponseWriter, r *http.Request) {

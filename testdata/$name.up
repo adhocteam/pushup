@@ -1,1 +1,2 @@
+^layout !
 <p>Hello, ^getParam(req, "name")!</p>

@@ -22,7 +22,7 @@
     var models []model
     make := req.FormValue("make")
     if make == "" {
-        make= "Apple silicon"
+        make = "Apple silicon"
     }
     if m, ok := makesAndModels[make]; ok {
         models = m
@@ -37,7 +37,10 @@
     <label>Make</label>
     <select name="make" hx-get="./value-select/models" hx-target="#models">
         ^for make := range makesAndModels {
-            <option value="^make">^make</option>
+            <text>
+                ^{ _ = make }
+                <option value="^make">^make</option>
+            </text>
         }
     </select>
 </div>

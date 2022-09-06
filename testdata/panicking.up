@@ -1,3 +1,2 @@
-^{
-    panic("")
-}
+^layout !
+^{ panic("") }
