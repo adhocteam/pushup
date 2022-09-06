@@ -1088,44 +1088,66 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 
 		// TODO(paulsmith): this is where a flag that could conditionally toggle the rendering
 		// of the layout could go - maybe a special header in request object?
-		g.used("log", "sync")
+		g.used("log", "sync", "context", "time")
 		g.bodyPrintf(
 			`
 			var wg sync.WaitGroup
 			layout := getLayout("%s")
+			ctx, cancel := context.WithTimeout(req.Context(), time.Second * 5)
 			wg.Add(1)
 			go func() {
-				if err := layout.Respond(w, req, sections); err != nil {
+				defer wg.Done()
+				defer cancel()
+				if err := layout.Respond(w, req.WithContext(ctx), sections); err != nil {
 					log.Printf("error responding with layout: %%v", err)
 					panic(err)
 				}
-				wg.Done()
 			}()
 		`, g.page.layout)
 
 		// Make a new scope for the user's code block and HTML. This will help (but not fully prevent)
 		// name collisions with the surrounding code.
-		g.bodyPrintf("// Begin user Go code and HTML\n")
+		g.bodyPrintf("\n// Begin user Go code and HTML\n")
 		g.bodyPrintf("{\n")
 
+		g.bodyPrintf("var panicked any\n")
 		// render the main body contents
 		// TODO(paulsmith) could do these as a incremental stream
 		// so the receiving end is just pulling individual chunks off
-		// instead of waiting for the whole thing to be buffered
+		g.bodyPrintf("wg.Add(1)\n")
 		g.bodyPrintf("go func() {\n")
+		g.bodyPrintf("  defer wg.Done()\n")
+		g.bodyPrintf("  defer func() {\n")
+		g.bodyPrintf("    if r := recover(); r != nil {\n")
+		g.bodyPrintf("      if panicked == nil {\n")
+		g.bodyPrintf("	      cancel()\n")
+		g.bodyPrintf("	      panicked = r\n")
+		g.bodyPrintf("	    }\n")
+		g.bodyPrintf("    }\n")
+		g.bodyPrintf("  }()\n")
 		g.used("bytes", "html/template")
 		save := g.ioWriterVar
 		g.ioWriterVar = "b"
 		g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
 		g.generate()
 		g.bodyPrintf("  sections[\"contents\"] <- template.HTML(b.String())\n")
-		g.bodyPrintf("}()\n")
+		g.bodyPrintf("}()\n\n")
 		g.ioWriterVar = save
 
 		for name, block := range g.page.sections {
 			save := g.ioWriterVar
 			g.ioWriterVar = "b"
+			g.bodyPrintf("wg.Add(1)\n")
 			g.bodyPrintf("go func() {\n")
+			g.bodyPrintf("  defer wg.Done()\n")
+			g.bodyPrintf("  defer func() {\n")
+			g.bodyPrintf("    if r := recover(); r != nil {\n")
+			g.bodyPrintf("      if panicked != nil {\n")
+			g.bodyPrintf("	      cancel()\n")
+			g.bodyPrintf("	      panicked = r\n")
+			g.bodyPrintf("	    }\n")
+			g.bodyPrintf("    }\n")
+			g.bodyPrintf("  }()\n")
 			g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
 			g.genNode(block)
 			g.bodyPrintf("  sections[%s] <- template.HTML(b.String())\n", strconv.Quote(name))
@@ -1133,12 +1155,22 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 			g.ioWriterVar = save
 		}
 
+		// Wait for layout to finish rendering
+		g.bodyPrintf("wg.Wait()\n")
+
+		// Check if any of the goroutines panicked
+		g.bodyPrintf("if panicked != nil {\n")
+		g.bodyPrintf("  close(sections[\"contents\"])\n")
+		for name := range g.page.sections {
+			g.bodyPrintf("  close(sections[%s])\n", strconv.Quote(name))
+		}
+		g.used("fmt")
+		g.bodyPrintf("  return fmt.Errorf(\"goroutine panicked: %%v\", panicked)\n")
+		g.bodyPrintf("}\n")
+
 		// Close the scope we started for the user code and HTML.
 		g.bodyPrintf("// End user Go code and HTML\n")
 		g.bodyPrintf("}\n")
-
-		// Wait for layout to finish rendering
-		g.bodyPrintf("wg.Wait()\n")
 
 		// return from Respond()
 		g.bodyPrintf("return nil\n")

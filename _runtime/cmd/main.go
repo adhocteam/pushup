@@ -36,6 +36,7 @@ func main() {
 	// TODO(paulsmith): allow these middlewares to be configurable on/off
 	var h http.Handler = http.HandlerFunc(pushupHandler)
 	h = requestLogMiddleware(h)
+	h = http.TimeoutHandler(h, 5 * time.Second, "")
 	h = panicRecoveryMiddleware(h)
 	mux.Handle("/", h)
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
@@ -76,8 +77,8 @@ func main() {
 
 	srv := http.Server{
 		Handler:           mux,
-		ReadTimeout:       10 * time.Second,
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		MaxHeaderBytes:    1 << 16,
 	}

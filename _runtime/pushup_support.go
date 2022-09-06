@@ -8,7 +8,6 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
-	"log"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -203,8 +202,11 @@ func getLayout(name string) layout {
 type nilLayout int
 
 func (l *nilLayout) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {
-	log.Printf("NIL LAYOUT")
-	printEscaped(w, <-sections["contents"])
+	select {
+	case contents := <-sections["contents"]:
+		printEscaped(w, contents)
+	case <-req.Context().Done():
+	}
 	return nil
 }
 
