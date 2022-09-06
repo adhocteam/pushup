@@ -43,6 +43,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const upFileExt = ".up"
+
 func main() {
 	var version bool
 
@@ -642,38 +644,6 @@ type compileProjectParams struct {
 	embedSource bool
 }
 
-const upFileExt = ".up"
-
-func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compileProjectParams) error {
-	path := pfile.path
-	sourceFile, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("opening source file %s: %w", path, err)
-	}
-	defer sourceFile.Close()
-	destPath := filepath.Join(projectParams.outDir, compiledOutputPath(pfile, ftype))
-	destDir := filepath.Dir(destPath)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return fmt.Errorf("making destination file's directory %s: %w", destDir, err)
-	}
-	destFile, err := os.Create(destPath)
-	if err != nil {
-		return fmt.Errorf("opening destination file %s: %w", destPath, err)
-	}
-	defer destFile.Close()
-	params := compileParams{
-		source:             sourceFile,
-		dest:               destFile,
-		pfile:              pfile,
-		ftype:              ftype,
-		applyOptimizations: projectParams.applyOptimizations,
-	}
-	if err := compile(params); err != nil {
-		return fmt.Errorf("compiling page file %s: %w", path, err)
-	}
-	return nil
-}
-
 func compileProject(c *compileProjectParams) error {
 	if c.parseOnly {
 		for _, pfile := range append(c.files.pages, c.files.layouts...) {
@@ -757,6 +727,38 @@ func compileProject(c *compileProjectParams) error {
 	return nil
 }
 
+// compileUpFile compiles a single .up file in a Pushup project context. it
+// outputs .go code to a file in the build directory.
+func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compileProjectParams) error {
+	path := pfile.path
+	sourceFile, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("opening source file %s: %w", path, err)
+	}
+	defer sourceFile.Close()
+	destPath := filepath.Join(projectParams.outDir, compiledOutputPath(pfile, ftype))
+	destDir := filepath.Dir(destPath)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("making destination file's directory %s: %w", destDir, err)
+	}
+	destFile, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("opening destination file %s: %w", destPath, err)
+	}
+	defer destFile.Close()
+	params := compileParams{
+		source:             sourceFile,
+		dest:               destFile,
+		pfile:              pfile,
+		ftype:              ftype,
+		applyOptimizations: projectParams.applyOptimizations,
+	}
+	if err := compile(params); err != nil {
+		return fmt.Errorf("compiling page file %s: %w", path, err)
+	}
+	return nil
+}
+
 type compileParams struct {
 	source             io.Reader
 	dest               io.Writer
@@ -765,6 +767,9 @@ type compileParams struct {
 	applyOptimizations bool
 }
 
+// compile compiles Pushup source code. it parses the source, applies
+// optimizations to the resulting syntax tree, and generates Go code from the
+// tree.
 func compile(params compileParams) error {
 	b, err := io.ReadAll(params.source)
 	if err != nil {
@@ -815,6 +820,70 @@ func compile(params compileParams) error {
 	}
 
 	return nil
+}
+
+type layout struct {
+	imports []importDecl
+	nodes   []node
+}
+
+func newLayoutFromTree(tree *syntaxTree) (*layout, error) {
+	layout := &layout{}
+	n := 0
+	var f inspector
+	f = func(e node) bool {
+		switch e := e.(type) {
+		case *nodeImport:
+			layout.imports = append(layout.imports, e.decl)
+		default:
+			layout.nodes = append(layout.nodes, e)
+			n++
+		}
+		return false
+	}
+	inspect(nodeList(tree.nodes), f)
+	layout.nodes = layout.nodes[:n]
+	return layout, nil
+}
+
+type layoutCodeGen struct {
+	layout  *layout
+	pfile   projectFile
+	imports map[importDecl]bool
+
+	// source code of .up file, needed for mapping line numbers back to
+	// original source in stack traces.
+	source string
+
+	// buffer for the package clauses and import declarations at the top of
+	// a Go source file.
+	outb bytes.Buffer
+
+	// buffer for the main body of a Go source file, i.e., the top-level
+	// declarations.
+	bodyb bytes.Buffer
+
+	ioWriterVar           string
+	lineDirectivesEnabled bool
+}
+
+func newLayoutCodeGen(layout *layout, pfile projectFile, source string) *layoutCodeGen {
+	l := &layoutCodeGen{
+		layout:                layout,
+		pfile:                 pfile,
+		source:                source,
+		imports:               make(map[importDecl]bool),
+		ioWriterVar:           "w",
+		lineDirectivesEnabled: true,
+	}
+	for _, im := range layout.imports {
+		l.imports[im] = true
+	}
+	return l
+}
+
+func (c *layoutCodeGen) lineNo(s span) int {
+	return lineCount(c.source[:s.start+1])
 }
 
 func (g *layoutCodeGen) outPrintf(format string, args ...any) {
@@ -919,6 +988,8 @@ func (g *layoutCodeGen) genNode(n node) {
 	inspect(n, f)
 }
 
+const methodReceiverName = "up"
+
 func genCodeLayout(g *layoutCodeGen) ([]byte, error) {
 	// FIXME(paulsmith): need way to specify this as user
 	packageName := "build"
@@ -1007,6 +1078,389 @@ outputSection := func(name string) template.HTML {
 	}
 
 	return formatted, nil
+}
+
+// page represents a Pushup page that has been parsed and is ready for code
+// generation.
+type page struct {
+	layout   string
+	imports  []importDecl
+	handler  *nodeGoCode
+	nodes    []node
+	sections map[string]*nodeBlock
+
+	// partials is a list of all top-level inline partials in this page.
+	partials []*partial
+}
+
+// partial represents an inline partial in a Pushup page.
+type partial struct {
+	node     node
+	name     string
+	parent   *partial
+	children []*partial
+}
+
+// urlpath produces the URL path segment for the partial. this takes in to
+// account its ancestor partials, so nested partials have the full path from
+// their containing inline partials. note that the returned string is not
+// prefixed with the host page's URL path.
+func (p *partial) urlpath() string {
+	segments := []string{p.name}
+	for parent := p.parent; parent != nil; parent = parent.parent {
+		segments = append([]string{parent.name}, segments...)
+	}
+	return strings.Join(segments, "/")
+}
+
+// newPageFromTree produces a page which is the main prepared object for code
+// generation. this requires walking the syntax tree and reorganizing things
+// somewhat to make them easier to access. some node types are encountered
+// sequentially in the source file, but need to be reorganized for access in
+// the code generator.
+func newPageFromTree(tree *syntaxTree) (*page, error) {
+	page := &page{
+		layout:   "default",
+		sections: make(map[string]*nodeBlock),
+	}
+
+	layoutSet := false
+	n := 0
+	var err error
+
+	// this pass over the syntax tree nodes enforces invariants (only one
+	// handler may be declared per page, layout may only be set once) and
+	// aggregates imports and sections for easier access in the subsequent
+	// code generation phase. as a result, some nodes are removed from the
+	// tree.
+	var f inspector
+	f = func(e node) bool {
+		switch e := e.(type) {
+		case *nodeImport:
+			page.imports = append(page.imports, e.decl)
+		case *nodeLayout:
+			if layoutSet {
+				err = fmt.Errorf("layout already set as %q", page.layout)
+				return false
+			}
+			if e.name == "!" {
+				page.layout = ""
+			} else {
+				page.layout = e.name
+			}
+			layoutSet = true
+		case *nodeGoCode:
+			if e.context == handlerGoCode {
+				if page.handler != nil {
+					err = fmt.Errorf("only one handler per page can be defined")
+					return false
+				}
+				page.handler = e
+			} else {
+				tree.nodes[n] = e
+				n++
+			}
+		case nodeList:
+			for _, x := range e {
+				f(x)
+			}
+		case *nodeSection:
+			page.sections[e.name] = e.block
+		default:
+			tree.nodes[n] = e
+			n++
+		}
+		// don't recurse into child nodes
+		return false
+	}
+	inspect(nodeList(tree.nodes), f)
+	if err != nil {
+		return nil, err
+	}
+
+	page.nodes = tree.nodes[:n]
+
+	// this pass is for inline partials. it needs to be separate because the
+	// traversal of the tree is slightly different than the pass above.
+	{
+		var currentPartial *partial
+		var f inspector
+		f = func(e node) bool {
+			switch e := e.(type) {
+			case *nodeLiteral:
+			case *nodeElement:
+				f(nodeList(e.startTagNodes))
+				f(nodeList(e.children))
+				return false
+			case *nodeGoStrExpr:
+			case *nodeGoCode:
+			case *nodeIf:
+				f(e.then)
+				if e.alt != nil {
+					f(e.alt)
+				}
+				return false
+			case nodeList:
+				for _, x := range e {
+					f(x)
+				}
+				return false
+			case *nodeFor:
+				f(e.block)
+				return false
+			case *nodeBlock:
+				f(nodeList(e.nodes))
+				return false
+			case *nodeSection:
+				f(e.block)
+				return false
+			case *nodePartial:
+				p := &partial{node: e, name: e.name, parent: currentPartial}
+				if currentPartial != nil {
+					currentPartial.children = append(currentPartial.children, p)
+				}
+				prevPartial := currentPartial
+				currentPartial = p
+				f(e.block)
+				currentPartial = prevPartial
+				page.partials = append(page.partials, p)
+				return false
+			case *nodeLayout:
+				// nothing to do
+			case *nodeImport:
+				// nothing to do
+			}
+			return false
+		}
+		inspect(nodeList(page.nodes), f)
+	}
+
+	return page, nil
+}
+
+type pageCodeGen struct {
+	page    *page
+	pfile   projectFile
+	source  string
+	imports map[importDecl]bool
+
+	// buffer for the package clauses and import declarations at the top of
+	// a Go source file.
+	outb bytes.Buffer
+
+	// buffer for the main body of a Go source file, i.e., the top-level
+	// declarations.
+	bodyb bytes.Buffer
+
+	ioWriterVar           string
+	lineDirectivesEnabled bool
+}
+
+func newPageCodeGen(page *page, pfile projectFile, source string) *pageCodeGen {
+	g := &pageCodeGen{
+		page:                  page,
+		pfile:                 pfile,
+		source:                source,
+		imports:               make(map[importDecl]bool),
+		ioWriterVar:           "w",
+		lineDirectivesEnabled: true,
+	}
+	for _, im := range page.imports {
+		g.imports[im] = true
+	}
+	return g
+}
+
+func (g *pageCodeGen) used(path ...string) {
+	for _, p := range path {
+		g.imports[importDecl{path: strconv.Quote(p), pkgName: ""}] = true
+	}
+}
+
+func (g *pageCodeGen) nodeLineNo(e node) {
+	if g.lineDirectivesEnabled {
+		g.emitLineDirective(g.lineNo(e.Pos()))
+	}
+}
+
+func (c *pageCodeGen) lineNo(s span) int {
+	return lineCount(c.source[:s.start+1])
+}
+
+func (g *pageCodeGen) emitLineDirective(n int) {
+	g.bodyPrintf("//line %s:%d\n", g.pfile.relpath(), n)
+}
+
+func (g *pageCodeGen) outPrintf(format string, args ...any) {
+	fmt.Fprintf(&g.outb, format, args...)
+}
+
+func (g *pageCodeGen) bodyPrintf(format string, args ...any) {
+	fmt.Fprintf(&g.bodyb, format, args...)
+}
+
+func (g *pageCodeGen) generate() {
+	nodes := g.page.nodes
+	g.genNode(nodeList(nodes))
+}
+
+func (g *pageCodeGen) genNode(n node) {
+	var f inspector
+	f = func(e node) bool {
+		switch e := e.(type) {
+		case *nodeLiteral:
+			g.used("io")
+			g.nodeLineNo(e)
+			g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.str))
+		case *nodeElement:
+			g.used("io")
+			g.nodeLineNo(e)
+			f(nodeList(e.startTagNodes))
+			f(nodeList(e.children))
+			g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.tag.end()))
+			return false
+		case *nodeGoStrExpr:
+			g.nodeLineNo(e)
+			g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, e.expr)
+		case *nodeGoCode:
+			if e.context != inlineGoCode {
+				panic("internal error: expected inlineGoCode")
+			}
+			srcLineNo := g.lineNo(e.Pos())
+			lines := strings.Split(e.code, "\n")
+			for _, line := range lines {
+				if g.lineDirectivesEnabled {
+					g.emitLineDirective(srcLineNo)
+				}
+				g.bodyPrintf("%s\n", line)
+				srcLineNo++
+			}
+		case *nodeIf:
+			g.bodyPrintf("if %s {\n", e.cond.expr)
+			f(e.then)
+			if e.alt == nil {
+				g.bodyPrintf("}\n")
+			} else {
+				g.bodyPrintf("} else {\n")
+				f(e.alt)
+				g.bodyPrintf("}\n")
+			}
+			return false
+		case nodeList:
+			for _, x := range e {
+				f(x)
+			}
+			return false
+		case *nodeFor:
+			g.bodyPrintf("for %s {\n", e.clause.code)
+			f(e.block)
+			g.bodyPrintf("}\n")
+			return false
+		case *nodeBlock:
+			f(nodeList(e.nodes))
+			return false
+		case *nodeSection:
+			f(e.block)
+			return false
+		case *nodePartial:
+			f(e.block)
+			return false
+		case *nodeLayout:
+			// nothing to do
+		case *nodeImport:
+			// nothing to do
+		}
+		return true
+	}
+	inspect(n, f)
+}
+
+// NOTE(paulsmith): per DOM spec, "In tree order is preorder, depth-first traversal of a tree."
+
+func (g *pageCodeGen) genNodePartial(n node, p *partial) {
+	var f inspector
+	var state int
+	const (
+		stateStart int = iota
+		stateInPartialScope
+	)
+	state = stateStart
+	f = func(n node) bool {
+		if n != nil {
+			switch n := n.(type) {
+			case *nodeLiteral:
+				if state == stateInPartialScope {
+					g.used("io")
+					g.nodeLineNo(n)
+					g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(n.str))
+				}
+			case *nodeElement:
+				if state == stateInPartialScope {
+					g.used("io")
+					g.nodeLineNo(n)
+					f(nodeList(n.startTagNodes))
+				}
+				f(nodeList(n.children))
+				if state == stateInPartialScope {
+					g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(n.tag.end()))
+				}
+				return false
+			case *nodePartial:
+				if n == p.node {
+					state = stateInPartialScope
+				}
+				f(n.block)
+				state = stateStart
+				return false
+			case *nodeGoStrExpr:
+				if state == stateInPartialScope {
+					g.nodeLineNo(n)
+					g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, n.expr)
+				}
+			case *nodeFor:
+				g.bodyPrintf("for %s {\n", n.clause.code)
+				f(n.block)
+				g.bodyPrintf("}\n")
+				return false
+			case *nodeIf:
+				g.bodyPrintf("if %s {\n", n.cond.expr)
+				f(n.then)
+				if n.alt == nil {
+					g.bodyPrintf("}\n")
+				} else {
+					g.bodyPrintf("} else {\n")
+					f(n.alt)
+					g.bodyPrintf("}\n")
+				}
+				return false
+			case *nodeGoCode:
+				if n.context != inlineGoCode {
+					panic("internal error: expected inlineGoCode")
+				}
+				srcLineNo := g.lineNo(n.Pos())
+				lines := strings.Split(n.code, "\n")
+				for _, line := range lines {
+					if g.lineDirectivesEnabled {
+						g.emitLineDirective(srcLineNo)
+					}
+					g.bodyPrintf("%s\n", line)
+					srcLineNo++
+				}
+			case nodeList:
+				for _, x := range n {
+					f(x)
+				}
+			case *nodeBlock:
+				for _, x := range n.nodes {
+					f(x)
+				}
+			default:
+				panic(fmt.Sprintf("internal error: unhandled node type %T", n))
+			}
+		}
+		return false
+	}
+	inspect(n, f)
 }
 
 func genCodePage(g *pageCodeGen) ([]byte, error) {
@@ -1867,6 +2321,8 @@ func layoutName(relpath string) string {
 	return strings.TrimSuffix(relpath, ext)
 }
 
+/* ------------------ start of syntax nodes -------------------------*/
+
 // node represents a portion of the Pushup syntax, like a chunk of HTML,
 // or a Go expression to be evaluated, or a control flow construct like `if'
 // or `for'.
@@ -2098,452 +2554,8 @@ func coalesceLiterals(nodes []node) []node {
 	return nodes
 }
 
-type layout struct {
-	imports []importDecl
-	nodes   []node
-}
-
-func newLayoutFromTree(tree *syntaxTree) (*layout, error) {
-	layout := &layout{}
-	n := 0
-	var f inspector
-	f = func(e node) bool {
-		switch e := e.(type) {
-		case *nodeImport:
-			layout.imports = append(layout.imports, e.decl)
-		default:
-			layout.nodes = append(layout.nodes, e)
-			n++
-		}
-		return false
-	}
-	inspect(nodeList(tree.nodes), f)
-	layout.nodes = layout.nodes[:n]
-	return layout, nil
-}
-
-// page represents a Pushup page that has been parsed and is ready for code
-// generation.
-type page struct {
-	layout   string
-	imports  []importDecl
-	handler  *nodeGoCode
-	nodes    []node
-	sections map[string]*nodeBlock
-
-	// partials is a list of all top-level inline partials in this page.
-	partials []*partial
-}
-
-type partial struct {
-	node     node
-	name     string
-	parent   *partial
-	children []*partial
-}
-
-func (p *partial) urlpath() string {
-	segments := []string{p.name}
-	for parent := p.parent; parent != nil; parent = parent.parent {
-		segments = append([]string{parent.name}, segments...)
-	}
-	return strings.Join(segments, "/")
-}
-
-// newPageFromTree produces a page which is the main prepared object for code
-// generation. this requires walking the syntax tree and reorganizing things
-// somewhat to make them easier to access. some node types are encountered
-// sequentially in the source file, but need to be reorganized for access in
-// the code generator.
-func newPageFromTree(tree *syntaxTree) (*page, error) {
-	page := &page{
-		layout:   "default",
-		sections: make(map[string]*nodeBlock),
-	}
-
-	layoutSet := false
-	n := 0
-	var err error
-
-	// this pass over the syntax tree nodes enforces invariants (only one
-	// handler may be declared per page, layout may only be set once) and
-	// aggregates imports and sections for easier access in the subsequent
-	// code generation phase. as a result, some nodes are removed from the
-	// tree.
-	var f inspector
-	f = func(e node) bool {
-		switch e := e.(type) {
-		case *nodeImport:
-			page.imports = append(page.imports, e.decl)
-		case *nodeLayout:
-			if layoutSet {
-				err = fmt.Errorf("layout already set as %q", page.layout)
-				return false
-			}
-			if e.name == "!" {
-				page.layout = ""
-			} else {
-				page.layout = e.name
-			}
-			layoutSet = true
-		case *nodeGoCode:
-			if e.context == handlerGoCode {
-				if page.handler != nil {
-					err = fmt.Errorf("only one handler per page can be defined")
-					return false
-				}
-				page.handler = e
-			} else {
-				tree.nodes[n] = e
-				n++
-			}
-		case nodeList:
-			for _, x := range e {
-				f(x)
-			}
-		case *nodeSection:
-			page.sections[e.name] = e.block
-		default:
-			tree.nodes[n] = e
-			n++
-		}
-		// don't recurse into child nodes
-		return false
-	}
-	inspect(nodeList(tree.nodes), f)
-	if err != nil {
-		return nil, err
-	}
-
-	page.nodes = tree.nodes[:n]
-
-	// this pass is for inline partials. it needs to be separate because the
-	// traversal of the tree is slightly different than the pass above.
-	{
-		var currentPartial *partial
-		var f inspector
-		f = func(e node) bool {
-			switch e := e.(type) {
-			case *nodeLiteral:
-			case *nodeElement:
-				f(nodeList(e.startTagNodes))
-				f(nodeList(e.children))
-				return false
-			case *nodeGoStrExpr:
-			case *nodeGoCode:
-			case *nodeIf:
-				f(e.then)
-				if e.alt != nil {
-					f(e.alt)
-				}
-				return false
-			case nodeList:
-				for _, x := range e {
-					f(x)
-				}
-				return false
-			case *nodeFor:
-				f(e.block)
-				return false
-			case *nodeBlock:
-				f(nodeList(e.nodes))
-				return false
-			case *nodeSection:
-				f(e.block)
-				return false
-			case *nodePartial:
-				p := &partial{node: e, name: e.name, parent: currentPartial}
-				if currentPartial != nil {
-					currentPartial.children = append(currentPartial.children, p)
-				}
-				prevPartial := currentPartial
-				currentPartial = p
-				f(e.block)
-				currentPartial = prevPartial
-				page.partials = append(page.partials, p)
-				return false
-			case *nodeLayout:
-				// nothing to do
-			case *nodeImport:
-				// nothing to do
-			}
-			return false
-		}
-		inspect(nodeList(page.nodes), f)
-	}
-
-	return page, nil
-}
-
-type pageCodeGen struct {
-	page    *page
-	pfile   projectFile
-	source  string
-	imports map[importDecl]bool
-
-	// buffer for the package clauses and import declarations at the top of
-	// a Go source file.
-	outb bytes.Buffer
-
-	// buffer for the main body of a Go source file, i.e., the top-level
-	// declarations.
-	bodyb bytes.Buffer
-
-	ioWriterVar           string
-	lineDirectivesEnabled bool
-}
-
-func newPageCodeGen(page *page, pfile projectFile, source string) *pageCodeGen {
-	g := &pageCodeGen{
-		page:                  page,
-		pfile:                 pfile,
-		source:                source,
-		imports:               make(map[importDecl]bool),
-		ioWriterVar:           "w",
-		lineDirectivesEnabled: true,
-	}
-	for _, im := range page.imports {
-		g.imports[im] = true
-	}
-	return g
-}
-
 func lineCount(s string) int {
 	return strings.Count(s, "\n") + 1
-}
-
-type layoutCodeGen struct {
-	layout  *layout
-	pfile   projectFile
-	imports map[importDecl]bool
-
-	// source code of .up file, needed for mapping line numbers back to
-	// original source in stack traces.
-	source string
-
-	// buffer for the package clauses and import declarations at the top of
-	// a Go source file.
-	outb bytes.Buffer
-
-	// buffer for the main body of a Go source file, i.e., the top-level
-	// declarations.
-	bodyb bytes.Buffer
-
-	ioWriterVar           string
-	lineDirectivesEnabled bool
-}
-
-func newLayoutCodeGen(layout *layout, pfile projectFile, source string) *layoutCodeGen {
-	l := &layoutCodeGen{
-		layout:                layout,
-		pfile:                 pfile,
-		source:                source,
-		imports:               make(map[importDecl]bool),
-		ioWriterVar:           "w",
-		lineDirectivesEnabled: true,
-	}
-	for _, im := range layout.imports {
-		l.imports[im] = true
-	}
-	return l
-}
-
-func (c *layoutCodeGen) lineNo(s span) int {
-	return lineCount(c.source[:s.start+1])
-}
-
-const methodReceiverName = "up"
-
-func (g *pageCodeGen) used(path ...string) {
-	for _, p := range path {
-		g.imports[importDecl{path: strconv.Quote(p), pkgName: ""}] = true
-	}
-}
-
-func (g *pageCodeGen) nodeLineNo(e node) {
-	if g.lineDirectivesEnabled {
-		g.emitLineDirective(g.lineNo(e.Pos()))
-	}
-}
-
-func (c *pageCodeGen) lineNo(s span) int {
-	return lineCount(c.source[:s.start+1])
-}
-
-func (g *pageCodeGen) emitLineDirective(n int) {
-	g.bodyPrintf("//line %s:%d\n", g.pfile.relpath(), n)
-}
-
-func (g *pageCodeGen) outPrintf(format string, args ...any) {
-	fmt.Fprintf(&g.outb, format, args...)
-}
-
-func (g *pageCodeGen) bodyPrintf(format string, args ...any) {
-	fmt.Fprintf(&g.bodyb, format, args...)
-}
-
-func (g *pageCodeGen) generate() {
-	nodes := g.page.nodes
-	g.genNode(nodeList(nodes))
-}
-
-func (g *pageCodeGen) genNode(n node) {
-	var f inspector
-	f = func(e node) bool {
-		switch e := e.(type) {
-		case *nodeLiteral:
-			g.used("io")
-			g.nodeLineNo(e)
-			g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.str))
-		case *nodeElement:
-			g.used("io")
-			g.nodeLineNo(e)
-			f(nodeList(e.startTagNodes))
-			f(nodeList(e.children))
-			g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.tag.end()))
-			return false
-		case *nodeGoStrExpr:
-			g.nodeLineNo(e)
-			g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, e.expr)
-		case *nodeGoCode:
-			if e.context != inlineGoCode {
-				panic("internal error: expected inlineGoCode")
-			}
-			srcLineNo := g.lineNo(e.Pos())
-			lines := strings.Split(e.code, "\n")
-			for _, line := range lines {
-				if g.lineDirectivesEnabled {
-					g.emitLineDirective(srcLineNo)
-				}
-				g.bodyPrintf("%s\n", line)
-				srcLineNo++
-			}
-		case *nodeIf:
-			g.bodyPrintf("if %s {\n", e.cond.expr)
-			f(e.then)
-			if e.alt == nil {
-				g.bodyPrintf("}\n")
-			} else {
-				g.bodyPrintf("} else {\n")
-				f(e.alt)
-				g.bodyPrintf("}\n")
-			}
-			return false
-		case nodeList:
-			for _, x := range e {
-				f(x)
-			}
-			return false
-		case *nodeFor:
-			g.bodyPrintf("for %s {\n", e.clause.code)
-			f(e.block)
-			g.bodyPrintf("}\n")
-			return false
-		case *nodeBlock:
-			f(nodeList(e.nodes))
-			return false
-		case *nodeSection:
-			f(e.block)
-			return false
-		case *nodePartial:
-			f(e.block)
-			return false
-		case *nodeLayout:
-			// nothing to do
-		case *nodeImport:
-			// nothing to do
-		}
-		return true
-	}
-	inspect(n, f)
-}
-
-// NOTE(paulsmith): per DOM spec, "In tree order is preorder, depth-first traversal of a tree."
-
-func (g *pageCodeGen) genNodePartial(n node, p *partial) {
-	var f inspector
-	var state int
-	const (
-		stateStart int = iota
-		stateInPartialScope
-	)
-	state = stateStart
-	f = func(n node) bool {
-		if n != nil {
-			switch n := n.(type) {
-			case *nodeLiteral:
-				if state == stateInPartialScope {
-					g.used("io")
-					g.nodeLineNo(n)
-					g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(n.str))
-				}
-			case *nodeElement:
-				if state == stateInPartialScope {
-					g.used("io")
-					g.nodeLineNo(n)
-					f(nodeList(n.startTagNodes))
-				}
-				f(nodeList(n.children))
-				if state == stateInPartialScope {
-					g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(n.tag.end()))
-				}
-				return false
-			case *nodePartial:
-				if n == p.node {
-					state = stateInPartialScope
-				}
-				f(n.block)
-				state = stateStart
-				return false
-			case *nodeGoStrExpr:
-				if state == stateInPartialScope {
-					g.nodeLineNo(n)
-					g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, n.expr)
-				}
-			case *nodeFor:
-				g.bodyPrintf("for %s {\n", n.clause.code)
-				f(n.block)
-				g.bodyPrintf("}\n")
-				return false
-			case *nodeIf:
-				g.bodyPrintf("if %s {\n", n.cond.expr)
-				f(n.then)
-				if n.alt == nil {
-					g.bodyPrintf("}\n")
-				} else {
-					g.bodyPrintf("} else {\n")
-					f(n.alt)
-					g.bodyPrintf("}\n")
-				}
-				return false
-			case *nodeGoCode:
-				if n.context != inlineGoCode {
-					panic("internal error: expected inlineGoCode")
-				}
-				srcLineNo := g.lineNo(n.Pos())
-				lines := strings.Split(n.code, "\n")
-				for _, line := range lines {
-					if g.lineDirectivesEnabled {
-						g.emitLineDirective(srcLineNo)
-					}
-					g.bodyPrintf("%s\n", line)
-					srcLineNo++
-				}
-			case nodeList:
-				for _, x := range n {
-					f(x)
-				}
-			case *nodeBlock:
-				for _, x := range n.nodes {
-					f(x)
-				}
-			default:
-				log.Printf("- NODE TYPE: %T", n)
-			}
-		}
-		return false
-	}
-	inspect(n, f)
 }
 
 func typenameFromPath(path string) string {
@@ -2685,6 +2697,7 @@ func (p *htmlParser) skipWhitespace() []*nodeLiteral {
 	return result
 }
 
+// transition character: transitions the parser from markup to code: ^
 const (
 	transSym    = '^'
 	transSymStr = string(transSym)
