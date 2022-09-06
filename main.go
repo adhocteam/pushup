@@ -934,11 +934,7 @@ func genCodeLayout(g *layoutCodeGen) ([]byte, error) {
 		typ  string
 	}
 
-	g.used("html/template")
-	fields := []field{
-		{name: "upFilePath", typ: "string"},
-		{name: "sections", typ: "map[string]chan template.HTML"},
-	}
+	fields := []field{}
 
 	typename := generatedTypename(g.pfile, upFileLayout)
 
@@ -953,36 +949,29 @@ func genCodeLayout(g *layoutCodeGen) ([]byte, error) {
 	g.bodyPrintf("}\n\n")
 
 	g.bodyPrintf("func init() {\n")
-	g.bodyPrintf("  layout := new(%s)\n", typename)
-	g.bodyPrintf("  layout.upFilePath = %s\n", strconv.Quote(g.pfile.relpath()))
-	g.bodyPrintf("  layouts[\"%s\"] = layout\n", layoutName(g.pfile.relpath()))
+	g.bodyPrintf("  layouts[\"%s\"] = new(%s)\n", layoutName(g.pfile.relpath()), typename)
 	g.bodyPrintf("}\n\n")
-
-	// FIXME(paulsmith): this is totally not safe for concurrent use!
-	g.used("html/template")
-	g.bodyPrintf(`
-func (%s *%s) section(name string) template.HTML {
-	return <-up.sections[name]
-}
-
-`, methodReceiverName, typename)
-
-	// FIXME(paulsmith): this is totally not safe for concurrent use!
-	g.bodyPrintf(`
-func (%s *%s) sectionSet(name string) bool {
-	_, ok := up.sections[name]
-	return ok
-}
-
-`, methodReceiverName, typename)
 
 	g.used("net/http", "html/template")
 	g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {\n", methodReceiverName, typename)
-	g.bodyPrintf("  %s.sections = sections\n", methodReceiverName)
+
+	// sections support
+	g.used("html/template")
+	g.bodyPrintf(`
+sectionDefined := func(name string) bool {
+	_, ok := sections[name]
+	return ok
+}
+_ = sectionDefined
+
+outputSection := func(name string) template.HTML {
+	return <-sections[name]
+}
+`)
 
 	// Make a new scope for the user's code block and HTML. This will help (but not fully prevent)
 	// name collisions with the surrounding code.
-	g.bodyPrintf("// Begin user Go code and HTML\n")
+	g.bodyPrintf("\n// Begin user Go code and HTML\n")
 	g.bodyPrintf("{\n")
 
 	g.generate()

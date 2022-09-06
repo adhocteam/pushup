@@ -233,7 +233,7 @@ routing.
 Layouts are HTML templates that used in common across multiple pages. They are
 just HTML, with Pushup syntax as necessary. Each page renders its contents, and
 then the layout inserts the page contents into the template with the
-`^up.section("contents")` Pushup syntax.
+`^outputSection("contents")` Pushup expression.
 
 ## Static media
 
@@ -577,21 +577,21 @@ In a Pushup page, sections are defined with the keyword like so:
 }
 ```
 
-Layouts can declare sections with the `up.section()` method.
+Layouts can output sections with the `outputSection` function.
 
 ```pushup
 <aside>
-    ^up.section("sidebar")
+    ^outputSection("sidebar")
 </aside>
 ```
 
 Layouts can also make sections optional, by first checking if a page has set a
-section with `up.sectionSet()`, which returns a boolean.
+section with `sectionDefined()`, which returns a boolean.
 
 ```pushup
-^if (up.sectionSet("sidebar")) {
+^if sectionDefined("sidebar") {
     <aside>
-        ^up.section("sidebar")
+        ^outputSection("sidebar")
     </aside>
 }
 ```
@@ -600,9 +600,9 @@ Checking for if a section was set by a page lets a layout designer provide
 default markup that can be overridden by a page.
 
 ```pushup
-^if (up.sectionSet("title")) {
+^if sectionDefined("title") {
     <title>
-        ^up.section("title")
+        ^outputSection("title")
     </title>
 } else {
     <title>Welcome to our site</title>
@@ -640,9 +640,9 @@ For example, if the page above had the route `/elements/`, then a request to
 
 ```html
 <ul>
-	<li>Ag</li>
-	<li>Na</li>
-	<li>C</li>
+    <li>Ag</li>
+    <li>Na</li>
+    <li>C</li>
 </ul>
 ```
 

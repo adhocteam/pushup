@@ -2,8 +2,8 @@
 <html lang="en">
     <head>
         <title>
-            ^if up.sectionSet("title") {
-                <text>^up.section("title")</text>
+            ^if sectionDefined("title") {
+                <text>^outputSection("title")</text>
             } else {
                 <text>Example Pushup app</text>
             }
@@ -23,7 +23,7 @@
             <h1>Pushup demo</h1>
         </header>
         <main>
-            ^up.section("contents")
+            ^outputSection("contents")
         </main>
         <footer>
             <p><a href="/source?route=^req.URL.Path">view source</a></p>

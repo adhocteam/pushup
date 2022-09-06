@@ -3,8 +3,8 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>^if up.sectionSet("title") {
-            <text>^up.section("title")</text>
+        <title>^if sectionDefined("title") {
+            <text>^outputSection("title")</text>
         } else {
             <text>Pushup app</text>
         }</title>
@@ -14,7 +14,7 @@
     </head>
     <body>
         <main class="container">
-            ^up.section("contents")
+            ^outputSection("contents")
         </main>
         <footer class="container">
             <p>Made with Pushup. We're glad you're here.</p>
