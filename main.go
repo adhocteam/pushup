@@ -3110,7 +3110,6 @@ func (p *codeParser) reset() {
 	p.baseOffset = p.parser.offset
 	fset := token.NewFileSet()
 	source := p.parser.source()
-	// log.Printf("SOURCE: %q", source)
 	p.file = fset.AddFile("", fset.Base(), len(source))
 	p.scanner = new(scanner.Scanner)
 	p.scanner.Init(p.file, []byte(source), nil, scanner.ScanComments)
@@ -3308,16 +3307,15 @@ func (p *codeParser) parseStmtBlock() *nodeBlock {
 	}
 	p.advance()
 	var block *nodeBlock
-	// it is likely non-Go code (i.e., HTML, or HTML and a transition)
 	switch p.peek().tok {
-	case token.ILLEGAL:
-		if p.peek().lit == transSymStr {
-			p.scanner.ErrorCount--
+	// check for a transition, i.e., stay in code parser
+	case token.XOR:
+		p.advance()
+		code := p.parseCode()
+		if p.peek().tok == token.SEMICOLON {
 			p.advance()
-			// we can just stay in the code parser
-			code := p.parseCode()
-			block = &nodeBlock{nodes: []node{code}}
 		}
+		block = &nodeBlock{nodes: []node{code}}
 	case token.EOF:
 		p.parser.errorf("premature end of block in IF statement")
 	default:

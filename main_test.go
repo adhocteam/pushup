@@ -835,6 +835,38 @@ func TestParse(t *testing.T) {
 				},
 			},
 		},
+		{
+			`^partial foo {
+				^if true {
+					<p></p>
+				}
+			}`,
+			&syntaxTree{
+				nodes: []node{
+					&nodePartial{
+						name: "foo",
+						pos:  span{start: 8, end: 12},
+						block: &nodeBlock{
+							nodes: []node{
+								&nodeIf{
+									cond: &nodeGoStrExpr{expr: "true", pos: span{23, 27}},
+									then: &nodeBlock{
+										nodes: []node{
+											&nodeLiteral{str: "\n\t\t\t\t\t", pos: span{start: 29, end: 35}},
+											&nodeElement{
+												tag:           tag{name: "p"},
+												startTagNodes: []node{&nodeLiteral{str: "<p>", pos: span{start: 35, end: 38}}},
+												pos:           span{35, 38},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 	opts := cmp.AllowUnexported(unexported...)
 	for _, test := range tests {

@@ -49,11 +49,9 @@
     <label>Model</label>
     <select id="models" name="model">
         ^partial models {
-            <text>
-                ^for _, model := range models {
-                    <option value="^model.value">^model.label</option>
-                }
-            </text>
+            ^for _, model := range models {
+                <option value="^model.value">^model.label</option>
+            }
         }
     </select>
 </div>

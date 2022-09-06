@@ -29,13 +29,11 @@
     </thead>
     <tbody id="search-results">
         ^partial results {
-            <text>
-                ^for _, result := range results {
-                    <tr>
-                        <td>^result</td>
-                    </tr>
-                }
-            </text>
+            ^for _, result := range results {
+                <tr>
+                    <td>^result</td>
+                </tr>
+            }
         }
     </tbody>
 </table>
