@@ -114,6 +114,10 @@ func (s *stringSlice) String() string {
 	return strings.Join(*s, " ")
 }
 
+type doer interface {
+	do() error
+}
+
 type newCmd struct {
 	projectDir string
 	moduleName string
@@ -175,6 +179,10 @@ func (n *newCmd) do() error {
 		return err
 	}
 
+	if err := initVcs(n.projectDir, vcsGit); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -187,8 +195,38 @@ func createGoModFile(destDir string, moduleName string) error {
 	return nil
 }
 
-type doer interface {
-	do() error
+type vcs int
+
+const (
+	vcsGit vcs = iota
+)
+
+func initVcs(projectDir string, vcs vcs) error {
+	switch vcs {
+	case vcsGit:
+		path, err := exec.LookPath("git")
+		if err != nil {
+			log.Printf("WARN: git not found in $PATH")
+			return nil
+		}
+
+		cmd := exec.Command(path, "init")
+		cmd.Dir = projectDir
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("git init: %w", err)
+		}
+
+		f, err := os.Create(filepath.Join(projectDir, ".gitignore"))
+		if err != nil {
+			return fmt.Errorf("creating .gitignore: %w", err)
+		}
+		defer f.Close()
+		fmt.Fprintln(f, "/build")
+	default:
+		panic("internal error: unimplemented VCS")
+	}
+
+	return nil
 }
 
 type buildCmd struct {
