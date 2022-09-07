@@ -3238,6 +3238,8 @@ func (p *codeParser) parseCode() node {
 		start := p.file.Offset(p.peek().pos)
 		e = &nodeGoStrExpr{expr: p.peek().lit, pos: span{start, start + len(p.peek().lit)}}
 		p.advance()
+	} else if p.peek().tok == token.NOT {
+		p.parser.errorf("invalid '!' while parsing code")
 	} else {
 		panic("unexpected token type: " + p.peek().tok.String())
 	}
