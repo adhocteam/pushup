@@ -3243,6 +3243,8 @@ func (p *codeParser) parseCode() node {
 		p.parser.errorf("unexpected EOF in code parser")
 	} else if tok == token.NOT {
 		p.parser.errorf("invalid '!' while parsing code")
+	} else if tok == token.ILLEGAL {
+		p.parser.errorf("illegal Go token type encountered: %q", p.peek().lit)
 	} else {
 		panic("unexpected token type: " + tok.String())
 	}
