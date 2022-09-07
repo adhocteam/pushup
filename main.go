@@ -2663,7 +2663,10 @@ func (p *parser) source() string {
 }
 
 func (p *parser) sourceFrom(offset int) string {
-	return p.src[offset:]
+	if len(p.src) > offset-1 {
+		return p.src[offset:]
+	}
+	return ""
 }
 
 func (p *parser) errorf(format string, args ...any) {
@@ -3428,6 +3431,9 @@ loop:
 			if depth == 0 {
 				break loop
 			}
+		case token.EOF:
+			p.parser.errorf("unexpected EOF parsing code block")
+			return nil
 		}
 		p.advance()
 	}
