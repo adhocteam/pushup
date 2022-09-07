@@ -3198,10 +3198,12 @@ func (p *codeParser) parseCode() node {
 	// starting at the token just past the transSym indicating a transition from HTML
 	// parsing to Go code parsing
 	var e node
-	if p.peek().tok == token.IF {
+	tok := p.peek().tok
+	lit := p.peek().lit
+	if tok == token.IF {
 		p.advance()
 		e = p.parseIfStmt()
-	} else if p.peek().tok == token.IDENT && p.peek().lit == "handler" {
+	} else if tok == token.IDENT && lit == "handler" {
 		p.advance()
 		e = p.parseHandlerKeyword()
 		// NOTE(paulsmith): there is a tricky bit here where an implicit
@@ -3216,35 +3218,33 @@ func (p *codeParser) parseCode() node {
 		// which a keyword block or an implicit expression could be used in the
 		// surrounding markup, and only parse for either depending on which
 		// context is current.
-	} else if p.peek().tok == token.IDENT && p.peek().lit == "section" {
+	} else if tok == token.IDENT && lit == "section" {
 		p.advance()
 		e = p.parseSectionKeyword()
-	} else if p.peek().tok == token.IDENT && p.peek().lit == "partial" {
+	} else if tok == token.IDENT && lit == "partial" {
 		p.advance()
 		e = p.parsePartialKeyword()
-	} else if p.peek().tok == token.LBRACE {
+	} else if tok == token.LBRACE {
 		e = p.parseCodeBlock()
-	} else if p.peek().tok == token.IMPORT {
+	} else if tok == token.IMPORT {
 		p.advance()
 		e = p.parseImportKeyword()
-	} else if p.peek().tok == token.FOR {
+	} else if tok == token.FOR {
 		p.advance()
 		e = p.parseForStmt()
-	} else if p.peek().tok == token.LPAREN {
+	} else if tok == token.LPAREN {
 		p.advance()
 		e = p.parseExplicitExpression()
-	} else if p.peek().tok == token.IDENT {
+	} else if tok == token.IDENT {
 		e = p.parseImplicitExpression()
-	} else if p.peek().tok == token.EOF {
+	} else if tok == token.INT || tok == token.STRING {
+		p.parser.errorf("Go integer and string literals must be grouped by parens")
+	} else if tok == token.EOF {
 		p.parser.errorf("unexpected EOF in code parser")
-	} else if p.peek().tok == token.INT || p.peek().tok == token.STRING {
-		start := p.file.Offset(p.peek().pos)
-		e = &nodeGoStrExpr{expr: p.peek().lit, pos: span{start, start + len(p.peek().lit)}}
-		p.advance()
-	} else if p.peek().tok == token.NOT {
+	} else if tok == token.NOT {
 		p.parser.errorf("invalid '!' while parsing code")
 	} else {
-		panic("unexpected token type: " + p.peek().tok.String())
+		panic("unexpected token type: " + tok.String())
 	}
 	return e
 }
@@ -3517,7 +3517,7 @@ loop:
 
 func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 	if p.peek().tok != token.IDENT {
-		panic("invariant, expected IDENT")
+		panic("internal error: expected Go identifier start implicit expression")
 	}
 	result := new(nodeGoStrExpr)
 	offset := p.parser.offset
