@@ -3237,7 +3237,7 @@ func (p *codeParser) parseCode() node {
 		e = p.parseImplicitExpression()
 	} else if p.peek().tok == token.EOF {
 		p.parser.errorf("unexpected EOF in code parser")
-	} else if p.peek().tok == token.INT {
+	} else if p.peek().tok == token.INT || p.peek().tok == token.STRING {
 		start := p.file.Offset(p.peek().pos)
 		e = &nodeGoStrExpr{expr: p.peek().lit, pos: span{start, start + len(p.peek().lit)}}
 		p.advance()
