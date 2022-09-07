@@ -943,3 +943,22 @@ io.WriteString(w, "</div>")
 		})
 	}
 }
+
+func FuzzParser(f *testing.F) {
+	seeds := []string{
+		"",
+		"^layout !\n",
+		"<h1>Hello, world!</h1>",
+		"^{ name := \"world\" }\n<h1>Hello, ^name!</h1>\n",
+		"^if true {\n<a href=\"^req.URL.Path\">this page</a>\n}\n",
+		"<div>^(3 + 4 * 5)</div>\n",
+	}
+
+	for _, seed := range seeds {
+		f.Add([]byte(seed))
+	}
+
+	f.Fuzz(func(t *testing.T, in []byte) {
+		parse(string(in))
+	})
+}

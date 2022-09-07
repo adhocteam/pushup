@@ -3233,7 +3233,11 @@ func (p *codeParser) parseCode() node {
 	} else if p.peek().tok == token.IDENT {
 		e = p.parseImplicitExpression()
 	} else if p.peek().tok == token.EOF {
-		p.parser.errorf("unexpected EOF")
+		p.parser.errorf("unexpected EOF in code parser")
+	} else if p.peek().tok == token.INT {
+		start := p.file.Offset(p.peek().pos)
+		e = &nodeGoStrExpr{expr: p.peek().lit, pos: span{start, start + len(p.peek().lit)}}
+		p.advance()
 	} else {
 		panic("unexpected token type: " + p.peek().tok.String())
 	}
