@@ -3125,8 +3125,29 @@ func (p *codeParser) sourceFrom(pos token.Pos) string {
 }
 
 func (p *codeParser) lookahead() (t goToken) {
-	t.pos, t.tok, t.lit = p.scanner.Scan()
-	// log.Printf("POS: %d\tTOK: %v\tLIT: %q", t.pos, t.tok, t.lit)
+	var lit string
+	t.pos, t.tok, lit = p.scanner.Scan()
+	// from go/scanner docs:
+	// If the returned token is a literal (token.IDENT, token.INT, token.FLOAT,
+	// token.IMAG, token.CHAR, token.STRING) or token.COMMENT, the literal string
+	// has the corresponding value.
+	//
+	// If the returned token is a keyword, the literal string is the keyword.
+	//
+	// If the returned token is token.SEMICOLON, the corresponding
+	// literal string is ";" if the semicolon was present in the source,
+	// and "\n" if the semicolon was inserted because of a newline or
+	// at EOF.
+	//
+	// If the returned token is token.ILLEGAL, the literal string is the
+	// offending character.
+	//
+	// In all other cases, Scan returns an empty literal string.
+	if t.tok.IsLiteral() || t.tok.IsKeyword() || t.tok == token.SEMICOLON || t.tok == token.ILLEGAL {
+		t.lit = lit
+	} else {
+		t.lit = t.tok.String()
+	}
 	return t
 }
 
