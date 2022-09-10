@@ -441,7 +441,7 @@ func TestOpenTagLexer(t *testing.T) {
 	}{
 		{
 			"<div>",
-			nil,
+			[]*attr{},
 		},
 		{
 			"<div disabled>",

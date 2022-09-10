@@ -3713,8 +3713,19 @@ type openTagLexer struct {
 	state       openTagLexState
 	returnState openTagLexState
 	charRefBuf  bytes.Buffer
-	attrs       []*attr
-	currAttr    *attr
+
+	attrs    []*attrBuilder
+	currAttr *attrBuilder
+}
+
+type attrBuilder struct {
+	name  bufPos
+	value bufPos
+}
+
+type bufPos struct {
+	*bytes.Buffer
+	start pos
 }
 
 type attr struct {
@@ -4035,7 +4046,22 @@ loop:
 		}
 	}
 
-	return l.attrs
+	result := make([]*attr, len(l.attrs))
+	for i := range l.attrs {
+		builder := l.attrs[i]
+		attr := &attr{
+			name: stringPos{
+				builder.name.String(),
+				builder.name.start,
+			},
+			value: stringPos{
+				builder.value.String(),
+				builder.value.start,
+			},
+		}
+		result[i] = attr
+	}
+	return result
 }
 
 func (l *openTagLexer) consumeNextChar() int {
@@ -4057,7 +4083,14 @@ func (l *openTagLexer) flushCharRef() {
 }
 
 func (l *openTagLexer) newAttr() {
-	a := new(attr)
+	a := &attrBuilder{
+		name: bufPos{
+			Buffer: new(bytes.Buffer),
+		},
+		value: bufPos{
+			Buffer: new(bytes.Buffer),
+		},
+	}
 	l.attrs = append(l.attrs, a)
 	l.currAttr = a
 }
@@ -4066,14 +4099,14 @@ func (l *openTagLexer) appendCurrName(ch byte) {
 	if l.currAttr.name.start == 0 {
 		l.currAttr.name.start = pos(l.pos - 1)
 	}
-	l.currAttr.name.string += string(ch)
+	l.currAttr.name.WriteByte(ch)
 }
 
 func (l *openTagLexer) appendCurrVal(ch byte) {
 	if l.currAttr.value.start == 0 {
 		l.currAttr.value.start = pos(l.pos - 1)
 	}
-	l.currAttr.value.string += string(ch)
+	l.currAttr.value.WriteByte(ch)
 }
 
 func (l *openTagLexer) assertionFailure(format string, args ...any) {
