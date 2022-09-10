@@ -3245,6 +3245,8 @@ func (p *codeParser) parseCode() node {
 		p.parser.errorf("invalid '%s' Go token while parsing code", tok.String())
 	} else if tok == token.ILLEGAL {
 		p.parser.errorf("illegal Go token type encountered: %q", tok.String())
+	} else if tok == token.RPAREN {
+		p.parser.errorf("expected Pushup keyword or expression, got %q", tok.String())
 	} else {
 		panic("unexpected token type: " + tok.String())
 	}
