@@ -3500,6 +3500,9 @@ loop:
 			if depth == 0 {
 				break loop
 			}
+		case token.EOF:
+			p.parser.errorf("unterminated explicit expression, expected closing ')'")
+			return nil
 		default:
 		}
 		p.advance()
