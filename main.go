@@ -3507,9 +3507,9 @@ loop:
 		}
 		p.advance()
 	}
-	n := (p.file.Offset(p.prev().pos) - p.file.Offset(start)) + len(p.prev().String())
+	n := (p.file.Offset(p.prev().pos) - p.file.Offset(start)) + len(p.prev().lit)
 	if p.peek().tok != token.RPAREN {
-		panic("")
+		panic(fmt.Sprintf("internal error: expected ')', got '%s'", p.peek().tok.String()))
 	}
 	_ = p.sync()
 	result.expr = p.sourceFrom(start)[:n]
