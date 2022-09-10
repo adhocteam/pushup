@@ -3237,8 +3237,8 @@ func (p *codeParser) parseCode() node {
 		e = p.parseExplicitExpression()
 	} else if tok == token.IDENT {
 		e = p.parseImplicitExpression()
-	} else if tok == token.INT || tok == token.STRING {
-		p.parser.errorf("Go integer and string literals must be grouped by parens")
+	} else if tok == token.INT || tok == token.FLOAT || tok == token.STRING {
+		p.parser.errorf("Go integer, float, and string literals must be grouped by parens")
 	} else if tok == token.EOF {
 		p.parser.errorf("unexpected EOF in code parser")
 	} else if tok == token.NOT || tok == token.REM || tok == token.AND || tok == token.CHAR {
