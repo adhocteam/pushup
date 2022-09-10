@@ -3241,7 +3241,7 @@ func (p *codeParser) parseCode() node {
 		p.parser.errorf("Go integer and string literals must be grouped by parens")
 	} else if tok == token.EOF {
 		p.parser.errorf("unexpected EOF in code parser")
-	} else if tok == token.NOT || tok == token.REM {
+	} else if tok == token.NOT || tok == token.REM || tok == token.AND || tok == token.CHAR {
 		p.parser.errorf("invalid '%s' Go token while parsing code", tok.String())
 	} else if tok == token.ILLEGAL {
 		p.parser.errorf("illegal Go token type encountered: %q", tok.String())
