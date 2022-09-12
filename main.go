@@ -3158,10 +3158,7 @@ type goToken struct {
 }
 
 func (t goToken) String() string {
-	if t.tok.IsLiteral() || t.tok == token.IDENT {
-		return t.lit
-	}
-	return t.tok.String()
+	return t.lit
 }
 
 func (p *codeParser) peek() goToken {
@@ -3575,7 +3572,7 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 						}
 					} else if p.peek().tok == token.EOF {
 						p.parser.errorf("unexpected EOF, want ')'")
-						break
+						return nil
 					}
 					n = p.file.Offset(p.peek().pos) + len(p.peek().String())
 					offset = n
@@ -3597,7 +3594,7 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 						}
 					} else if p.peek().tok == token.EOF {
 						p.parser.errorf("unexpected EOF, want ')'")
-						break
+						return nil
 					}
 					n = p.file.Offset(p.peek().pos) + len(p.peek().String())
 					offset = n
