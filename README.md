@@ -2,6 +2,8 @@
 
 ![workflow status](https://github.com/AdHocRandD/pushup/actions/workflows/go.yml/badge.svg)
 
+![screenshot of syntax highlighting of an example Pushup page](./example-syntax-highlighting.png)
+
 -   [Pushup - a page-oriented web framework for Go](#pushup---a-page-oriented-web-framework-for-go)
     -   [What is Pushup?](#what-is-pushup)
         -   [Pages in Pushup](#pages-in-pushup)
