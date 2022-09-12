@@ -5,3 +5,4 @@ TODO
 /pushup
 *.db
 /example/build/
+node_modules
