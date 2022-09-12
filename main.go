@@ -3332,7 +3332,8 @@ loop:
 func (p *codeParser) parseStmtBlock() *nodeBlock {
 	// we are sitting on the opening '{' token here
 	if p.peek().tok != token.LBRACE {
-		panic("invariant, want '{'")
+		p.parser.errorf("expected '{', got '%s'", p.peek().String())
+		return nil
 	}
 	p.advance()
 	var block *nodeBlock
@@ -3507,6 +3508,8 @@ func (p *codeParser) parseExplicitExpression() *nodeGoStrExpr {
 	result := new(nodeGoStrExpr)
 	result.pos.start = p.parser.offset
 	start := p.peek().pos
+	maxread := start
+	lastlit := p.peek().String()
 	depth := 1
 loop:
 	for {
@@ -3523,11 +3526,13 @@ loop:
 			return nil
 		default:
 		}
+		maxread = p.peek().pos
+		lastlit = p.peek().String()
 		p.advance()
 	}
-	n := (p.file.Offset(p.prev().pos) - p.file.Offset(start)) + len(p.prev().lit)
+	n := (p.file.Offset(maxread) - p.file.Offset(start)) + len(lastlit)
 	if p.peek().tok != token.RPAREN {
-		panic(fmt.Sprintf("internal error: expected ')', got '%s'", p.peek().tok.String()))
+		panic(fmt.Sprintf("internal error: expected ')', got '%s'", p.peek().String()))
 	}
 	_ = p.sync()
 	result.expr = p.sourceFrom(start)[:n]
