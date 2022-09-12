@@ -672,9 +672,9 @@ each containing partial's name and a forward slash, for example,
 
 ## Vim syntax file
 
-There is a vim syntax file at the root of the repository, `pushup.vim`. To install it:
+There is a vim plugin in the `vim-pushup` directory. You should be able to symlink it into your plugin manager's path. Alternatively, to install it manually:
 
 -   Locate or create a `syntax` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
--   Copy [`pushup.vim`](https://github.com/AdHocRandD/pushup/blob/main/pushup.vim) into that directory
+-   Copy [`syntax/pushup.vim`](https://github.com/AdHocRandD/pushup/blob/main/vim-pushup/syntax/pushup.vim) into that directory
 -   Locate or create a `ftdetect` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
--   Create a file `pushup.vim` with this line of code: `au BufRead,BufNewFile *.up set filetype=pushup`
+-   Copy [`ftdetect/pushup.vim`](https://github.com/AdHocRandD/pushup/blob/main/vim-pushup/ftdetect/pushup.vim) into that directory
