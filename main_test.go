@@ -480,8 +480,10 @@ func TestOpenTagLexer(t *testing.T) {
 	opts := cmp.AllowUnexported(attr{}, stringPos{})
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			l := newOpenTagLexer(tt.input)
-			got := l.scan()
+			got, err := scanAttrs(tt.input)
+			if err != nil {
+				t.Fatalf("scanAttrs: %v", err)
+			}
 			if diff := cmp.Diff(tt.want, got, opts); diff != "" {
 				t.Errorf("(-want, +got)\n%s", diff)
 			}

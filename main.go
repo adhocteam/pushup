@@ -3729,11 +3729,11 @@ func prettyPrintTree(t *syntaxTree) {
 
 func scanAttrs(openTag string) (attrs []*attr, err error) {
 	l := newOpenTagLexer(openTag)
-	// panic mode parse error handling
+	// panic mode error handling
 	defer func() {
-		if e := recover(); err != nil {
-			attrs = nil
-			if le, ok := e.(html5LexError); ok {
+		if e := recover(); e != nil {
+			if le, ok := e.(openTagScanError); ok {
+				attrs = nil
 				err = le.err
 			} else {
 				panic(e)
@@ -3744,7 +3744,7 @@ func scanAttrs(openTag string) (attrs []*attr, err error) {
 	return
 }
 
-type html5LexError struct {
+type openTagScanError struct {
 	err error
 }
 
@@ -3846,7 +3846,7 @@ func (s openTagLexState) String() string {
 	case openTagLexSelfClosingStartTag:
 		return "SelfClosingStartTag"
 	default:
-		panic("")
+		panic("unexpected tag state")
 	}
 }
 
@@ -3861,8 +3861,13 @@ loop:
 		case openTagLexData:
 			ch := l.consumeNextChar()
 			switch {
+			case ch == '&':
+				l.returnState = openTagLexData
+				l.switchState(openTagLexCharRef)
 			case ch == '<':
 				l.switchState(openTagLexTagOpen)
+			case ch == 0:
+				l.parseError("unexpected-null-character")
 			default:
 				l.assertionFailure("found '%c' in data state, expected '<'", ch)
 			}
@@ -3926,11 +3931,11 @@ loop:
 			ch := l.consumeNextChar()
 			switch {
 			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ' || ch == '/' || ch == '>' || ch == eof:
-				defer l.cmpAttrName()
 				l.reconsumeIn(openTagLexAfterAttrName)
+				l.cmpAttrName()
 			case ch == '=':
-				defer l.cmpAttrName()
 				l.switchState(openTagLexBeforeAttrVal)
+				l.cmpAttrName()
 			case isASCIIUpper(ch):
 				// append lowercase version (add 0x20) of current input character to current attr's name
 				l.appendCurrName(byte(ch + 0x20))
@@ -4152,12 +4157,11 @@ func (l *openTagLexer) appendCurrVal(ch byte) {
 
 func (l *openTagLexer) assertionFailure(format string, args ...any) {
 	err := fmt.Errorf(format, args...)
-	// FIXME(paulsmith): handle in regular control flow
-	panic(err)
+	panic(openTagScanError{err})
 }
 
-func (l *openTagLexer) parseError(name string) {
-	switch name {
+func (l *openTagLexer) parseError(code string) {
+	switch code {
 	case "unexpected-character-in-attribute-name":
 		// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-unexpected-character-in-attribute-name
 	case "duplicate-attribute":
@@ -4185,8 +4189,10 @@ func (l *openTagLexer) parseError(name string) {
 		// points are either ignored or, for security reasons, replaced with a
 		// U+FFFD REPLACEMENT CHARACTER.
 	default:
-		log.Printf("parse error: %s", name)
+		panic("unexpected parse error code " + code)
 	}
+	err := errors.New(strings.ReplaceAll(code, "-", " "))
+	panic(openTagScanError{err})
 }
 
 func (l *openTagLexer) reconsumeIn(state openTagLexState) {
@@ -4217,7 +4223,7 @@ func (l *openTagLexer) switchState(state openTagLexState) {
 }
 
 func (l *openTagLexer) cmpAttrName() {
-	for i := range l.attrs {
+	for i := range l.attrs[:len(l.attrs)-1] {
 		if l.currAttr.name == l.attrs[i].name {
 			l.parseError("duplicate-attribute")
 			// we're supposed to ignore this per the spec but the
