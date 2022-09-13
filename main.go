@@ -2706,8 +2706,8 @@ func (p *htmlParser) advance() {
 	p.attrs = nil
 	var hasAttr bool
 	p.tagname, hasAttr = tokenizer.TagName()
-	if hasAttr {
-		p.attrs = scanAttrs(p.raw)
+	if hasAttr && p.err == nil {
+		p.attrs, p.err = scanAttrs(p.raw)
 	}
 	p.start = p.parser.offset
 	p.parser.offset += len(p.raw)
@@ -3727,10 +3727,25 @@ func prettyPrintTree(t *syntaxTree) {
 //
 // https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
 
-func scanAttrs(openTag string) []*attr {
+func scanAttrs(openTag string) (attrs []*attr, err error) {
 	l := newOpenTagLexer(openTag)
-	result := l.scan()
-	return result
+	// panic mode parse error handling
+	defer func() {
+		if e := recover(); err != nil {
+			attrs = nil
+			if le, ok := e.(html5LexError); ok {
+				err = le.err
+			} else {
+				panic(e)
+			}
+		}
+	}()
+	attrs = l.scan()
+	return
+}
+
+type html5LexError struct {
+	err error
 }
 
 type openTagLexer struct {
@@ -3920,7 +3935,7 @@ loop:
 				// append lowercase version (add 0x20) of current input character to current attr's name
 				l.appendCurrName(byte(ch + 0x20))
 			case ch == 0:
-				l.assertionFailure("found null in attribute name state")
+				l.parseError("unexpected-null-character")
 			case ch == '"' || ch == '\'' || ch == '<':
 				l.parseError("unexpected-character-in-attribute-name")
 				// append current input character to current attribute's name
