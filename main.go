@@ -2632,19 +2632,25 @@ func init() {
 	}
 }
 
-func parse(source string) (*syntaxTree, error) {
+func parse(source string) (tree *syntaxTree, err error) {
 	p := newParser(source)
-	tree := p.htmlParser.parseDocument()
-	if len(p.errs) > 0 {
-		return nil, p.errs[0]
-	}
-	return tree, nil
+	defer func() {
+		if e := recover(); e != nil {
+			if se, ok := e.(syntaxError); ok {
+				tree = nil
+				err = se
+			} else {
+				panic(e)
+			}
+		}
+	}()
+	tree = p.htmlParser.parseDocument()
+	return
 }
 
 type parser struct {
 	src        string
 	offset     int
-	errs       []error
 	htmlParser *htmlParser
 	codeParser *codeParser
 }
@@ -2669,9 +2675,16 @@ func (p *parser) sourceFrom(offset int) string {
 	return ""
 }
 
+type syntaxError struct {
+	err error
+}
+
+func (e syntaxError) Error() string {
+	return e.err.Error()
+}
+
 func (p *parser) errorf(format string, args ...any) {
-	p.errs = append(p.errs, fmt.Errorf(format, args...))
-	log.Printf("\x1b[0;31mERROR: %v\x1b[0m", p.errs[len(p.errs)-1])
+	panic(syntaxError{fmt.Errorf(format, args...)})
 }
 
 type htmlParser struct {
@@ -2884,7 +2897,6 @@ tokenLoop:
 						n := 0
 						if len(s) < 1 || s[0] != ' ' {
 							p.parser.errorf(transSymStr + "layout must be followed by a space")
-							break tokenLoop
 						}
 						s = s[1:]
 						n++
@@ -2993,7 +3005,6 @@ func (p *htmlParser) parseElement() node {
 	// FIXME(paulsmith): handle self-closing elements
 	if !p.match(html.StartTagToken) {
 		p.parser.errorf("expected an HTML element start tag, got %s", p.toktyp)
-		return result
 	}
 
 	result = new(nodeElement)
@@ -3007,7 +3018,6 @@ func (p *htmlParser) parseElement() node {
 
 	if !p.match(html.EndTagToken) {
 		p.parser.errorf("expected an HTML element end tag, got %q", p.toktyp)
-		return result
 	}
 
 	if result.tag.name != string(p.tagname) {
@@ -3062,7 +3072,6 @@ loop:
 				p.advance()
 			} else {
 				p.parser.errorf("mismatch end tag, expected </%s>, got </%s>", elem.tag.name, p.tagname)
-				return result
 			}
 		case html.TextToken:
 			// TODO(paulsmith): de-dupe this logic
@@ -3277,7 +3286,6 @@ loop:
 		switch p.peek().tok {
 		case token.EOF:
 			p.parser.errorf("premature end of conditional in IF statement")
-			break loop
 		case token.LBRACE:
 			// conditional expression has been scanned
 			break loop
@@ -3312,7 +3320,6 @@ loop:
 		switch p.peek().tok {
 		case token.EOF:
 			p.parser.errorf("premature end of clause in FOR statement")
-			break loop
 		case token.LBRACE:
 			break loop
 		default:
@@ -3333,7 +3340,6 @@ func (p *codeParser) parseStmtBlock() *nodeBlock {
 	// we are sitting on the opening '{' token here
 	if p.peek().tok != token.LBRACE {
 		p.parser.errorf("expected '{', got '%s'", p.peek().String())
-		return nil
 	}
 	p.advance()
 	var block *nodeBlock
@@ -3404,7 +3410,6 @@ func (p *codeParser) parseSectionKeyword() *nodeSection {
 	// the case. perhaps a string is better here.
 	if p.peek().tok != token.IDENT {
 		p.parser.errorf("expected IDENT, got %s", p.peek().tok.String())
-		return nil
 	}
 	result := &nodeSection{name: p.peek().lit}
 	result.pos.start = p.parser.offset
@@ -3423,7 +3428,6 @@ func (p *codeParser) parsePartialKeyword() *nodePartial {
 	// routing of partials). perhaps a string is better here.
 	if p.peek().tok != token.IDENT {
 		p.parser.errorf("expected IDENT, got %s", p.peek().tok.String())
-		return nil
 	}
 	result := &nodePartial{name: p.peek().lit}
 	result.pos.start = p.parser.offset
@@ -3454,7 +3458,6 @@ loop:
 			}
 		case token.EOF:
 			p.parser.errorf("unexpected EOF parsing code block")
-			return nil
 		}
 		p.advance()
 	}
@@ -3486,7 +3489,6 @@ func (p *codeParser) parseImportKeyword() *nodeImport {
 		p.advance()
 		if p.peek().tok != token.STRING {
 			p.parser.errorf("expected string, got %s", p.peek().tok)
-			return e
 		}
 		e.decl.path = p.peek().lit
 	case token.PERIOD:
@@ -3494,7 +3496,6 @@ func (p *codeParser) parseImportKeyword() *nodeImport {
 		p.advance()
 		if p.peek().tok != token.STRING {
 			p.parser.errorf("expected string, got %s", p.peek().tok)
-			return e
 		}
 		e.decl.path = p.peek().lit
 	default:
@@ -3523,7 +3524,6 @@ loop:
 			}
 		case token.EOF:
 			p.parser.errorf("unterminated explicit expression, expected closing ')'")
-			return nil
 		default:
 		}
 		maxread = p.peek().pos
@@ -3577,7 +3577,6 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 						}
 					} else if p.peek().tok == token.EOF {
 						p.parser.errorf("unexpected EOF, want ')'")
-						return nil
 					}
 					n = p.file.Offset(p.peek().pos) + len(p.peek().String())
 					offset = n
@@ -3599,7 +3598,6 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 						}
 					} else if p.peek().tok == token.EOF {
 						p.parser.errorf("unexpected EOF, want ')'")
-						return nil
 					}
 					n = p.file.Offset(p.peek().pos) + len(p.peek().String())
 					offset = n
@@ -3734,7 +3732,7 @@ func scanAttrs(openTag string) (attrs []*attr, err error) {
 		if e := recover(); e != nil {
 			if le, ok := e.(openTagScanError); ok {
 				attrs = nil
-				err = le.err
+				err = le
 			} else {
 				panic(e)
 			}
@@ -3744,8 +3742,10 @@ func scanAttrs(openTag string) (attrs []*attr, err error) {
 	return
 }
 
-type openTagScanError struct {
-	err error
+type openTagScanError string
+
+func (e openTagScanError) Error() string {
+	return string(e)
 }
 
 type openTagLexer struct {
@@ -4156,8 +4156,7 @@ func (l *openTagLexer) appendCurrVal(ch byte) {
 }
 
 func (l *openTagLexer) assertionFailure(format string, args ...any) {
-	err := fmt.Errorf(format, args...)
-	panic(openTagScanError{err})
+	panic(openTagScanError(fmt.Sprintf(format, args...)))
 }
 
 func (l *openTagLexer) parseError(code string) {
@@ -4191,8 +4190,7 @@ func (l *openTagLexer) parseError(code string) {
 	default:
 		panic("unexpected parse error code " + code)
 	}
-	err := errors.New(strings.ReplaceAll(code, "-", " "))
-	panic(openTagScanError{err})
+	panic(openTagScanError(strings.ReplaceAll(code, "-", " ")))
 }
 
 func (l *openTagLexer) reconsumeIn(state openTagLexState) {
