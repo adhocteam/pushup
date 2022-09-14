@@ -17,3 +17,6 @@ test tests:
 
 fixme todo:
 	@grep -h -E '(TODO|FIXME)' *.go | sed -E -e 's/.*\/\/ (TODO|FIXME)\(paulsmith\): //'
+
+entities.go: tools/getnamedcharrefs.go
+	go run $< > $@

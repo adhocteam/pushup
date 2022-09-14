@@ -3725,6 +3725,15 @@ func prettyPrintTree(t *syntaxTree) {
 // https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
 
 func scanAttrs(openTag string) (attrs []*attr, err error) {
+	// maintain some invariants, we are not a general-purpose HTML
+	// tokenizer/parser, we are just parsing open tags.
+	if len(openTag) == 0 {
+		return []*attr{}, nil
+	}
+	if ch := openTag[0]; ch != '<' {
+		return nil, openTagScanError(fmt.Sprintf("expected '<', got '%c'", ch))
+	}
+
 	l := newOpenTagLexer(openTag)
 	// panic mode error handling
 	defer func() {
@@ -3810,6 +3819,7 @@ const (
 	openTagLexNamedCharRef
 	openTagLexNumericCharRef
 	openTagLexSelfClosingStartTag
+	openTagLexAmbiguousAmpersand
 )
 
 func (s openTagLexState) String() string {
@@ -3844,6 +3854,8 @@ func (s openTagLexState) String() string {
 		return "NumericCharRef"
 	case openTagLexSelfClosingStartTag:
 		return "SelfClosingStartTag"
+	case openTagLexAmbiguousAmpersand:
+		return "AmbiguousAmpersand"
 	default:
 		panic("unexpected tag state")
 	}
@@ -4086,6 +4098,36 @@ loop:
 				l.parseError("unexpected-solidus-in-tag")
 				l.reconsumeIn(openTagLexBeforeAttrName)
 			}
+		// 13.2.5.73 Named character reference state
+		// https://html.spec.whatwg.org/multipage/parsing.html#named-character-reference-state
+		case openTagLexNamedCharRef:
+			var ch int
+			for {
+				ch = l.consumeNextChar()
+				if !isASCIIAlphanum(ch) {
+					break
+				}
+				l.charRefBuf.WriteByte(byte(ch))
+			}
+			ref, ok := namedCharRefs[l.charRefBuf.String()]
+			if ok {
+				if l.consumedAsPartOfAttr() && ch != ';' && (l.nextInputChar() == '=' || isASCIIAlphanum(l.nextInputChar())) {
+					l.flushCharRef()
+					l.switchState(l.returnState)
+				} else {
+					if ch != ';' {
+						l.parseError("missing-semicolon-after-character-reference")
+					}
+					l.charRefBuf.Reset()
+					l.charRefBuf.WriteString(ref)
+					l.flushCharRef()
+					l.switchState(l.returnState)
+				}
+			} else {
+				l.flushCharRef()
+				l.switchState(openTagLexAmbiguousAmpersand)
+			}
+
 		default:
 			panic("open tag lex state " + l.state.String())
 		}
@@ -4109,11 +4151,31 @@ loop:
 	return result
 }
 
+func (l *openTagLexer) consumedAsPartOfAttr() bool {
+	if l.returnState == openTagLexAttrValDoubleQuote ||
+		l.returnState == openTagLexAttrValSingleQuote ||
+		l.returnState == openTagLexAttrValUnquoted {
+		return true
+	} else {
+		return false
+	}
+}
+
 func (l *openTagLexer) consumeNextChar() int {
 	var ch int
 	if l.pos < len(l.raw) {
 		ch = int(l.raw[l.pos])
 		l.pos++
+	} else {
+		ch = eof
+	}
+	return ch
+}
+
+func (l *openTagLexer) nextInputChar() int {
+	var ch int
+	if l.pos < len(l.raw) {
+		ch = int(l.raw[l.pos])
 	} else {
 		ch = eof
 	}
@@ -4186,6 +4248,13 @@ func (l *openTagLexer) parseError(code string) {
 		// in the input stream in certain positions. In general, such code
 		// points are either ignored or, for security reasons, replaced with a
 		// U+FFFD REPLACEMENT CHARACTER.
+	case "missing-semicolon-after-character-reference":
+		// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-missing-semicolon-after-character-reference
+		// This error occurs if the parser encounters a character reference
+		// that is not terminated by a U+003B (;) code point. Usually the
+		// parser behaves as if character reference is terminated by the U+003B
+		// (;) code point; however, there are some ambiguous cases in which the
+		// parser includes subsequent code points in the character reference.
 	default:
 		panic("unexpected parse error code " + code)
 	}

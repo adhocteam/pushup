@@ -990,3 +990,24 @@ func FuzzParser(f *testing.F) {
 		}
 	})
 }
+
+func FuzzOpenTagLexer(f *testing.F) {
+	seeds := []string{
+		"<a href=\"https://adhoc.team/\">",
+		"<b>",
+		"<input checked>",
+	}
+
+	for _, seed := range seeds {
+		f.Add([]byte(seed))
+	}
+
+	f.Fuzz(func(t *testing.T, in []byte) {
+		_, err := scanAttrs(string(in))
+		if err != nil {
+			if _, ok := err.(openTagScanError); !ok {
+				t.Errorf("expected scan error, got %T %v", err, err)
+			}
+		}
+	})
+}
