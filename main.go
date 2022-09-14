@@ -3274,20 +3274,25 @@ func (p *codeParser) parseCode() node {
 func (p *codeParser) parseIfStmt() *nodeIf {
 	var stmt nodeIf
 	start := p.peek().pos
+	maxread := start
+	lastlit := p.peek().String()
 loop:
 	for {
 		switch p.peek().tok {
+		case token.ILLEGAL:
+			p.parser.errorf("illegal Go token type encountered: %q", p.peek().String())
 		case token.EOF:
 			p.parser.errorf("premature end of conditional in IF statement")
 		case token.LBRACE:
 			// conditional expression has been scanned
 			break loop
-		// TODO(paulsmith): add cases for tokens that are illegal in an expression
-		default:
-			p.advance()
+			// TODO(paulsmith): add cases for tokens that are illegal in an expression
 		}
+		maxread = p.peek().pos
+		lastlit = p.peek().String()
+		p.advance()
 	}
-	n := (p.file.Offset(p.prev().pos) - p.file.Offset(start)) + len(p.prev().String())
+	n := (p.file.Offset(maxread) - p.file.Offset(start)) + len(lastlit)
 	offset := p.baseOffset + p.file.Offset(start)
 	stmt.cond = new(nodeGoStrExpr)
 	stmt.cond.pos.start = offset
