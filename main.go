@@ -815,13 +815,6 @@ func compile(params compileParams) error {
 	}
 	src := string(b)
 
-	defer func() {
-		if err := recover(); err != nil {
-			log.Printf("panic while parsing: %v", err)
-			panic(err)
-		}
-	}()
-
 	tree, err := parse(src)
 	if err != nil {
 		return fmt.Errorf("parsing source: %w", err)
