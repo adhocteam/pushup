@@ -2632,19 +2632,25 @@ func init() {
 	}
 }
 
-func parse(source string) (*syntaxTree, error) {
+func parse(source string) (tree *syntaxTree, err error) {
 	p := newParser(source)
-	tree := p.htmlParser.parseDocument()
-	if len(p.errs) > 0 {
-		return nil, p.errs[0]
-	}
-	return tree, nil
+	defer func() {
+		if e := recover(); e != nil {
+			if se, ok := e.(syntaxError); ok {
+				tree = nil
+				err = se
+			} else {
+				panic(e)
+			}
+		}
+	}()
+	tree = p.htmlParser.parseDocument()
+	return
 }
 
 type parser struct {
 	src        string
 	offset     int
-	errs       []error
 	htmlParser *htmlParser
 	codeParser *codeParser
 }
@@ -2669,9 +2675,16 @@ func (p *parser) sourceFrom(offset int) string {
 	return ""
 }
 
+type syntaxError struct {
+	err error
+}
+
+func (e syntaxError) Error() string {
+	return e.err.Error()
+}
+
 func (p *parser) errorf(format string, args ...any) {
-	p.errs = append(p.errs, fmt.Errorf(format, args...))
-	log.Printf("\x1b[0;31mERROR: %v\x1b[0m", p.errs[len(p.errs)-1])
+	panic(syntaxError{fmt.Errorf(format, args...)})
 }
 
 type htmlParser struct {
@@ -2706,8 +2719,8 @@ func (p *htmlParser) advance() {
 	p.attrs = nil
 	var hasAttr bool
 	p.tagname, hasAttr = tokenizer.TagName()
-	if hasAttr {
-		p.attrs = scanAttrs(p.raw)
+	if hasAttr && p.err == nil {
+		p.attrs, p.err = scanAttrs(p.raw)
 	}
 	p.start = p.parser.offset
 	p.parser.offset += len(p.raw)
@@ -2884,7 +2897,6 @@ tokenLoop:
 						n := 0
 						if len(s) < 1 || s[0] != ' ' {
 							p.parser.errorf(transSymStr + "layout must be followed by a space")
-							break tokenLoop
 						}
 						s = s[1:]
 						n++
@@ -2993,7 +3005,6 @@ func (p *htmlParser) parseElement() node {
 	// FIXME(paulsmith): handle self-closing elements
 	if !p.match(html.StartTagToken) {
 		p.parser.errorf("expected an HTML element start tag, got %s", p.toktyp)
-		return result
 	}
 
 	result = new(nodeElement)
@@ -3007,7 +3018,6 @@ func (p *htmlParser) parseElement() node {
 
 	if !p.match(html.EndTagToken) {
 		p.parser.errorf("expected an HTML element end tag, got %q", p.toktyp)
-		return result
 	}
 
 	if result.tag.name != string(p.tagname) {
@@ -3062,7 +3072,6 @@ loop:
 				p.advance()
 			} else {
 				p.parser.errorf("mismatch end tag, expected </%s>, got </%s>", elem.tag.name, p.tagname)
-				return result
 			}
 		case html.TextToken:
 			// TODO(paulsmith): de-dupe this logic
@@ -3277,7 +3286,6 @@ loop:
 		switch p.peek().tok {
 		case token.EOF:
 			p.parser.errorf("premature end of conditional in IF statement")
-			break loop
 		case token.LBRACE:
 			// conditional expression has been scanned
 			break loop
@@ -3312,7 +3320,6 @@ loop:
 		switch p.peek().tok {
 		case token.EOF:
 			p.parser.errorf("premature end of clause in FOR statement")
-			break loop
 		case token.LBRACE:
 			break loop
 		default:
@@ -3333,7 +3340,6 @@ func (p *codeParser) parseStmtBlock() *nodeBlock {
 	// we are sitting on the opening '{' token here
 	if p.peek().tok != token.LBRACE {
 		p.parser.errorf("expected '{', got '%s'", p.peek().String())
-		return nil
 	}
 	p.advance()
 	var block *nodeBlock
@@ -3404,7 +3410,6 @@ func (p *codeParser) parseSectionKeyword() *nodeSection {
 	// the case. perhaps a string is better here.
 	if p.peek().tok != token.IDENT {
 		p.parser.errorf("expected IDENT, got %s", p.peek().tok.String())
-		return nil
 	}
 	result := &nodeSection{name: p.peek().lit}
 	result.pos.start = p.parser.offset
@@ -3423,7 +3428,6 @@ func (p *codeParser) parsePartialKeyword() *nodePartial {
 	// routing of partials). perhaps a string is better here.
 	if p.peek().tok != token.IDENT {
 		p.parser.errorf("expected IDENT, got %s", p.peek().tok.String())
-		return nil
 	}
 	result := &nodePartial{name: p.peek().lit}
 	result.pos.start = p.parser.offset
@@ -3454,7 +3458,6 @@ loop:
 			}
 		case token.EOF:
 			p.parser.errorf("unexpected EOF parsing code block")
-			return nil
 		}
 		p.advance()
 	}
@@ -3486,7 +3489,6 @@ func (p *codeParser) parseImportKeyword() *nodeImport {
 		p.advance()
 		if p.peek().tok != token.STRING {
 			p.parser.errorf("expected string, got %s", p.peek().tok)
-			return e
 		}
 		e.decl.path = p.peek().lit
 	case token.PERIOD:
@@ -3494,7 +3496,6 @@ func (p *codeParser) parseImportKeyword() *nodeImport {
 		p.advance()
 		if p.peek().tok != token.STRING {
 			p.parser.errorf("expected string, got %s", p.peek().tok)
-			return e
 		}
 		e.decl.path = p.peek().lit
 	default:
@@ -3523,7 +3524,6 @@ loop:
 			}
 		case token.EOF:
 			p.parser.errorf("unterminated explicit expression, expected closing ')'")
-			return nil
 		default:
 		}
 		maxread = p.peek().pos
@@ -3577,7 +3577,6 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 						}
 					} else if p.peek().tok == token.EOF {
 						p.parser.errorf("unexpected EOF, want ')'")
-						return nil
 					}
 					n = p.file.Offset(p.peek().pos) + len(p.peek().String())
 					offset = n
@@ -3599,7 +3598,6 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 						}
 					} else if p.peek().tok == token.EOF {
 						p.parser.errorf("unexpected EOF, want ')'")
-						return nil
 					}
 					n = p.file.Offset(p.peek().pos) + len(p.peek().String())
 					offset = n
@@ -3727,10 +3725,27 @@ func prettyPrintTree(t *syntaxTree) {
 //
 // https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
 
-func scanAttrs(openTag string) []*attr {
+func scanAttrs(openTag string) (attrs []*attr, err error) {
 	l := newOpenTagLexer(openTag)
-	result := l.scan()
-	return result
+	// panic mode error handling
+	defer func() {
+		if e := recover(); e != nil {
+			if le, ok := e.(openTagScanError); ok {
+				attrs = nil
+				err = le
+			} else {
+				panic(e)
+			}
+		}
+	}()
+	attrs = l.scan()
+	return
+}
+
+type openTagScanError string
+
+func (e openTagScanError) Error() string {
+	return string(e)
 }
 
 type openTagLexer struct {
@@ -3831,7 +3846,7 @@ func (s openTagLexState) String() string {
 	case openTagLexSelfClosingStartTag:
 		return "SelfClosingStartTag"
 	default:
-		panic("")
+		panic("unexpected tag state")
 	}
 }
 
@@ -3846,8 +3861,13 @@ loop:
 		case openTagLexData:
 			ch := l.consumeNextChar()
 			switch {
+			case ch == '&':
+				l.returnState = openTagLexData
+				l.switchState(openTagLexCharRef)
 			case ch == '<':
 				l.switchState(openTagLexTagOpen)
+			case ch == 0:
+				l.parseError("unexpected-null-character")
 			default:
 				l.assertionFailure("found '%c' in data state, expected '<'", ch)
 			}
@@ -3911,16 +3931,16 @@ loop:
 			ch := l.consumeNextChar()
 			switch {
 			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ' || ch == '/' || ch == '>' || ch == eof:
-				defer l.cmpAttrName()
 				l.reconsumeIn(openTagLexAfterAttrName)
+				l.cmpAttrName()
 			case ch == '=':
-				defer l.cmpAttrName()
 				l.switchState(openTagLexBeforeAttrVal)
+				l.cmpAttrName()
 			case isASCIIUpper(ch):
 				// append lowercase version (add 0x20) of current input character to current attr's name
 				l.appendCurrName(byte(ch + 0x20))
 			case ch == 0:
-				l.assertionFailure("found null in attribute name state")
+				l.parseError("unexpected-null-character")
 			case ch == '"' || ch == '\'' || ch == '<':
 				l.parseError("unexpected-character-in-attribute-name")
 				// append current input character to current attribute's name
@@ -4136,13 +4156,11 @@ func (l *openTagLexer) appendCurrVal(ch byte) {
 }
 
 func (l *openTagLexer) assertionFailure(format string, args ...any) {
-	err := fmt.Errorf(format, args...)
-	// FIXME(paulsmith): handle in regular control flow
-	panic(err)
+	panic(openTagScanError(fmt.Sprintf(format, args...)))
 }
 
-func (l *openTagLexer) parseError(name string) {
-	switch name {
+func (l *openTagLexer) parseError(code string) {
+	switch code {
 	case "unexpected-character-in-attribute-name":
 		// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-unexpected-character-in-attribute-name
 	case "duplicate-attribute":
@@ -4170,8 +4188,9 @@ func (l *openTagLexer) parseError(name string) {
 		// points are either ignored or, for security reasons, replaced with a
 		// U+FFFD REPLACEMENT CHARACTER.
 	default:
-		log.Printf("parse error: %s", name)
+		panic("unexpected parse error code " + code)
 	}
+	panic(openTagScanError(strings.ReplaceAll(code, "-", " ")))
 }
 
 func (l *openTagLexer) reconsumeIn(state openTagLexState) {
@@ -4202,7 +4221,7 @@ func (l *openTagLexer) switchState(state openTagLexState) {
 }
 
 func (l *openTagLexer) cmpAttrName() {
-	for i := range l.attrs {
+	for i := range l.attrs[:len(l.attrs)-1] {
 		if l.currAttr.name == l.attrs[i].name {
 			l.parseError("duplicate-attribute")
 			// we're supposed to ignore this per the spec but the

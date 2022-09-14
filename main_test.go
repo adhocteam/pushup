@@ -480,8 +480,10 @@ func TestOpenTagLexer(t *testing.T) {
 	opts := cmp.AllowUnexported(attr{}, stringPos{})
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			l := newOpenTagLexer(tt.input)
-			got := l.scan()
+			got, err := scanAttrs(tt.input)
+			if err != nil {
+				t.Fatalf("scanAttrs: %v", err)
+			}
 			if diff := cmp.Diff(tt.want, got, opts); diff != "" {
 				t.Errorf("(-want, +got)\n%s", diff)
 			}
@@ -882,6 +884,27 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestParseSyntaxErrors(t *testing.T) {
+	tests := []struct {
+		input string
+	}{
+		{"^if"},
+		// FIXME(paulsmith): add more syntax errors
+	}
+
+	for _, tt := range tests {
+		t.Run("", func(t *testing.T) {
+			tree, err := parse(tt.input)
+			if tree != nil {
+				t.Errorf("expected nil tree, got %v", tree)
+			}
+			if err == nil {
+				t.Errorf("expected parse error, got nil")
+			}
+		})
+	}
+}
+
 var unexported = []any{
 	attr{},
 	importDecl{},
@@ -959,6 +982,11 @@ func FuzzParser(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, in []byte) {
-		parse(string(in))
+		_, err := parse(string(in))
+		if err != nil {
+			if _, ok := err.(syntaxError); !ok {
+				t.Errorf("expected syntax error, got %T %v", err, err)
+			}
+		}
 	})
 }
