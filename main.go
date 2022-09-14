@@ -3515,9 +3515,10 @@ loop:
 			if depth == 0 {
 				break loop
 			}
+		case token.ILLEGAL:
+			p.parser.errorf("illegal Go token encountered")
 		case token.EOF:
 			p.parser.errorf("unterminated explicit expression, expected closing ')'")
-		default:
 		}
 		maxread = p.peek().pos
 		lastlit = p.peek().String()
