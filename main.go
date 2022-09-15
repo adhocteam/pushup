@@ -3763,8 +3763,40 @@ type openTagLexer struct {
 	returnState openTagLexState
 	charRefBuf  bytes.Buffer
 
+	nextInputChar        int
+	provideCurrInputChar bool
+
 	attrs    []*attrBuilder
 	currAttr *attrBuilder
+}
+
+func newOpenTagLexer(source string) *openTagLexer {
+	l := new(openTagLexer)
+	l.raw = source
+	l.state = openTagLexData
+	return l
+}
+
+func (l *openTagLexer) consumeNextInputChar() int {
+	var result int
+	if l.provideCurrInputChar {
+		l.provideCurrInputChar = false
+		result = l.nextInputChar
+	} else {
+		if len(l.raw) > 0 {
+			l.decodeNextInputChar()
+		} else {
+			l.nextInputChar = eof
+		}
+		result = l.nextInputChar
+	}
+	return result
+}
+
+func (l *openTagLexer) decodeNextInputChar() {
+	l.nextInputChar = int(l.raw[0])
+	l.raw = l.raw[1:]
+	l.pos++
 }
 
 type attrBuilder struct {
@@ -3788,13 +3820,6 @@ type stringPos struct {
 }
 
 type pos int
-
-func newOpenTagLexer(source string) *openTagLexer {
-	l := new(openTagLexer)
-	l.raw = source
-	l.state = openTagLexData
-	return l
-}
 
 type openTagLexState int
 
@@ -3870,7 +3895,7 @@ loop:
 		// 13.2.5.1 Data state
 		// https://html.spec.whatwg.org/multipage/parsing.html#data-state
 		case openTagLexData:
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '&':
 				l.returnState = openTagLexData
@@ -3885,7 +3910,7 @@ loop:
 		// 13.2.5.6 Tag open state
 		// https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
 		case openTagLexTagOpen:
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '!':
 				l.assertionFailure("input '%c' switch to markup declaration open state", ch)
@@ -3903,7 +3928,7 @@ loop:
 		// 13.2.5.8 Tag name state
 		// https://html.spec.whatwg.org/multipage/parsing.html#tag-name-state
 		case openTagLexTagName:
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
 				l.switchState(openTagLexBeforeAttrName)
@@ -3924,7 +3949,7 @@ loop:
 		// 13.2.5.32 Before attribute name state
 		// https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-name-state
 		case openTagLexBeforeAttrName:
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
 				// ignore
@@ -3939,7 +3964,7 @@ loop:
 		// 13.2.5.33 Attribute name state
 		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-name-state
 		case openTagLexAttrName:
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ' || ch == '/' || ch == '>' || ch == eof:
 				l.reconsumeIn(openTagLexAfterAttrName)
@@ -3948,22 +3973,22 @@ loop:
 				l.switchState(openTagLexBeforeAttrVal)
 				l.cmpAttrName()
 			case isASCIIUpper(ch):
-				// append lowercase version (add 0x20) of current input character to current attr's name
-				l.appendCurrName(byte(ch + 0x20))
+				// append lowercase version of current input character to current attr's name
+				l.appendCurrName(int(unicode.ToLower(rune(ch))))
 			case ch == 0:
 				l.parseError("unexpected-null-character")
 			case ch == '"' || ch == '\'' || ch == '<':
 				l.parseError("unexpected-character-in-attribute-name")
 				// append current input character to current attribute's name
-				l.appendCurrName(byte(ch))
+				l.appendCurrName(ch)
 			default:
 				// append current input character to current attribute's name
-				l.appendCurrName(byte(ch))
+				l.appendCurrName(ch)
 			}
 		// 13.2.5.34 After attribute name state
 		// https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-name-state
 		case openTagLexAfterAttrName:
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
 				// ignore
@@ -3974,7 +3999,7 @@ loop:
 			case ch == '>':
 				break loop
 			case ch == eof:
-				l.assertionFailure("found EOF in after attribute name state")
+				l.parseError("eof-in-tag")
 			default:
 				l.newAttr()
 				l.reconsumeIn(openTagLexAttrName)
@@ -3982,7 +4007,7 @@ loop:
 		// 13.2.5.35 Before attribute value state
 		// https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-value-state
 		case openTagLexBeforeAttrVal:
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
 				// ignore
@@ -3999,7 +4024,7 @@ loop:
 		// 13.2.5.36 Attribute value (double-quoted) state
 		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(double-quoted)-state
 		case openTagLexAttrValDoubleQuote:
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '"':
 				l.switchState(openTagLexAfterAttrValQuoted)
@@ -4011,12 +4036,12 @@ loop:
 			case ch == eof:
 				l.assertionFailure("found EOF in tag")
 			default:
-				l.appendCurrVal(byte(ch))
+				l.appendCurrVal(ch)
 			}
 		// 13.2.5.37 Attribute value (single-quoted) state
 		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(single-quoted)-state
 		case openTagLexAttrValSingleQuote:
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '"':
 				l.switchState(openTagLexAfterAttrValQuoted)
@@ -4028,12 +4053,12 @@ loop:
 			case ch == eof:
 				l.assertionFailure("found EOF in tag")
 			default:
-				l.appendCurrVal(byte(ch))
+				l.appendCurrVal(ch)
 			}
 		// 13.2.5.38 Attribute value (unquoted) state
 		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(unquoted)-state
 		case openTagLexAttrValUnquoted:
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
 				l.switchState(openTagLexBeforeAttrName)
@@ -4046,16 +4071,16 @@ loop:
 				l.assertionFailure("found null in attribute value (unquoted) state")
 			case ch == '"' || ch == '\'' || ch == '<' || ch == '=' || ch == '`':
 				l.parseError("unexpected-null-character")
-				l.appendCurrVal(byte(ch))
+				l.appendCurrVal(ch)
 			case ch == eof:
 				l.assertionFailure("found EOF in tag")
 			default:
-				l.appendCurrVal(byte(ch))
+				l.appendCurrVal(ch)
 			}
 		// 13.2.5.39 After attribute value (quoted) state
 		// https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-value-(quoted)-state
 		case openTagLexAfterAttrValQuoted:
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
 				l.switchState(openTagLexBeforeAttrName)
@@ -4074,7 +4099,7 @@ loop:
 		case openTagLexCharRef:
 			l.charRefBuf = bytes.Buffer{}
 			l.charRefBuf.WriteByte('&')
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case isASCIIAlphanum(ch):
 				l.reconsumeIn(openTagLexNamedCharRef)
@@ -4088,7 +4113,7 @@ loop:
 		// 13.2.5.40 Self-closing start tag state
 		// https://html.spec.whatwg.org/multipage/parsing.html#self-closing-start-tag-state
 		case openTagLexSelfClosingStartTag:
-			ch := l.consumeNextChar()
+			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '>':
 				break loop
@@ -4102,16 +4127,14 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#named-character-reference-state
 		case openTagLexNamedCharRef:
 			var ch int
-			for {
-				ch = l.consumeNextChar()
-				if !isASCIIAlphanum(ch) {
-					break
-				}
+			for ch = l.consumeNextInputChar(); isASCIIAlphanum(ch); ch = l.consumeNextInputChar() {
 				l.charRefBuf.WriteByte(byte(ch))
 			}
-			ref, ok := namedCharRefs[l.charRefBuf.String()]
+			ident := l.charRefBuf.String()
+			ref, ok := namedCharRefs[ident]
 			if ok {
-				if l.consumedAsPartOfAttr() && ch != ';' && (l.nextInputChar() == '=' || isASCIIAlphanum(l.nextInputChar())) {
+				lastCharMatched := ident[len(ident)-1]
+				if l.consumedAsPartOfAttr() && lastCharMatched != ';' && (ch == '=' || isASCIIAlphanum(ch)) {
 					l.flushCharRef()
 					l.switchState(l.returnState)
 				} else {
@@ -4161,32 +4184,11 @@ func (l *openTagLexer) consumedAsPartOfAttr() bool {
 	}
 }
 
-func (l *openTagLexer) consumeNextChar() int {
-	var ch int
-	if l.pos < len(l.raw) {
-		ch = int(l.raw[l.pos])
-		l.pos++
-	} else {
-		ch = eof
-	}
-	return ch
-}
-
-func (l *openTagLexer) nextInputChar() int {
-	var ch int
-	if l.pos < len(l.raw) {
-		ch = int(l.raw[l.pos])
-	} else {
-		ch = eof
-	}
-	return ch
-}
-
 func (l *openTagLexer) flushCharRef() {
-	b := l.charRefBuf.Bytes()
-	for _, bb := range b {
-		l.appendCurrVal(bb)
+	if l.currAttr.value.start == 0 {
+		l.currAttr.value.start = pos(l.pos - 1)
 	}
+	l.currAttr.value.Write(l.charRefBuf.Bytes())
 }
 
 func (l *openTagLexer) newAttr() {
@@ -4202,18 +4204,18 @@ func (l *openTagLexer) newAttr() {
 	l.currAttr = a
 }
 
-func (l *openTagLexer) appendCurrName(ch byte) {
+func (l *openTagLexer) appendCurrName(ch int) {
 	if l.currAttr.name.start == 0 {
 		l.currAttr.name.start = pos(l.pos - 1)
 	}
-	l.currAttr.name.WriteByte(ch)
+	l.currAttr.name.WriteByte(byte(ch))
 }
 
-func (l *openTagLexer) appendCurrVal(ch byte) {
+func (l *openTagLexer) appendCurrVal(ch int) {
 	if l.currAttr.value.start == 0 {
 		l.currAttr.value.start = pos(l.pos - 1)
 	}
-	l.currAttr.value.WriteByte(ch)
+	l.currAttr.value.WriteByte(byte(ch))
 }
 
 func (l *openTagLexer) assertionFailure(format string, args ...any) {
@@ -4222,6 +4224,11 @@ func (l *openTagLexer) assertionFailure(format string, args ...any) {
 
 func (l *openTagLexer) parseError(code string) {
 	switch code {
+	case "eof-in-tag":
+		// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-eof-in-tag
+		// This error occurs if the parser encounters the end of the input
+		// stream in a start tag or an end tag (e.g., <div id=). Such a tag is
+		// ignored.
 	case "unexpected-character-in-attribute-name":
 		// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-unexpected-character-in-attribute-name
 	case "duplicate-attribute":
@@ -4262,24 +4269,16 @@ func (l *openTagLexer) parseError(code string) {
 }
 
 func (l *openTagLexer) reconsumeIn(state openTagLexState) {
-	l.backup()
+	l.provideCurrInputChar = true
 	l.switchState(state)
 }
 
-func (l *openTagLexer) backup() {
-	if l.pos > 1 {
-		l.pos--
-	} else {
-		panic("underflowed")
-	}
-}
-
 func (l *openTagLexer) exitingState(state openTagLexState) {
-	// log.Printf("<- %s", state)
+	//log.Printf("<- %s", state)
 }
 
 func (l *openTagLexer) enteringState(state openTagLexState) {
-	// log.Printf("-> %s", state)
+	//log.Printf("-> %s", state)
 }
 
 func (l *openTagLexer) switchState(state openTagLexState) {
