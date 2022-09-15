@@ -3903,9 +3903,9 @@ loop:
 			case ch == '<':
 				l.switchState(openTagLexTagOpen)
 			case ch == 0:
-				l.parseError("unexpected-null-character")
+				l.specParseError("unexpected-null-character")
 			default:
-				l.assertionFailure("found '%c' in data state, expected '<'", ch)
+				l.errorf("found '%c' in data state, expected '<'", ch)
 			}
 		// 13.2.5.6 Tag open state
 		// https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
@@ -3913,17 +3913,17 @@ loop:
 			ch := l.consumeNextInputChar()
 			switch {
 			case ch == '!':
-				l.assertionFailure("input '%c' switch to markup declaration open state", ch)
+				l.errorf("input '%c' switch to markup declaration open state", ch)
 			case ch == '/':
-				l.assertionFailure("input '%c' switch to end tag open state", ch)
+				l.errorf("input '%c' switch to end tag open state", ch)
 			case isASCIIAlpha(ch):
 				l.reconsumeIn(openTagLexTagName)
 			case ch == '?':
-				l.assertionFailure("input '%c' parse error", ch)
+				l.errorf("input '%c' parse error", ch)
 			case ch == eof:
-				l.assertionFailure("eof before tag name parse error")
+				l.errorf("eof before tag name parse error")
 			default:
-				l.assertionFailure("found '%c' in tag open state", ch)
+				l.errorf("found '%c' in tag open state", ch)
 			}
 		// 13.2.5.8 Tag name state
 		// https://html.spec.whatwg.org/multipage/parsing.html#tag-name-state
@@ -3940,9 +3940,9 @@ loop:
 				// append lowercase version of current input char to current tag token's tag name
 				// not needed, we know the tag name from the golang.org/x/net/html tokenizer
 			case ch == 0:
-				l.assertionFailure("found null in tag name state")
+				l.errorf("found null in tag name state")
 			case ch == eof:
-				l.assertionFailure("found eof in tag name state")
+				l.errorf("found eof in tag name state")
 			default:
 				// append current input char to current tag token's tag name
 			}
@@ -3956,7 +3956,7 @@ loop:
 			case ch == '/' || ch == '>' || ch == eof:
 				l.reconsumeIn(openTagLexAfterAttrName)
 			case ch == '=':
-				l.assertionFailure("found '%c' in before attribute name state", ch)
+				l.errorf("found '%c' in before attribute name state", ch)
 			default:
 				l.newAttr()
 				l.reconsumeIn(openTagLexAttrName)
@@ -3976,9 +3976,9 @@ loop:
 				// append lowercase version of current input character to current attr's name
 				l.appendCurrName(int(unicode.ToLower(rune(ch))))
 			case ch == 0:
-				l.parseError("unexpected-null-character")
+				l.specParseError("unexpected-null-character")
 			case ch == '"' || ch == '\'' || ch == '<':
-				l.parseError("unexpected-character-in-attribute-name")
+				l.specParseError("unexpected-character-in-attribute-name")
 				// append current input character to current attribute's name
 				l.appendCurrName(ch)
 			default:
@@ -3999,7 +3999,7 @@ loop:
 			case ch == '>':
 				break loop
 			case ch == eof:
-				l.parseError("eof-in-tag")
+				l.specParseError("eof-in-tag")
 			default:
 				l.newAttr()
 				l.reconsumeIn(openTagLexAttrName)
@@ -4016,7 +4016,7 @@ loop:
 			case ch == '\'':
 				l.switchState(openTagLexAttrValSingleQuote)
 			case ch == '>':
-				l.parseError("missing-attribute-value")
+				l.specParseError("missing-attribute-value")
 				break loop
 			default:
 				l.reconsumeIn(openTagLexAttrValUnquoted)
@@ -4032,9 +4032,9 @@ loop:
 				l.returnState = openTagLexAttrValDoubleQuote
 				l.switchState(openTagLexCharRef)
 			case ch == 0:
-				l.assertionFailure("found null in attribute value (double-quoted) state")
+				l.errorf("found null in attribute value (double-quoted) state")
 			case ch == eof:
-				l.assertionFailure("found EOF in tag")
+				l.errorf("found EOF in tag")
 			default:
 				l.appendCurrVal(ch)
 			}
@@ -4049,9 +4049,9 @@ loop:
 				l.returnState = openTagLexAttrValSingleQuote
 				l.switchState(openTagLexCharRef)
 			case ch == 0:
-				l.assertionFailure("found null in attribute value (single-quoted) state")
+				l.errorf("found null in attribute value (single-quoted) state")
 			case ch == eof:
-				l.assertionFailure("found EOF in tag")
+				l.errorf("found EOF in tag")
 			default:
 				l.appendCurrVal(ch)
 			}
@@ -4068,12 +4068,12 @@ loop:
 			case ch == '>':
 				break loop
 			case ch == 0:
-				l.assertionFailure("found null in attribute value (unquoted) state")
+				l.errorf("found null in attribute value (unquoted) state")
 			case ch == '"' || ch == '\'' || ch == '<' || ch == '=' || ch == '`':
-				l.parseError("unexpected-null-character")
+				l.specParseError("unexpected-null-character")
 				l.appendCurrVal(ch)
 			case ch == eof:
-				l.assertionFailure("found EOF in tag")
+				l.errorf("found EOF in tag")
 			default:
 				l.appendCurrVal(ch)
 			}
@@ -4089,9 +4089,9 @@ loop:
 			case ch == '>':
 				break loop
 			case ch == eof:
-				l.assertionFailure("found EOF in tag")
+				l.errorf("found EOF in tag")
 			default:
-				l.parseError("missing-whitespace-between-attributes")
+				l.specParseError("missing-whitespace-between-attributes")
 				l.reconsumeIn(openTagLexBeforeAttrName)
 			}
 		// 13.2.5.72 Character reference state
@@ -4118,9 +4118,9 @@ loop:
 			case ch == '>':
 				break loop
 			case ch == eof:
-				l.assertionFailure("found EOF in tag")
+				l.errorf("found EOF in tag")
 			default:
-				l.parseError("unexpected-solidus-in-tag")
+				l.specParseError("unexpected-solidus-in-tag")
 				l.reconsumeIn(openTagLexBeforeAttrName)
 			}
 		// 13.2.5.73 Named character reference state
@@ -4139,7 +4139,7 @@ loop:
 					l.switchState(l.returnState)
 				} else {
 					if ch != ';' {
-						l.parseError("missing-semicolon-after-character-reference")
+						l.specParseError("missing-semicolon-after-character-reference")
 					}
 					l.charRefBuf.Reset()
 					l.charRefBuf.WriteString(ref)
@@ -4152,7 +4152,7 @@ loop:
 			}
 
 		default:
-			panic("open tag lex state " + l.state.String())
+			l.errorf("unimplemented parse state " + l.state.String())
 		}
 	}
 
@@ -4218,11 +4218,15 @@ func (l *openTagLexer) appendCurrVal(ch int) {
 	l.currAttr.value.WriteByte(byte(ch))
 }
 
-func (l *openTagLexer) assertionFailure(format string, args ...any) {
+func (l *openTagLexer) errorf(format string, args ...any) {
 	panic(openTagScanError(fmt.Sprintf(format, args...)))
 }
 
-func (l *openTagLexer) parseError(code string) {
+// specParseError panics with a openTagScanError type as the panic value but
+// is specifically meant for signaling the known parse errors per the HTML5
+// parsing specification we expect to encounter with this limited version
+// that just focuses on tokenizing open tags.
+func (l *openTagLexer) specParseError(code string) {
 	switch code {
 	case "eof-in-tag":
 		// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-eof-in-tag
@@ -4290,7 +4294,7 @@ func (l *openTagLexer) switchState(state openTagLexState) {
 func (l *openTagLexer) cmpAttrName() {
 	for i := range l.attrs[:len(l.attrs)-1] {
 		if l.currAttr.name == l.attrs[i].name {
-			l.parseError("duplicate-attribute")
+			l.specParseError("duplicate-attribute")
 			// we're supposed to ignore this per the spec but the
 			// golang.org/x/net/html tokenizer doesn't, so we follow that
 			// TODO(paulsmith): open issue with ^^
