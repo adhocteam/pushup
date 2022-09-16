@@ -3442,6 +3442,8 @@ func (p *codeParser) parseCodeBlock() *nodeGoCode {
 	p.advance()
 	result.pos.start = p.parser.offset
 	start := p.peek().pos
+	maxread := start
+	lastlit := p.peek().String()
 loop:
 	for {
 		switch p.peek().tok {
@@ -3455,9 +3457,11 @@ loop:
 		case token.EOF:
 			p.parser.errorf("unexpected EOF parsing code block")
 		}
+		maxread = p.peek().pos
+		lastlit = p.peek().String()
 		p.advance()
 	}
-	n := (p.file.Offset(p.prev().pos) - p.file.Offset(start)) + len(p.prev().String())
+	n := (p.file.Offset(maxread) - p.file.Offset(start)) + len(lastlit)
 	if p.peek().tok != token.RBRACE {
 		panic("")
 	}
