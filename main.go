@@ -3145,8 +3145,10 @@ func (p *codeParser) lookahead() (t goToken) {
 	// offending character.
 	//
 	// In all other cases, Scan returns an empty literal string.
-	if t.tok.IsLiteral() || t.tok.IsKeyword() || t.tok == token.SEMICOLON || t.tok == token.ILLEGAL {
+	if t.tok.IsLiteral() || t.tok.IsKeyword() || t.tok == token.SEMICOLON {
 		t.lit = lit
+	} else if t.tok == token.ILLEGAL {
+		p.parser.errorf("illegal Go token %q", lit)
 	} else {
 		t.lit = t.tok.String()
 	}
@@ -3263,8 +3265,6 @@ func (p *codeParser) parseCode() node {
 		p.parser.errorf("unexpected EOF in code parser")
 	} else if tok == token.NOT || tok == token.REM || tok == token.AND || tok == token.CHAR {
 		p.parser.errorf("invalid '%s' Go token while parsing code", tok.String())
-	} else if tok == token.ILLEGAL {
-		p.parser.errorf("illegal Go token type encountered: %q", tok.String())
 	} else {
 		p.parser.errorf("expected Pushup keyword or expression, got %q", tok.String())
 	}
@@ -3279,8 +3279,6 @@ func (p *codeParser) parseIfStmt() *nodeIf {
 loop:
 	for {
 		switch p.peek().tok {
-		case token.ILLEGAL:
-			p.parser.errorf("illegal Go token type encountered: %q", p.peek().String())
 		case token.EOF:
 			p.parser.errorf("premature end of conditional in IF statement")
 		case token.LBRACE:
@@ -3520,8 +3518,6 @@ loop:
 			if depth == 0 {
 				break loop
 			}
-		case token.ILLEGAL:
-			p.parser.errorf("illegal Go token encountered")
 		case token.EOF:
 			p.parser.errorf("unterminated explicit expression, expected closing ')'")
 		}
