@@ -3091,11 +3091,11 @@ loop:
 			}
 			p.advance()
 		case html.CommentToken:
-			// ???
+			p.advance()
 		case html.DoctypeToken:
-			// ???
+			p.parser.errorf("doctype token may not be a child of an element")
 		default:
-			panic("")
+			panic(fmt.Sprintf("unexpected HTML token type %v", p.toktyp))
 		}
 	}
 
