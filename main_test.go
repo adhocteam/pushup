@@ -787,7 +787,7 @@ func TestParse(t *testing.T) {
 			`^foo.bar("asd").baz.biz()`,
 			&syntaxTree{
 				nodes: []node{
-					&nodeGoStrExpr{expr: `foo.bar("asd").baz.biz()`, pos: span{start: 1, end: 24}},
+					&nodeGoStrExpr{expr: `foo.bar("asd").baz.biz()`, pos: span{start: 1, end: 25}},
 				},
 			},
 		},
@@ -796,7 +796,7 @@ func TestParse(t *testing.T) {
 			`^quux[42]`,
 			&syntaxTree{
 				nodes: []node{
-					&nodeGoStrExpr{expr: `quux[42]`, pos: span{start: 1, end: 8}},
+					&nodeGoStrExpr{expr: `quux[42]`, pos: span{start: 1, end: 9}},
 				},
 			},
 		},
@@ -817,7 +817,7 @@ func TestParse(t *testing.T) {
 			`^getParam(req, "name")`,
 			&syntaxTree{
 				nodes: []node{
-					&nodeGoStrExpr{expr: `getParam(req, "name")`, pos: span{start: 1, end: 21}},
+					&nodeGoStrExpr{expr: `getParam(req, "name")`, pos: span{start: 1, end: 22}},
 				},
 			},
 		},
