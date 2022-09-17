@@ -3179,13 +3179,14 @@ func (p *codeParser) lookahead() (t goToken) {
 	// offending character.
 	//
 	// In all other cases, Scan returns an empty literal string.
-	if t.tok.IsLiteral() || t.tok.IsKeyword() || t.tok == token.SEMICOLON {
+	if t.tok.IsLiteral() || t.tok.IsKeyword() || t.tok == token.SEMICOLON || t.tok == token.COMMENT {
 		t.lit = lit
 	} else if t.tok == token.ILLEGAL {
 		p.errorf("illegal Go token %q", lit)
 	} else {
 		t.lit = t.tok.String()
 	}
+	// log.Printf("pos %v\ttok %v\tlit %v", t.pos, t.tok, t.lit)
 	return t
 }
 
