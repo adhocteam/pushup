@@ -2828,6 +2828,7 @@ func (p *htmlParser) parseStartTag() []node {
 		for _, attr := range p.attrs {
 			name := attr.name.string
 			value := attr.value.string
+			log.Printf("NAME: %q\tVALUE: %q", name, value)
 			nameStartPos := int(attr.name.start)
 			valStartPos := int(attr.value.start)
 			nameEndPos := nameStartPos + len(name)

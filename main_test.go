@@ -975,6 +975,7 @@ func FuzzParser(f *testing.F) {
 		"^{ name := \"world\" }\n<h1>Hello, ^name!</h1>\n",
 		"^if true {\n<a href=\"^req.URL.Path\">this page</a>\n}\n",
 		"<div>^(3 + 4 * 5)</div>\n",
+		"^if 42 == /* inline comment */ 42 { }\n",
 	}
 
 	for _, seed := range seeds {
