@@ -3179,10 +3179,8 @@ func (p *codeParser) lookahead() (t goToken) {
 	// offending character.
 	//
 	// In all other cases, Scan returns an empty literal string.
-	if t.tok.IsLiteral() || t.tok.IsKeyword() || t.tok == token.SEMICOLON || t.tok == token.COMMENT {
+	if t.tok.IsLiteral() || t.tok.IsKeyword() || t.tok == token.SEMICOLON || t.tok == token.COMMENT || t.tok == token.ILLEGAL {
 		t.lit = lit
-	} else if t.tok == token.ILLEGAL {
-		p.errorf("illegal Go token %q", lit)
 	} else {
 		t.lit = t.tok.String()
 	}
@@ -3559,6 +3557,8 @@ loop:
 			if depth == 0 {
 				break loop
 			}
+		case token.ILLEGAL:
+			p.errorf("illegal Go token %q", p.peek().String())
 		case token.EOF:
 			p.errorf("unterminated explicit expression, expected closing ')'")
 		}
@@ -3614,6 +3614,8 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 						if nested == 0 {
 							goto Loop
 						}
+					} else if p.peek().tok == token.ILLEGAL {
+						p.errorf("illegal Go token %q", p.peek().String())
 					} else if p.peek().tok == token.EOF {
 						p.errorf("unexpected EOF, want ')'")
 					}
@@ -3632,6 +3634,8 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 						if nested == 0 {
 							goto Loop
 						}
+					} else if p.peek().tok == token.ILLEGAL {
+						p.errorf("illegal Go token %q", p.peek().String())
 					} else if p.peek().tok == token.EOF {
 						p.errorf("unexpected EOF, want ')'")
 					}
