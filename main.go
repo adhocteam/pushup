@@ -1744,9 +1744,6 @@ func watchForReload(ctx context.Context, cancel context.CancelFunc, root string,
 
 	go debounceEvents(ctx, 125*time.Millisecond, watcher, func(event fsnotify.Event) {
 		//log.Printf("name: %s\top: %s", event.Name, event.Op)
-		if event.Op != fsnotify.Create {
-			return
-		}
 		if isDir(event.Name) {
 			if err := watchDirRecursively(watcher, event.Name); err != nil {
 				panic(err)
