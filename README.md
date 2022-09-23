@@ -119,7 +119,7 @@ make build-docker
 Then create a scaffolded new project in the current directory:
 
 ```shell
-docker run --rm -v $(pwd):/usr/src/app --user $(id -u):$(id -g) pushup new
+docker run --rm -v $(pwd):/usr/src/app --user $(id -u):$(id -g) -p 8080:8080 pushup new
 ```
 
 See [Creating a new Pushup project](#creating-a-new-pushup-project) for more information.

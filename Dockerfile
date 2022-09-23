@@ -6,4 +6,5 @@ WORKDIR /usr/src/app
 COPY go.mod go.sum ./
 COPY . .
 RUN make
+ENV GOCACHE=/usr/src/app/.cache
 ENTRYPOINT [ "/go/bin/pushup" ]
