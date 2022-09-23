@@ -4,46 +4,47 @@
 
 ![screenshot of syntax highlighting of an example Pushup page](./example-syntax-highlighting.png)
 
--   [Pushup - a page-oriented web framework for Go](#pushup---a-page-oriented-web-framework-for-go)
-    -   [What is Pushup?](#what-is-pushup)
-        -   [Pages in Pushup](#pages-in-pushup)
-    -   [Getting started](#getting-started)
-        -   [Installing Pushup](#installing-pushup)
-            -   [Prerequisites](#prerequisites)
-            -   [Install via git](#install-via-git)
-            -   [Install via `go install`](#install-via-go-install)
-        -   [Creating a new Pushup project](#creating-a-new-pushup-project)
-    -   [Example demo app](#example-demo-app)
-    -   [Go modules and Pushup projects](#go-modules-and-pushup-projects)
-    -   [Project directory structure](#project-directory-structure)
-    -   [Pages](#pages)
-    -   [Layouts](#layouts)
-    -   [Static media](#static-media)
-    -   [File-based routing](#file-based-routing)
-        -   [Dynamic routes](#dynamic-routes)
-    -   [Enhanced hypertext](#enhanced-hypertext)
-        -   [Inline partials](#inline-partials)
-    -   [Basic web framework functionality](#basic-web-framework-functionality)
-        -   [Escaping](#escaping)
-    -   [Pushup syntax](#pushup-syntax)
-        -   [How it works](#how-it-works)
-        -   [Directives](#directives)
-            -   [`^import`](#import)
-            -   [`^layout`](#layout)
-                -   [`^layout !` - no layout](#layout----no-layout)
-        -   [Go code blocks](#go-code-blocks)
-            -   [`^{`](#)
-            -   [`^handler`](#handler)
-        -   [Control flow statements](#control-flow-statements)
-            -   [`^if`](#if)
-            -   [`^for`](#for)
-        -   [Expressions](#expressions)
-            -   [Simple expressions](#simple-expressions)
-            -   [Explicit expressions](#explicit-expressions)
-        -   [Layout and templates](#layout-and-templates)
-            -   [`^section`](#section)
-            -   [`^partial`](#partial)
-    -   [Vim syntax file](#vim-syntax-file)
+- [Pushup - a page-oriented web framework for Go](#pushup---a-page-oriented-web-framework-for-go)
+  - [What is Pushup?](#what-is-pushup)
+    - [Pages in Pushup](#pages-in-pushup)
+  - [Quick start with Docker](#quick-start-with-docker)
+  - [Getting started](#getting-started)
+    - [Installing Pushup](#installing-pushup)
+      - [Prerequisites](#prerequisites)
+      - [Install via git](#install-via-git)
+      - [Install via `go install`](#install-via-go-install)
+    - [Creating a new Pushup project](#creating-a-new-pushup-project)
+  - [Example demo app](#example-demo-app)
+  - [Go modules and Pushup projects](#go-modules-and-pushup-projects)
+  - [Project directory structure](#project-directory-structure)
+  - [Pages](#pages)
+  - [Layouts](#layouts)
+  - [Static media](#static-media)
+  - [File-based routing](#file-based-routing)
+    - [Dynamic routes](#dynamic-routes)
+  - [Enhanced hypertext](#enhanced-hypertext)
+    - [Inline partials](#inline-partials)
+  - [Basic web framework functionality](#basic-web-framework-functionality)
+    - [Escaping](#escaping)
+  - [Pushup syntax](#pushup-syntax)
+    - [How it works](#how-it-works)
+    - [Directives](#directives)
+      - [`^import`](#import)
+      - [`^layout`](#layout)
+        - [`^layout !` - no layout](#layout----no-layout)
+    - [Go code blocks](#go-code-blocks)
+      - [`^{`](#)
+      - [`^handler`](#handler)
+    - [Control flow statements](#control-flow-statements)
+      - [`^if`](#if)
+      - [`^for`](#for)
+    - [Expressions](#expressions)
+      - [Simple expressions](#simple-expressions)
+      - [Explicit expressions](#explicit-expressions)
+    - [Layout and templates](#layout-and-templates)
+      - [`^section`](#section)
+      - [`^partial`](#partial)
+  - [Vim syntax file](#vim-syntax-file)
 
 Pushup is an experimental new project that is exploring the viability of a new
 approach to web frameworks in Go.
@@ -105,6 +106,23 @@ You would then place this code in a file somewhere in your `app/pages`
 directory, like `hello.up`. The `.up` extension is important and tells
 the compiler that it is a Pushup page. Once you build and run your Pushup app,
 that page is automatically mapped to the URL path `/hello`.
+
+
+## Quick start with Docker
+
+```shell
+git clone git@github.com:AdHocRandD/pushup.git
+cd pushup
+make build-docker
+```
+
+Then create a scaffolded new project in the current directory:
+
+```shell
+docker run --rm -v $(pwd):/usr/src/app --user $(id -u):$(id -g) pushup new
+```
+
+See [Creating a new Pushup project](#creating-a-new-pushup-project) for more information.
 
 ## Getting started
 

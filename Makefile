@@ -10,6 +10,11 @@ build:
 
 .PHONY: build
 
+build-docker:
+	docker build -t pushup .
+
+.PHONY: build-docker
+
 test tests:
 	go test -v ./...
 
