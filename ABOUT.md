@@ -45,6 +45,11 @@ clear from the get-go.
 -   Live-reloading dev environment
 -   Great debugging and visualization tools
 
+## Good use cases
+
+-   Lightweight, "[mildly dynamic](https://www.devever.net/~hl/mildlydynamic)" web apps
+-   Dynamic web apps in edge computing
+
 ## Trends
 
 A number of things are driving this.
