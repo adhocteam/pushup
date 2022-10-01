@@ -2469,7 +2469,7 @@ var _ node = (*nodeGoCode)(nil)
 type nodeIf struct {
 	cond *nodeGoStrExpr
 	then *nodeBlock
-	alt  *nodeBlock
+	alt  node
 }
 
 func (e nodeIf) Pos() span { return e.cond.pos }
@@ -3336,10 +3336,23 @@ loop:
 		p.errorf("parsing Go expression in IF conditional: %w", err)
 	}
 	stmt.then = p.parseStmtBlock()
-	if p.peek().tok == token.ELSE {
+	// parse ^else clause
+	if p.peek().tok == token.XOR {
 		p.advance()
-		elseBlock := p.parseStmtBlock()
-		stmt.alt = elseBlock
+		if p.peek().tok == token.ELSE {
+			p.advance()
+			if p.peek().tok == token.XOR {
+				p.advance()
+				if p.peek().tok == token.IF {
+					p.advance()
+					stmt.alt = p.parseIfStmt()
+				} else {
+					p.errorf("expected `if' after transition character, got %v", p.peek().String())
+				}
+			} else {
+				stmt.alt = p.parseStmtBlock()
+			}
+		}
 	}
 	return &stmt
 }

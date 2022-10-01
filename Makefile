@@ -11,7 +11,7 @@ build:
 .PHONY: build
 
 test tests:
-	go test -v ./...
+	go test -v . ./_runtime
 
 .PHONY: test tests
 

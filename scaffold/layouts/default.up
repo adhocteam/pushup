@@ -5,7 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>^if sectionDefined("title") {
             <text>^outputSection("title")</text>
-        } else {
+        } ^else {
             <text>Pushup app</text>
         }</title>
         <link rel="stylesheet" href="/static/pico.min.css" />

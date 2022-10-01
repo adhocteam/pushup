@@ -95,7 +95,7 @@ The syntax of the Pushup markup language looks like this:
 
 ^if time.Now().Weekday() == time.Friday {
     <p>It's Friday! Enjoy the start to your weekend.</p>
-} else {
+} ^else {
     <p>Have a great day, we're glad you're here.</p>
 }
 
@@ -606,7 +606,7 @@ default markup that can be overridden by a page.
     <title>
         ^outputSection("title")
     </title>
-} else {
+} ^else {
     <title>Welcome to our site</title>
 }
 ```

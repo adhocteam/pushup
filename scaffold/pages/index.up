@@ -45,7 +45,7 @@
     <li>Override this file at <tt>app/pages/index.up</tt></li>
     ^if !devReloadFlagSet {
         <li>Check out the live reloading mode with the CLI flag <tt>-dev</tt></li>
-    } else {
+    } ^else {
         <li>Great, you set the <tt>-dev</tt> flag for live reloading!</li>
     }
     <li>Add new Pushup pages to <tt>app/pages</tt> and see them appear as routes</li>

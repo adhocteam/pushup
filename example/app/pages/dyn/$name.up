@@ -30,6 +30,6 @@
 <p>URL: <tt>^req.URL.Path</tt></p>
 ^if getParam(req, "name") == "world" {
     <p><a href="/dyn/Pushup">/dyn/Pushup</a></p>
-} else {
+} ^else {
     <p><a href="/dyn/world">/dyn/world</a></p>
 }

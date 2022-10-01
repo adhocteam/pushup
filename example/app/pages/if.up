@@ -3,12 +3,19 @@
     bladeRunner := "Deckard"
 }
 
+<p>Demonstrates <tt>^^if / ^^else ^^if / ^^else</tt> control flow statements.</p>
+
 ^if name == "" {
     <div>
         <h1>Hello, world!</h1>
         <a href="/if?name=^bladeRunner">add <tt>name</tt> to URL query params</a>
     </div>
-} else {
+} ^else ^if name == bladeRunner {
+    <div>
+        <h1>We call it Voight-Kampff for short. I'm ^bladeRunner</h1>
+        <a href="/if">Remove <tt>name</tt> from URL query params</a>
+    </div>
+} ^else {
     <div>
         <h1>Hello, ^name!</h1>
         <a href="/if">remove <tt>name</tt> from URL query params</a>

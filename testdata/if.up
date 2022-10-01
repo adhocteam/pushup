@@ -1,6 +1,11 @@
 ^layout !
-^if req.FormValue("name") != "" {
-    <h1>Hello, ^req.FormValue("name")!</h1>
-} else {
-    <h1>Hello, world!</h1>
+^{ n := req.FormValue("number") }
+^if n == "" {
+    <p>Provide a number</p>
+} ^else ^if n == "0" {
+    <p>zero</p>
+} ^else ^if n == "1" {
+    <p>one</p>
+} ^else {
+    <p>Unknown</p>
 }

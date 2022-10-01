@@ -87,13 +87,15 @@ func TestPushup(t *testing.T) {
 								for _, line := range lines {
 									line := strings.TrimSpace(line)
 									if line != "" {
-										pair := strings.Split(line, "=")
+										pair := strings.SplitN(line, "=", 2)
 										if len(pair) != 2 {
 											t.Fatalf("illegal request key-value pair: %q", line)
 										}
 										switch pair[0] {
 										case "requestPath":
 											config.path = pair[1]
+										case "queryParam":
+											config.queryParams = append(config.queryParams, pair[1])
 										default:
 											log.Printf("unhandled request config key: %q", pair[0])
 										}
@@ -146,7 +148,7 @@ func TestPushup(t *testing.T) {
 				for _, request := range requests {
 					t.Run(request.name, func(t *testing.T) {
 						g, ctx0 := errgroup.WithContext(context.Background())
-						ctx, cancel := context.WithTimeout(ctx0, 5*time.Second)
+						ctx, cancel := context.WithTimeout(ctx0, 10*time.Second)
 						defer cancel()
 
 						ready := make(chan bool)
@@ -559,7 +561,7 @@ func TestParse(t *testing.T) {
 		{
 			`^if name != "" {
 	<h1>Hello, ^name!</h1>
-} else {
+} ^else {
 	<h1>Hello, world!</h1>
 }`,
 			&syntaxTree{
@@ -586,13 +588,13 @@ func TestParse(t *testing.T) {
 						},
 						alt: &nodeBlock{
 							nodes: []node{
-								&nodeLiteral{str: "\n\t", pos: span{start: 49, end: 51}},
+								&nodeLiteral{str: "\n\t", pos: span{start: 50, end: 52}},
 								&nodeElement{
 									tag:           tag{name: "h1"},
-									startTagNodes: []node{&nodeLiteral{str: "<h1>", pos: span{start: 51, end: 55}}},
-									pos:           span{start: 51, end: 55},
+									startTagNodes: []node{&nodeLiteral{str: "<h1>", pos: span{start: 52, end: 56}}},
+									pos:           span{start: 52, end: 56},
 									children: []node{
-										&nodeLiteral{str: "Hello, world!", pos: span{start: 55, end: 68}},
+										&nodeLiteral{str: "Hello, world!", pos: span{start: 56, end: 69}},
 									},
 								},
 							},
@@ -606,7 +608,7 @@ func TestParse(t *testing.T) {
     <div>
         <h1>Hello, world!</h1>
     </div>
-} else {
+} ^else {
     <div>
         <h1>Hello, ^name!</h1>
     </div>
@@ -642,24 +644,24 @@ func TestParse(t *testing.T) {
 						},
 						alt: &nodeBlock{
 							nodes: []node{
-								&nodeLiteral{str: "\n    ", pos: span{start: 77, end: 82}},
+								&nodeLiteral{str: "\n    ", pos: span{start: 78, end: 83}},
 								&nodeElement{
 									tag:           tag{name: "div"},
-									pos:           span{start: 82, end: 87},
-									startTagNodes: []node{&nodeLiteral{str: "<div>", pos: span{start: 82, end: 87}}},
+									pos:           span{start: 83, end: 88},
+									startTagNodes: []node{&nodeLiteral{str: "<div>", pos: span{start: 83, end: 88}}},
 									children: []node{
-										&nodeLiteral{str: "\n        ", pos: span{start: 87, end: 96}},
+										&nodeLiteral{str: "\n        ", pos: span{start: 88, end: 97}},
 										&nodeElement{
 											tag:           tag{name: "h1"},
-											startTagNodes: []node{&nodeLiteral{str: "<h1>", pos: span{start: 96, end: 100}}},
-											pos:           span{start: 96, end: 100},
+											startTagNodes: []node{&nodeLiteral{str: "<h1>", pos: span{start: 97, end: 101}}},
+											pos:           span{start: 97, end: 101},
 											children: []node{
-												&nodeLiteral{str: "Hello, ", pos: span{start: 100, end: 107}},
-												&nodeGoStrExpr{expr: "name", pos: span{start: 108, end: 112}},
-												&nodeLiteral{str: "!", pos: span{start: 112, end: 113}},
+												&nodeLiteral{str: "Hello, ", pos: span{start: 101, end: 108}},
+												&nodeGoStrExpr{expr: "name", pos: span{start: 109, end: 113}},
+												&nodeLiteral{str: "!", pos: span{start: 113, end: 114}},
 											},
 										},
-										&nodeLiteral{str: "\n    ", pos: span{start: 118, end: 123}},
+										&nodeLiteral{str: "\n    ", pos: span{start: 119, end: 124}},
 									},
 								},
 							},
