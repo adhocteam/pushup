@@ -2073,6 +2073,8 @@ func (s *cancellationSource) Err() error {
 	return s.err
 }
 
+var _ context.Context = (*cancellationSource)(nil)
+
 func (s *cancellationSource) Value(key any) any {
 	panic("not implemented") // TODO: Implement
 }
@@ -2197,6 +2199,8 @@ func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 				log.Printf("\x1b[35mFILE CHANGED\x1b[0m")
 			} else if ctx.final.source == cancelSourceSignal {
 				log.Printf("\x1b[34mSIGNAL TRAPPED\x1b[0m")
+			} else {
+				panic("unknown source of cancellation")
 			}
 		}
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {

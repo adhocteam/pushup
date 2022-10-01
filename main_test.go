@@ -27,6 +27,7 @@ import (
 type testRequest struct {
 	name           string
 	path           string
+	queryParams    []string
 	expectedOutput string
 }
 
@@ -128,6 +129,8 @@ func TestPushup(t *testing.T) {
 
 				// FIXME(paulsmith): add metadata to the testdata files with the
 				// desired path to avoid these hacks
+				// TODO(paulsmith): strip /testdata/ from request paths so tests
+				// don't need to be aware of where they live
 				requestPath := "/testdata/" + basename
 				if basename == "index" {
 					requestPath = "/testdata/"
@@ -157,12 +160,16 @@ func TestPushup(t *testing.T) {
 						socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+"-"+strconv.Itoa(int(rand.Uint32()))+".sock")
 
 						var errb bytes.Buffer
+						var stdout io.ReadCloser
+						var allgood bool
+						var cmd *exec.Cmd
 
 						g.Go(func() error {
-							cmd := exec.Command(pushup, "run", "-build-pkg", "github.com/AdHocRandD/pushup/build", "-page", pushupFile, "-unix-socket", socketPath)
+							cmd = exec.Command(pushup, "run", "-build-pkg", "github.com/AdHocRandD/pushup/build", "-page", pushupFile, "-unix-socket", socketPath)
 							sysProcAttr(cmd)
 
-							stdout, err := cmd.StdoutPipe()
+							var err error
+							stdout, err = cmd.StdoutPipe()
 							if err != nil {
 								return err
 							}
@@ -173,44 +180,6 @@ func TestPushup(t *testing.T) {
 								return err
 							}
 
-							g.Go(func() error {
-								var buf [256]byte
-								// NOTE(paulsmith): keep this in sync with the string in main.go
-								needle := []byte("Pushup ready and listening on ")
-								select {
-								case <-ctx.Done():
-									err := ctx.Err()
-									return err
-								default:
-									for {
-										n, err := stdout.Read(buf[:])
-										if n > 0 {
-											if bytes.Contains(buf[:], needle) {
-												ready <- true
-												return nil
-											}
-										} else {
-											if errors.Is(err, io.EOF) {
-												return nil
-											}
-											return err
-										}
-									}
-								}
-							})
-
-							g.Go(func() error {
-								select {
-								case <-done:
-									syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
-									cmd.Wait()
-									return nil
-								case <-ctx.Done():
-									err := ctx.Err()
-									return err
-								}
-							})
-
 							if err := cmd.Wait(); err != nil {
 								return err
 							}
@@ -218,7 +187,49 @@ func TestPushup(t *testing.T) {
 							return nil
 						})
 
-						var allgood bool
+						g.Go(func() error {
+							var buf [256]byte
+							// NOTE(paulsmith): keep this in sync with the string in main.go
+							needle := []byte("Pushup ready and listening on ")
+							for {
+								select {
+								case <-ctx.Done():
+									err := ctx.Err()
+									return err
+								default:
+									if stdout != nil {
+										for {
+											n, err := stdout.Read(buf[:])
+											if n > 0 {
+												if bytes.Contains(buf[:], needle) {
+													ready <- true
+													return nil
+												}
+											} else {
+												if errors.Is(err, io.EOF) {
+													return nil
+												}
+												return err
+											}
+										}
+									}
+								}
+							}
+						})
+
+						g.Go(func() error {
+							select {
+							case <-done:
+								if cmd != nil {
+									syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+									cmd.Wait()
+								}
+								return nil
+							case <-ctx.Done():
+								err := ctx.Err()
+								return err
+							}
+						})
 
 						g.Go(func() error {
 							select {
@@ -234,7 +245,12 @@ func TestPushup(t *testing.T) {
 									},
 								},
 							}
-							resp, err := client.Get("http://dummy" + request.path)
+							var queryParams string
+							if len(request.queryParams) > 0 {
+								queryParams = "?" + strings.Join(request.queryParams, "&")
+							}
+							reqUrl := "http://dummy" + request.path + queryParams
+							resp, err := client.Get(reqUrl)
 							if err != nil {
 								return nil
 							}
@@ -260,6 +276,8 @@ func TestPushup(t *testing.T) {
 
 						if err := g.Wait(); err != nil {
 							if _, ok := err.(*exec.ExitError); ok && allgood {
+								// no-op
+							} else if _, ok := err.(*os.SyscallError); ok && allgood {
 								// no-op
 							} else {
 								t.Logf("stderr:\n%s\n", errb.String())
