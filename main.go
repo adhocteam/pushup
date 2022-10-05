@@ -3714,25 +3714,19 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 				// if space between period and next token, regardless of what
 				// it is, need to break. the period needs to be pushed back on
 				// to the stream to be parsed.
-				if p.peek().pos-last > 1 {
+				if p.peek().pos-last > 1 || p.peek().tok != token.IDENT {
 					p.backup()
 					end--
 					break
 				}
-				if p.peek().tok == token.IDENT {
-					adv := len(p.peek().String())
-					end += adv
-					if unicode.IsSpace(rune(p.charAt(end))) {
-						// done
-						p.advance()
-						break
-					}
+				adv := len(p.peek().String())
+				end += adv
+				if unicode.IsSpace(rune(p.charAt(end))) {
+					// done
 					p.advance()
-				} else {
-					p.backup()
-					end--
 					break
 				}
+				p.advance()
 			} else {
 				break
 			}
