@@ -3129,13 +3129,35 @@ loop:
 	return result
 }
 
+type Optional[T any] struct {
+	value *T
+}
+
+func None[T any]() Optional[T] {
+	return Optional[T]{}
+}
+
+func Some[T any](val T) Optional[T] {
+	return Optional[T]{value: &val}
+}
+
+func Value[T any](o Optional[T]) (T, bool) {
+	if o.value != nil {
+		return *o.value, true
+	} else {
+		var zero T
+		return zero, false
+	}
+}
+
 type codeParser struct {
 	parser         *parser
 	baseOffset     int
 	file           *token.File
 	scanner        *scanner.Scanner
-	acceptedToken  goToken
-	lookaheadToken goToken
+	bufferedToken  Optional[goToken]
+	acceptedToken  Optional[goToken]
+	lookaheadToken Optional[goToken]
 }
 
 func (p *codeParser) reset() {
@@ -3145,8 +3167,9 @@ func (p *codeParser) reset() {
 	p.file = fset.AddFile("", fset.Base(), len(source))
 	p.scanner = new(scanner.Scanner)
 	p.scanner.Init(p.file, []byte(source), nil, scanner.ScanComments)
-	p.acceptedToken = goToken{}
-	p.lookaheadToken = goToken{}
+	p.bufferedToken = None[goToken]()
+	p.acceptedToken = None[goToken]()
+	p.lookaheadToken = None[goToken]()
 }
 
 func (p *codeParser) errorf(format string, args ...any) {
@@ -3161,7 +3184,12 @@ func (p *codeParser) sourceRange(start, end int) string {
 	return p.parser.src[start:end]
 }
 
-func (p *codeParser) lookahead() (t goToken) {
+func (p *codeParser) lookahead() goToken {
+	if tok, ok := Value(p.bufferedToken); ok {
+		p.bufferedToken = None[goToken]()
+		return tok
+	}
+	var t goToken
 	var lit string
 	t.pos, t.tok, lit = p.scanner.Scan()
 	// from go/scanner docs:
@@ -3200,10 +3228,12 @@ func (t goToken) String() string {
 }
 
 func (p *codeParser) peek() goToken {
-	if p.lookaheadToken.pos == 0 {
-		p.lookaheadToken = p.lookahead()
+	if tok, ok := Value(p.lookaheadToken); ok {
+		return tok
 	}
-	return p.lookaheadToken
+	tok := p.lookahead()
+	p.lookaheadToken = Some(tok)
+	return tok
 }
 
 // charAt() returns the byte at the offset in the input source string. because
@@ -3219,23 +3249,44 @@ func (p *codeParser) charAt(offset int) byte {
 }
 
 func (p *codeParser) prev() goToken {
-	return p.acceptedToken
+	if tok, ok := Value(p.acceptedToken); ok {
+		return tok
+	}
+	panic("internal error: expected some accepted token, got none")
 }
 
 // sync synchronizes the global offset position in the main Pushup parser with
 // the Go code scanner.
 func (p *codeParser) sync() goToken {
 	t := p.peek()
+	// the Go scanner skips over whitespace so we need to be careful about the
+	// logic for advancing the main parser internal source offset.
 	p.parser.offset = p.tokenOffset(t) + len(t.String())
 	return t
 }
 
+// advance consumes the lookahead token (which should be accessed via p.peek())
 func (p *codeParser) advance() {
-	// the Go scanner skips over whitespace so we need to be careful about the
-	// logic for advancing the main parser internal source offset.
-	t := p.sync()
-	p.acceptedToken = t
-	p.lookaheadToken = p.lookahead()
+	p.acceptedToken = Some(p.sync())
+	p.lookaheadToken = Some(p.lookahead())
+}
+
+// backup undoes a call to p.advance(). may only be called once between calls
+// to p.advance(). must have called p.advance() at least once prior.
+func (p *codeParser) backup() {
+	if _, ok := Value(p.bufferedToken); ok {
+		panic("internal error: p.backup() called more than once before p.advance()")
+	}
+	if _, ok := Value(p.lookaheadToken); !ok {
+		panic("internal error: p.backup() called before p.advance()")
+	}
+	if tok, ok := Value(p.acceptedToken); ok {
+		p.parser.offset = p.tokenOffset(tok)
+	} else {
+		panic("internal error: expected some accepted token, got none")
+	}
+	p.bufferedToken = p.lookaheadToken
+	p.lookaheadToken = p.acceptedToken
 }
 
 func (p *codeParser) transition() *nodeBlock {
@@ -3657,9 +3708,19 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 					p.advance()
 				}
 			} else if p.peek().tok == token.PERIOD {
+				last := p.peek().pos
 				p.advance()
+				end++
+				// if space between period and next token, regardless of what
+				// it is, need to break. the period needs to be pushed back on
+				// to the stream to be parsed.
+				if p.peek().pos-last > 1 {
+					p.backup()
+					end--
+					break
+				}
 				if p.peek().tok == token.IDENT {
-					adv := 1 + len(p.peek().String())
+					adv := len(p.peek().String())
 					end += adv
 					if unicode.IsSpace(rune(p.charAt(end))) {
 						// done
@@ -3668,6 +3729,7 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 					}
 					p.advance()
 				} else {
+					// FIXME(paulsmith): should move back on the token stream
 					break
 				}
 			} else {

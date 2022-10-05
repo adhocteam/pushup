@@ -889,6 +889,16 @@ func TestParse(t *testing.T) {
 				},
 			},
 		},
+		{
+			`My name is ^name. What's yours?`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeLiteral{str: "My name is ", pos: span{end: 11}},
+					&nodeGoStrExpr{expr: "name", pos: span{start: 12, end: 16}},
+					&nodeLiteral{str: ". What's yours?", pos: span{start: 16, end: 31}},
+				},
+			},
+		},
 	}
 	opts := cmp.AllowUnexported(unexported...)
 	for _, test := range tests {
