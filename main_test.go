@@ -899,6 +899,17 @@ func TestParse(t *testing.T) {
 				},
 			},
 		},
+		{
+			`<p>^foo.</p>`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeLiteral{str: "<p>", pos: span{end: 3}},
+					&nodeGoStrExpr{expr: "foo", pos: span{start: 4, end: 7}},
+					&nodeLiteral{str: ".", pos: span{start: 7, end: 8}},
+					&nodeLiteral{str: "</p>", pos: span{start: 8, end: 12}},
+				},
+			},
+		},
 	}
 	opts := cmp.AllowUnexported(unexported...)
 	for _, test := range tests {

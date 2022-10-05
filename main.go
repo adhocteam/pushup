@@ -3729,7 +3729,8 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 					}
 					p.advance()
 				} else {
-					// FIXME(paulsmith): should move back on the token stream
+					p.backup()
+					end--
 					break
 				}
 			} else {
