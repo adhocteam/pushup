@@ -543,7 +543,7 @@ Outputs:
 #### Explicit expressions
 
 Explicit expressions are written with `^` and followed by any valid Go
-expression surrounded by parentheses.
+expression grouped by parentheses.
 
 Example:
 
