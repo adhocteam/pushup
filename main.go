@@ -1744,6 +1744,9 @@ func watchForReload(ctx context.Context, cancel context.CancelFunc, root string,
 
 	go debounceEvents(ctx, 125*time.Millisecond, watcher, func(event fsnotify.Event) {
 		//log.Printf("name: %s\top: %s", event.Name, event.Op)
+		if !reloadableFilename(event.Name) {
+			return
+		}
 		if isDir(event.Name) {
 			if err := watchDirRecursively(watcher, event.Name); err != nil {
 				panic(err)
@@ -1765,6 +1768,26 @@ func stopWatching(watcher *fsnotify.Watcher) {
 	for _, name := range watcher.WatchList() {
 		watcher.Remove(name)
 	}
+}
+
+// reloadableFilename tests whether the file is one we want to trigger a reload
+// from if it is modified. it tries not to cause a lot of unnecessary reloads
+// by ignoring temporary files from editors like vim and Emacs.
+func reloadableFilename(path string) bool {
+	ext := filepath.Ext(path)
+	// ignore vim swap files: .swp, .swo, .swn, etc
+	if len(ext) == 4 && strings.HasPrefix(ext, ".sw") {
+		return false
+	}
+	// ignore vim and Emacs backup files
+	if strings.HasSuffix(ext, "~") {
+		return false
+	}
+	// ignore Emacs autosave files
+	if strings.HasPrefix(ext, "#") && strings.HasSuffix(ext, "#") {
+		return false
+	}
+	return true
 }
 
 func isDir(path string) bool {

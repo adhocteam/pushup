@@ -6,3 +6,4 @@ TODO
 *.db
 /example/build/
 node_modules
+.*.sw?
