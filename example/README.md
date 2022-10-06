@@ -6,7 +6,7 @@ Pushup features and models how to write Pushup syntax.
 To run it, install the main Pushup app, cd to this directory, and type:
 
 ```
-pushup run -build-pkg github.com/AdHocRandD/pushup/example/build
+pushup run -build-pkg github.com/adhocteam/pushup/example/build
 ```
 
 (Note that the need to type `-build-pkg ...` is temporary and will go

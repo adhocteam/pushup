@@ -1,4 +1,4 @@
-module github.com/AdHocRandD/pushup/example
+module github.com/adhocteam/pushup/example
 
 go 1.18
 

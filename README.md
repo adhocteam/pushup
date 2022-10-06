@@ -1,6 +1,6 @@
 # Pushup - a page-oriented web framework for Go
 
-![workflow status](https://github.com/AdHocRandD/pushup/actions/workflows/go.yml/badge.svg)
+![workflow status](https://github.com/adhocteam/pushup/actions/workflows/go.yml/badge.svg)
 
 ![screenshot of syntax highlighting of an example Pushup page](./example-syntax-highlighting.png)
 
@@ -139,7 +139,7 @@ personal access token][token] on GitHub, and configure your ~/.netrc file.
 Make sure you have Go installed (at least version 1.18), and type:
 
 ```shell
-GOPRIVATE=github.com/AdHocRandD/pushup go install github.com/AdHocRandD/pushup@latest
+GOPRIVATE=github.com/adhocteam/pushup go install github.com/adhocteam/pushup@latest
 ```
 
 The `GOPRIVATE` environment variable is necessary to tell the go tool not to
@@ -677,6 +677,6 @@ each containing partial's name and a forward slash, for example,
 There is a vim plugin in the `vim-pushup` directory. You should be able to symlink it into your plugin manager's path. Alternatively, to install it manually:
 
 -   Locate or create a `syntax` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
--   Copy [`syntax/pushup.vim`](https://github.com/AdHocRandD/pushup/blob/main/vim-pushup/syntax/pushup.vim) into that directory
+-   Copy [`syntax/pushup.vim`](https://github.com/adhocteam/pushup/blob/main/vim-pushup/syntax/pushup.vim) into that directory
 -   Locate or create a `ftdetect` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
--   Copy [`ftdetect/pushup.vim`](https://github.com/AdHocRandD/pushup/blob/main/vim-pushup/ftdetect/pushup.vim) into that directory
+-   Copy [`ftdetect/pushup.vim`](https://github.com/adhocteam/pushup/blob/main/vim-pushup/ftdetect/pushup.vim) into that directory

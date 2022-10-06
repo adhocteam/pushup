@@ -49,5 +49,5 @@
         <li>Great, you set the <tt>-dev</tt> flag for live reloading!</li>
     }
     <li>Add new Pushup pages to <tt>app/pages</tt> and see them appear as routes</li>
-    <li><a href="https://github.com/AdHocRandD/pushup/blob/main/README.md">Read the docs</a></li>
+    <li><a href="https://github.com/adhocteam/pushup/blob/main/README.md">Read the docs</a></li>
 </ul>
