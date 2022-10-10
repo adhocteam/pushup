@@ -1,3 +1,4 @@
-baseURL = 'http://example.org/'
+baseURL = 'https://gopushup.dev/'
 languageCode = 'en-us'
-title = 'My New Hugo Site'
+title = 'Pushup web framework'
+theme = "pushup"
