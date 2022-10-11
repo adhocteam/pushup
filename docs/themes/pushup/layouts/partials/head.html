@@ -1,1 +1,88 @@
 <meta charset="utf-8" />
+<style>
+:root {
+    --header-text-color: #1a1a29;
+    --body-text-color: #3a3a46;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: system-ui, sans-serif;
+    color: var(--header-text-color);
+    font-size: 1rem;
+    border-bottom: 1px dotted #999;
+    padding-bottom: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+html {
+    box-sizing: border-box;
+}
+
+*, *:before, *:after {
+    box-sizing: inherit;
+}
+
+::selection {
+    color: #f3f3f9;
+    background: #060639;
+}
+
+body {
+    font-family: system-ui, sans-serif;
+    color: var(--body-text-color);
+    background: rgba(0, 0, 0, 0.05);
+    margin: 0;
+}
+
+.container {
+    margin: 0 auto;
+    max-width: 960px;
+    padding: 20px 40px;
+}
+
+nav ul {
+    list-style: none;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+}
+
+nav ul li {
+    padding: 10px;
+    border: 1px dotted grey;
+}
+
+#feature-list {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#feature-list li {
+    border: 1px dotted #ccc;
+    padding: 20px;
+    flex: 1 1 200px;
+}
+
+#feature-list li strong {
+    display: block;
+    text-align: center;
+}
+
+#feature-list li p {
+}
+
+section {
+    margin-bottom: 2em;
+}
+</style>

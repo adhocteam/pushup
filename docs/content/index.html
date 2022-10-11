@@ -1,0 +1,67 @@
+---
+title: "Pushup web framework"
+date: 2022-10-10T16:54:01-05:00
+draft: false
+---
+
+<section>
+    <h1>Pushup web framework</h1>
+
+    <p>A proudly server-side, page-oriented web framework for the Go programming language.</p>
+</section>
+
+<section>
+    <h2>Features</h2>
+
+    <ul id="feature-list">
+        <li>
+            <strong>Pages: .up files</strong>
+            <p>Flexible units of web app development, combine HTML, Go, and Pushup markup</p>
+        </li>
+        <li>
+            <strong>File-based routing</strong>
+            <p>Filesystem paths of Pushup pages map to URL paths</p>
+        </li>
+        <li>
+            <strong>World’s first ‟<a href="https://htmx.org/">htmx</a>-first” framework</strong>
+            <p>Enhanced hypertext support via inline partials for better client-side interactivity with fewer JavaScript sit-ups</p>
+        </li>
+        <li>
+            <strong>Compiled. Just Go.</strong>
+            <p>Pushup apps compile down to pure Go. They build on the standard <code>net/http</code> package. Fast static binary executables for easy deployment. Also easy to integrate into larger Go apps.</p>
+        </li>
+    </ul>
+</section>
+
+<section>
+    <h2>What is Pushup?</h2>
+    <p>Pushup’s goal is to make it faster to develop and easier to maintain server-side web applications using Go.</p>
+    <p>Pushup is actually three things in one:</p>
+    <ol>
+        <li>
+            <strong>A lightweight markup syntax</strong>
+            <p>Pushup markup glues HTML and Go together, using the <code>^</code> (caret, ASCII <code>0x5E</code>) character as a transition between the two.</p>
+        </li>
+        <li>
+            <strong>An opionated app project layout</strong>
+            <p>Pushup apps have a simple directory structure on disk for easy project file management.</p>
+        </li>
+        <li>
+            <strong>A compiler</strong>
+            <p>The <code>pushup</code> program compiles Pushup files (<code>.up</code> extension) to Go.</p>
+        </li>
+    </ol>
+
+</section>
+
+<section>
+    <h2>An example</h2>
+    <pre><code>
+    app
+        pages
+        layouts
+        pkg
+        static
+    </code></pre>
+
+</section>
