@@ -1,4 +1,10 @@
-Introducing Pushup
+---
+title: "Introducing Pushup"
+date: 2022-10-11T11:13:01-05:00
+draft: false
+---
+
+# Introducing Pushup
 
 Pushup is a new page-oriented web framework for Go. What does a "page-oriented"
 web framework mean? The central concept in Pushup is a page, which is a file
@@ -10,9 +16,9 @@ web app server as a single static binary executable.
 
 Pushup is a server-side framework, but it makes better client-side
 interactivity easier for server-side apps through support for enhanced
-hypertext libraries, such as htmx.
+hypertext libraries, such as [htmx](https://htmx.org/).
 
-Who is Pushup for?
+## Who is Pushup for?
 
 Pushup is targeting Go developers.
 
@@ -35,7 +41,7 @@ in your app, or the fidelity and fine control of a native app, or simply have
 JS fatigue and want to render some pages and store some state, Pushup is trying
 for that sweet spot and may be for you.
 
-Why a new language?
+## Why a new (markup) language?
 
 Go gives the web developer many powerful building blocks built-in. The Go
 standard package `html/template` is an excellent template language and library.

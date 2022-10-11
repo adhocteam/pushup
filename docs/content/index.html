@@ -5,9 +5,30 @@ draft: false
 ---
 
 <section>
-    <h1>Pushup web framework</h1>
+    <h1><img style="height: 0.75em" src="/logo.png" alt="Pushup logo, a caret surrounded by left and right angle brackets ala HTML element"> Pushup web framework</h1>
 
     <p>A proudly server-side, page-oriented web framework for the Go programming language.</p>
+
+    <p>Pushup’s goal is to make it faster to develop and easier to maintain server-side web applications using Go.</p>
+</section>
+
+<section id="example">
+<pre><code><span class="keyword">^import</span> <span class="go">"time"</span>
+
+<span class="keyword">^</span>{
+   <span class="go">title := "Hello, from Pushup!"</span>
+}
+
+<span class="html">&lt;h1&gt;</span><span class="simple-expr">^title</span><span class="html">&lt;/h1&gt;</span>
+
+<span class="html">&lt;p&gt;</span>The time is now <span class="simple-expr">^time.Now().String()</span>.<span class="html">&lt;/p&gt;</span>
+
+<span class="keyword">^if</span> <span class="go">time.Now().Weekday() == time.Friday</span> {
+    <span class="html">&lt;p&gt;</span>It's Friday! Enjoy the start to your weekend.<span class="html">&lt;/p&gt;</span>
+} <span class="keyword">^else</span> {
+    <span class="html">&lt;p&gt;</span>Have a great day, we're glad you're here.<span class="html">&lt;/p&gt;</span>
+}
+</pre></code>
 </section>
 
 <section>
@@ -35,7 +56,6 @@ draft: false
 
 <section>
     <h2>What is Pushup?</h2>
-    <p>Pushup’s goal is to make it faster to develop and easier to maintain server-side web applications using Go.</p>
     <p>Pushup is actually three things in one:</p>
     <ol>
         <li>
@@ -56,12 +76,17 @@ draft: false
 
 <section>
     <h2>An example</h2>
-    <pre><code>
-    app
-        pages
-        layouts
-        pkg
-        static
-    </code></pre>
+<pre><code>
+/path/to/mypushupapp
+├── layouts
+│   └── default.up
+├── pages
+│   └── index.up
+├── pkg
+│   └── app.go
+└── static
+    ├── app.css
+    └── htmx.min.js
+</code></pre>
 
 </section>
