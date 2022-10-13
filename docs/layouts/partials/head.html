@@ -1,0 +1,188 @@
+<meta charset="utf-8" />
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inconsolata&display=swap');
+
+:root {
+    --header-text-color: #1a1a29;
+    --body-text-color: #2a2a36;
+    --body-bg-color: rgba(0, 0, 63, 0.03);
+}
+
+/* @link https://utopia.fyi/type/calculator?c=320,14,1.2,1500,18,1.25,5,2,&s=0.75|0.5|0.25,1.5|2|3|4|6,s-l */
+
+:root {
+  --step--2: clamp(0.61rem, calc(0.58rem + 0.15vw), 0.72rem);
+  --step--1: clamp(0.73rem, calc(0.68rem + 0.23vw), 0.90rem);
+  --step-0: clamp(0.88rem, calc(0.81rem + 0.34vw), 1.13rem);
+  --step-1: clamp(1.05rem, calc(0.95rem + 0.48vw), 1.41rem);
+  --step-2: clamp(1.26rem, calc(1.12rem + 0.68vw), 1.76rem);
+  --step-3: clamp(1.51rem, calc(1.33rem + 0.93vw), 2.20rem);
+  --step-4: clamp(1.81rem, calc(1.56rem + 1.26vw), 2.75rem);
+  --step-5: clamp(2.18rem, calc(1.84rem + 1.70vw), 3.43rem);
+}
+
+/* @link https://utopia.fyi/space/calculator?c=320,14,1.2,1500,18,1.25,5,2,&s=0.75|0.5|0.25,1.5|2|3|4|6,s-l */
+
+:root {
+  --space-3xs: clamp(0.25rem, calc(0.23rem + 0.08vw), 0.31rem);
+  --space-2xs: clamp(0.44rem, calc(0.40rem + 0.17vw), 0.56rem);
+  --space-xs: clamp(0.69rem, calc(0.64rem + 0.25vw), 0.88rem);
+  --space-s: clamp(0.88rem, calc(0.81rem + 0.34vw), 1.13rem);
+  --space-m: clamp(1.31rem, calc(1.21rem + 0.51vw), 1.69rem);
+  --space-l: clamp(1.75rem, calc(1.61rem + 0.68vw), 2.25rem);
+  --space-xl: clamp(2.63rem, calc(2.42rem + 1.02vw), 3.38rem);
+  --space-2xl: clamp(3.50rem, calc(3.23rem + 1.36vw), 4.50rem);
+  --space-3xl: clamp(5.25rem, calc(4.84rem + 2.03vw), 6.75rem);
+
+  /* One-up pairs */
+  --space-3xs-2xs: clamp(0.25rem, calc(0.17rem + 0.42vw), 0.56rem);
+  --space-2xs-xs: clamp(0.44rem, calc(0.32rem + 0.59vw), 0.88rem);
+  --space-xs-s: clamp(0.69rem, calc(0.57rem + 0.59vw), 1.13rem);
+  --space-s-m: clamp(0.88rem, calc(0.65rem + 1.10vw), 1.69rem);
+  --space-m-l: clamp(1.31rem, calc(1.06rem + 1.27vw), 2.25rem);
+  --space-l-xl: clamp(1.75rem, calc(1.31rem + 2.20vw), 3.38rem);
+  --space-xl-2xl: clamp(2.63rem, calc(2.12rem + 2.54vw), 4.50rem);
+  --space-2xl-3xl: clamp(3.50rem, calc(2.62rem + 4.41vw), 6.75rem);
+
+  /* Custom pairs */
+  --space-s-l: clamp(0.88rem, calc(0.50rem + 1.86vw), 2.25rem);
+}
+
+html {
+    box-sizing: border-box;
+}
+
+*, *:before, *:after {
+    box-sizing: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: system-ui, sans-serif;
+    color: var(--header-text-color);
+}
+
+h1 {
+    font-size: var(--step-2);
+    margin-top: var(--space-2xl-3xl);
+}
+
+h2 {
+    font-size: var(--step-1);
+    margin-top: var(--space-xl-2xl);
+}
+
+h3, h4, h5, h6 {
+    font-size: var(--step-0);
+    margin-top: var(--space-s-l);
+}
+
+body {
+    font-size: var(--step-0);
+    line-height: 1.3;
+    font-family: system-ui, sans-serif;
+    color: var(--body-text-color);
+    background: var(--body-bg-color);
+    margin: 0;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    display: grid;
+    grid-template-columns: 1fr min(70ch, calc(100% - var(--space-2xs-xs) * 2)) 1fr;
+    grid-column-gap: var(--space-2xs-xs);
+}
+
+body > * {
+    grid-column: 2;
+}
+
+::selection {
+    color: #f3f3f9;
+    background: #060639;
+}
+
+nav {
+    margin-top: var(--space-s-m);
+}
+
+nav ul {
+    list-style: none;
+    display: flex;
+    justify-content: center;
+    gap: var(--space-xs);
+    margin: 0;
+    padding: 0;
+}
+
+nav ul li a {
+    padding: var(--space-xs);
+    border: 1px dotted grey;
+}
+
+nav ul li a:hover {
+    border-style: solid;
+}
+
+#feature-list {
+    display: flex;
+    gap: var(--space-xs);
+    flex-wrap: wrap;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#feature-list li {
+    border: 1px dotted #ccc;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.05);
+    padding: var(--space-xs);
+    flex: 1 1 220px;
+    display: flex;
+    flex-direction: column;
+}
+
+#feature-list li strong {
+    display: block;
+    text-align: center;
+    height: var(--space-l);
+}
+
+#feature-list li p {
+    font-size: var(--step--1);
+}
+
+.keyword { color: green; }
+.simple-expr { color: green; }
+.go { color: orange; }
+.html { font-weight: 700; color: black; }
+
+pre {
+    background: #fff;
+    margin: 0;
+    padding: var(--space-xs) var(--space-xs);
+    font-size: var(--step-0);
+    overflow-x: scroll;
+}
+
+pre, code {
+    font-family: 'Inconsolata', monospace;
+}
+
+footer {
+    margin-top: var(--space-m-l);
+    padding-top: var(--space-m-l);
+    border-top: 1px solid #ccc;
+    margin-bottom: 5rem;
+    font-size: var(--step--1);
+}
+</style>
