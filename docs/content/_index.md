@@ -32,7 +32,7 @@ markup: html
     <span class="html">&lt;p&gt;</span>Have a great day, we're glad you're here.<span class="html">&lt;/p&gt;</span>
 }
 </code></pre>
-    <p>File <tt>app/pages/hello.up</tt> → <tt>/hello</tt> URL path</p>
+    <p>File <kbd>app/pages/hello.up</kbd> → <kbd>/hello</kbd> URL path</p>
 </section>
 
 <section>
