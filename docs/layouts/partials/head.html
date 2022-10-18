@@ -1,6 +1,7 @@
 <meta charset="utf-8" />
 <title>{{ .Title }}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Pushup is a server-side web application framework for Go.">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inconsolata&display=swap');
 
@@ -10,17 +11,17 @@
     --body-bg-color: rgba(0, 0, 63, 0.03);
 }
 
-/* @link https://utopia.fyi/type/calculator?c=320,14,1.2,1500,18,1.25,5,2,&s=0.75|0.5|0.25,1.5|2|3|4|6,s-l */
+/* @link https://utopia.fyi/type/calculator?c=320,16,1.2,1500,18,1.25,5,2,&s=0.75|0.5|0.25,1.5|2|3|4|6,s-l */
 
 :root {
-  --step--2: clamp(0.61rem, calc(0.58rem + 0.15vw), 0.72rem);
-  --step--1: clamp(0.73rem, calc(0.68rem + 0.23vw), 0.90rem);
-  --step-0: clamp(0.88rem, calc(0.81rem + 0.34vw), 1.13rem);
-  --step-1: clamp(1.05rem, calc(0.95rem + 0.48vw), 1.41rem);
-  --step-2: clamp(1.26rem, calc(1.12rem + 0.68vw), 1.76rem);
-  --step-3: clamp(1.51rem, calc(1.33rem + 0.93vw), 2.20rem);
-  --step-4: clamp(1.81rem, calc(1.56rem + 1.26vw), 2.75rem);
-  --step-5: clamp(2.18rem, calc(1.84rem + 1.70vw), 3.43rem);
+  --step--2: clamp(0.69rem, calc(0.69rem + 0.03vw), 0.72rem);
+  --step--1: clamp(0.83rem, calc(0.81rem + 0.09vw), 0.90rem);
+  --step-0: clamp(1.00rem, calc(0.97rem + 0.17vw), 1.13rem);
+  --step-1: clamp(1.20rem, calc(1.14rem + 0.28vw), 1.41rem);
+  --step-2: clamp(1.44rem, calc(1.35rem + 0.43vw), 1.76rem);
+  --step-3: clamp(1.73rem, calc(1.60rem + 0.64vw), 2.20rem);
+  --step-4: clamp(2.07rem, calc(1.89rem + 0.91vw), 2.75rem);
+  --step-5: clamp(2.49rem, calc(2.23rem + 1.28vw), 3.43rem);
 }
 
 /* @link https://utopia.fyi/space/calculator?c=320,14,1.2,1500,18,1.25,5,2,&s=0.75|0.5|0.25,1.5|2|3|4|6,s-l */
@@ -162,9 +163,10 @@ body > nav ul li a:hover {
     font-size: var(--step--1);
 }
 
-.keyword { color: green; }
-.simple-expr { color: green; }
-.go { color: orange; }
+#code-example code { color: #666; }
+.keyword { color: darkgreen; }
+.simple-expr { color: darkgreen; }
+.go { color: indigo; }
 .html { font-weight: 700; color: black; }
 
 pre {
