@@ -4,8 +4,6 @@ date: 2022-10-11T11:13:01-05:00
 draft: false
 ---
 
-# Introducing Pushup
-
 Pushup is a new page-oriented web framework for Go. What does a "page-oriented"
 web framework mean? The central concept in Pushup is a page, which is a file
 with the `.up` extension that combines HTML and Go, and automatically

@@ -15,7 +15,8 @@ markup: html
 </section>
 
 <section id="code-example">
-<pre><code><span class="keyword">^import</span> <span class="go">"time"</span>
+    <h2>Pushup example</h2>
+    <pre><code><span class="keyword">^import</span> <span class="go">"time"</span>
 
 <span class="keyword">^</span>{
    <span class="go">title := "Hello, from Pushup!"</span>
@@ -30,7 +31,8 @@ markup: html
 } <span class="keyword">^else</span> {
     <span class="html">&lt;p&gt;</span>Have a great day, we're glad you're here.<span class="html">&lt;/p&gt;</span>
 }
-</pre></code>
+</code></pre>
+    <p>File <tt>app/pages/hello.up</tt> → <tt>/hello</tt> URL path</p>
 </section>
 
 <section>
@@ -54,7 +56,7 @@ markup: html
             <p>Pushup apps compile to pure Go, built on the standard <code>net/http</code> package. Fast static binary executables for easy deployment. Easy to integrate into larger Go apps</p>
         </li>
         <li>
-            <strong>Live reloading</strong>
+            <strong>Hot reload dev mode</strong>
             <p>App is recompiled and reloaded in the browser while files change during development. This is fast thanks to the Go compiler</p>
         </li>
     </ul>
@@ -68,7 +70,7 @@ markup: html
             <p>Official release TBD. For now, grab and build from <a href="https://github.com/adhocteam/pushup">git</a>.</p>
         </li>
         <li><strong>Read the documentation</strong>
-            <p><a href="/docs/">Pushup docs</a></p>
+            <p><a href="{{< siteurl >}}docs/">Pushup docs</a></p>
         </li>
         <li><strong>Read the source &amp; join the community</strong>
             <p><a href="https://github.com/adhocteam/pushup">GitHub repo</a></p>

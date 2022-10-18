@@ -1,7 +1,7 @@
 ---
 title: "Syntax"
-date: 2022-10-12T10:43:03-05:00
 draft: false
+weight: 3
 ---
 
 ### How it works

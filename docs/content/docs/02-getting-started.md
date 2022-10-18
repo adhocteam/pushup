@@ -1,7 +1,7 @@
 ---
 title: "Getting Started"
-date: 2022-10-12T10:39:09-05:00
 draft: false
+weight: 2
 ---
 
 To make a new Pushup app, first install the main Pushup executable.

@@ -162,8 +162,7 @@ func (n *newCmd) do() error {
 	scaffoldFiles := []string{
 		"layouts/default.up",
 		"pages/index.up",
-		"static/pico.min.css",
-		"static/custom.css",
+		"static/style.css",
 		"static/htmx.min.js",
 		"pkg/app.go",
 	}
@@ -1793,7 +1792,8 @@ func reloadableFilename(path string) bool {
 func isDir(path string) bool {
 	fi, err := os.Stat(path)
 	if err != nil {
-		panic(err)
+		log.Printf("error stat'ing path %s, skipping", path)
+		return false
 	}
 	return fi.IsDir()
 }

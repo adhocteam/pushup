@@ -1,7 +1,7 @@
 ---
 title: "Introduction to Pushup"
-date: 2022-10-12T10:36:38-05:00
 draft: false
+weight: 1
 ---
 
 Pushup is an experimental new project that is exploring the viability of a new
