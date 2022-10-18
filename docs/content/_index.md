@@ -4,9 +4,17 @@ date: 2022-10-10T16:54:01-05:00
 draft: false
 markup: html
 ---
-<section>
-    <h1><img style="height: 0.75em" src="{{< siteurl >}}logo.png" alt="Pushup logo, a caret surrounded by left and right angle brackets ala HTML element"> Pushup web framework</h1>
+<header>
+    <h1>
+        <img
+            width="91" height="49"
+            src="{{< siteurl >}}logo.png"
+            alt="Pushup logo, a caret surrounded by left and right angle brackets ala HTML element">
+        Pushup web framework
+    </h1>
+</header>
 
+<section>
     <p>A server-side, page-oriented web framework for the Go programming language.</p>
 
     <p>Pushup’s goal is to make it faster to develop and easier to maintain server-side web applications using Go.</p>
