@@ -6,15 +6,12 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"io/ioutil"
 	"log"
-	"math/rand"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -154,12 +151,12 @@ func TestPushup(t *testing.T) {
 						ready := make(chan bool)
 						done := make(chan bool)
 
-						tmpdir, err := ioutil.TempDir("", "pushuptests")
+						tmpdir, err := os.MkdirTemp("", "pushup")
 						if err != nil {
 							t.Fatalf("creating temp dir: %v", err)
 						}
 						defer os.RemoveAll(tmpdir)
-						socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+"-"+strconv.Itoa(int(rand.Uint32()))+".sock")
+						socketPath := filepath.Join(tmpdir, "sock")
 
 						var errb bytes.Buffer
 						var stdout io.ReadCloser
