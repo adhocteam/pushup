@@ -22,6 +22,10 @@ jobs:
           workflow: go.yml
       - name: Set Pushup exe perms
         run: chmod +x pushup
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.18
       - name: Build the Pushup site
         run: ../pushup build
         working-directory: ./docs
