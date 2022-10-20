@@ -24,3 +24,4 @@ jobs:
       with:
         name: pushup-exe
         path: pushup
+        retention-days: 3
