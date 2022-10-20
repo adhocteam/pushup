@@ -9,6 +9,7 @@ env:
 jobs:
   deploy:
     name: Deploy app
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment: pushup-website
     steps:
@@ -25,3 +26,8 @@ jobs:
         working-directory: ./docs
       - run: flyctl deploy --remote-only
         working-directory: ./docs
+  on-failure:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Not building Pushup website due to failure of build/test workflow"
