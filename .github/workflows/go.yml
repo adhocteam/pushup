@@ -14,6 +14,11 @@ jobs:
       with:
         go-version: 1.18
     - name: Build
-      run: go build -v ./...
+      run: go build -v ./... -o pushup
     - name: Test
       run: go test -v . ./_runtime
+    - name: Upload Pushup executable
+      uses: actions/upload-artifact@v3
+      with:
+        name: pushup-exe
+        path: pushup
