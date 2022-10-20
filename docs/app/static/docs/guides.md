@@ -1,8 +1,4 @@
----
-title: "Guides"
-draft: false
-weight: 4
----
+# Guides
 
 _Coming soon_
 
@@ -14,6 +10,7 @@ _Coming soon_
 
 - How to deploy a Pushup app using fly.io
 - How to deploy a Pushup app using Netlify
+- How to deploy a Pushup app using Render
 - How to deploy a Pushup app using AWS
 
 ## Databases

@@ -244,7 +244,8 @@ func printEscaped(w io.Writer, val any) {
 	}
 }
 
-//{{if .EmbedStatic}}
+// {{if .EmbedStatic}}
+//
 //go:embed static{{end}}
 var static embed.FS
 
@@ -254,6 +255,19 @@ func AddStaticHandler(mux *http.ServeMux) {
 		panic(err)
 	}
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(fsys))))
+}
+
+// GetStaticContents gets the contents of a static file at the path.
+func GetStaticContents(path string) []byte {
+	fsys, err := fs.Sub(static, "static")
+	if err != nil {
+		panic(err)
+	}
+	data, err := fsys.(fs.ReadFileFS).ReadFile(path)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }
 
 //go:embed src

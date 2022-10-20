@@ -1,8 +1,4 @@
----
-title: "Introduction to Pushup"
-draft: false
-weight: 1
----
+# Introduction to Pushup
 
 Pushup is an experimental new project that is exploring the viability of a new
 approach to web frameworks in Go.

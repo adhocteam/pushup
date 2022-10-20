@@ -1,7 +1,0 @@
-baseURL = 'https://gopushup.dev/'
-languageCode = 'en-us'
-title = 'Pushup web framework'
-
-[markup]
-  [markup.highlight]
-    codeFences = false

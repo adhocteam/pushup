@@ -1,8 +1,4 @@
----
-title: "Getting Started"
-draft: false
-weight: 2
----
+# Getting started
 
 To make a new Pushup app, first install the main Pushup executable.
 

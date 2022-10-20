@@ -1,13 +1,9 @@
----
-title: "Syntax"
-draft: false
-weight: 3
----
-
-### How it works
+# Syntax
 
 Pushup is a mix of a new syntax consisting of Pushup directives and keywords,
 Go code, and HTML markup.
+
+### How it works
 
 Parsing a `.up` file always starts out in HTML mode, so you can just put
 plain HTML in a file and that's a valid Pushup page.
