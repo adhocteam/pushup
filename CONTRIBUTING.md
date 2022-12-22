@@ -54,3 +54,4 @@ free to opt-out of).
 [coc]: ./CODE_OF_CONDUCT.md
 [readme]: ./README.md
 [roadmap]: https://github.com/orgs/adhocteam/projects/38/views/1
+[issues]: https://github.com/adhocteam/pushup/issues
