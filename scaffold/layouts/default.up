@@ -16,7 +16,7 @@
             ^outputSection("contents")
         </main>
         <footer>
-            <p>Made with <a href="https://adhocteam.github.io/pushup/docs/">Pushup</a>. We're glad you're here.</p>
+            <p>Made with <a href="https://pushup.adhoc.dev/">Pushup</a>. We're glad you're here.</p>
         </footer>
     </body>
 </html>
