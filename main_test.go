@@ -396,6 +396,11 @@ func TestCompiledOutputPath(t *testing.T) {
 			"default.layout.up.go",
 			upFileLayout,
 		},
+		{
+			projectFile{path: "app/pages/$foo.up", projectFilesSubdir: "app/pages"},
+			"0x24foo.up.go",
+			upFilePage,
+		},
 	}
 
 	for _, test := range tests {

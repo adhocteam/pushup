@@ -2286,6 +2286,10 @@ func compiledOutputPath(pfile projectFile, ftype upFileType) string {
 	if err != nil {
 		panic("internal error: relative path from project files subdir to .up file: " + err.Error())
 	}
+	// a .go file with a leading '$' in the name is invalid to the go tool
+	if rel[0] == '$' {
+		rel = "0x24" + rel[1:]
+	}
 	var dirs []string
 	dir := filepath.Dir(rel)
 	if dir != "." {
