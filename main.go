@@ -58,6 +58,14 @@ func main() {
 		os.Exit(0)
 	}
 
+	log.SetFlags(0)
+
+	// Check that Go is installed
+	// TODO(paulsmith): check that a minimum Go version is installed
+	if _, err := exec.LookPath("go"); err != nil {
+		log.Fatalf("Pushup requires Go to be installed.")
+	}
+
 	if flag.NArg() == 0 {
 		printPushupHelp()
 		os.Exit(1)
