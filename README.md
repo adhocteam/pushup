@@ -138,18 +138,11 @@ make
 
 #### Install via `go install`
 
-Because Pushup does not (yet) have a public repository, you need to [create a
-personal access token][token] on GitHub, and configure your ~/.netrc file.
-
 Make sure you have Go installed (at least version 1.18), and type:
 
 ```shell
-GOPRIVATE=github.com/adhocteam/pushup go install github.com/adhocteam/pushup@latest
+go install github.com/adhocteam/pushup@latest
 ```
-
-The `GOPRIVATE` environment variable is necessary to tell the go tool not to
-try to get the module from one of the central module services, but directly
-from GitHub.
 
 ### Creating a new Pushup project
 
