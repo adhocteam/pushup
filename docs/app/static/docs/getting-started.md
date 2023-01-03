@@ -31,10 +31,6 @@ Make sure you have Go installed (at least version 1.18), and type:
 go install github.com/adhocteam/pushup@latest
 ```
 
-The `GOPRIVATE` environment variable is necessary to tell the go tool not to
-try to get the module from one of the central module services, but directly
-from GitHub.
-
 #### Install via `homebrew`
 
 Coming soon.
