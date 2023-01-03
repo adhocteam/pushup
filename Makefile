@@ -20,3 +20,6 @@ fixme todo:
 
 entities.go: tools/getnamedcharrefs.go
 	go run $< > $@
+
+banner.txt:
+	echo '^ Pushup' | figlet -c -k -f lean | tr ' _/' ' //' > $@
