@@ -16,6 +16,8 @@
     <p>Pushup is <b>preview</b>, pre-release software in early-stage development. It is not yet suitable for production use. Expect breaking changes.</p>
 </section>
 
+<iframe width="560" height="315" src="https://www.youtube.com/embed/nkyiATkZ4Js" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+
 <section id="code-example">
     <h2>Pushup example</h2>
     <pre><code><span class="keyword">^^import</span> <span class="go">"time"</span>
