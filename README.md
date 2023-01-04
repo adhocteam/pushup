@@ -7,6 +7,8 @@
 
 Pushup is an experiment. In terms of the development life cycle, it should be considered **preview** pre-release software: it is largely functional, likely has significant bugs (including potential for data loss) and/or subpar performance, but is suitable for demos and testing. It has a decent unit test suite, including fuzzing test cases for the parser. Don't count on it for anything serious yet, and expect significant breaking changes. 
 
+<iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/nkyiATkZ4Js" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+
 ![screenshot of syntax highlighting of an example Pushup page](./example-syntax-highlighting.png)
 
 -   [Pushup - a page-oriented web framework for Go](#pushup---a-page-oriented-web-framework-for-go)

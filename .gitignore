@@ -8,3 +8,4 @@ TODO
 node_modules
 .*.sw?
 .DS_Store
+/dist
