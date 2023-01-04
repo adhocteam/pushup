@@ -15,7 +15,7 @@ Pushup is an experiment. In terms of the development life cycle, it should be co
     -   [Getting started](#getting-started)
         -   [Installing Pushup](#installing-pushup)
             -   [Prerequisites](#prerequisites)
-	    -   [Install an official release](#install-an-official-release)
+            -   [Install an official release](#install-an-official-release)
             -   [Install via git](#install-via-git)
             -   [Install via `go install`](#install-via-go-install)
         -   [Creating a new Pushup project](#creating-a-new-pushup-project)
