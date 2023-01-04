@@ -5,7 +5,7 @@
 
 ## Project status
 
-Pushup is an experiment. In terms of the development life cycle, it should be considered **preview** or **beta**, pre-release software: it is largely functional, likely has significant bugs (including potential for data loss) and/or subpar performance, but is suitable for demos and testing. It has a decent unit test suite, including fuzzing test cases for the parser. Don't count on it for anything serious yet, and expect significant breaking changes. 
+Pushup is an experiment. In terms of the development life cycle, it should be considered **preview** pre-release software: it is largely functional, likely has significant bugs (including potential for data loss) and/or subpar performance, but is suitable for demos and testing. It has a decent unit test suite, including fuzzing test cases for the parser. Don't count on it for anything serious yet, and expect significant breaking changes. 
 
 ![screenshot of syntax highlighting of an example Pushup page](./example-syntax-highlighting.png)
 
@@ -15,6 +15,7 @@ Pushup is an experiment. In terms of the development life cycle, it should be co
     -   [Getting started](#getting-started)
         -   [Installing Pushup](#installing-pushup)
             -   [Prerequisites](#prerequisites)
+	    -   [Install an official release](#install-an-official-release)
             -   [Install via git](#install-via-git)
             -   [Install via `go install`](#install-via-go-install)
         -   [Creating a new Pushup project](#creating-a-new-pushup-project)
@@ -127,6 +128,10 @@ Make sure the directory where the go tool installs executables is in your
 ```shell
 echo $PATH | grep $(go env GOPATH)/bin > /dev/null && echo yes || echo no
 ```
+
+#### Install an official release
+
+Download Pushup for your platform from [the releases page](https://github.com/adhocteam/pushup/releases).
 
 #### Install via git
 
