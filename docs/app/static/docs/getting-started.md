@@ -15,6 +15,11 @@ Make sure the directory where the go tool installs executables is in your
 echo $PATH | grep $(go env GOPATH)/bin > /dev/null && echo yes || echo no
 ```
 
+#### Install via official release
+
+Binary executables for multiple platforms are available for download on the
+[project releases page](https://github.com/adhocteam/pushup/releases).
+
 #### Install via git
 
 ```shell

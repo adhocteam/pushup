@@ -68,8 +68,28 @@
     <h2>Getting started</h2>
 
     <ul>
-        <li><strong>Download Pushup</strong>
-            <p>Official release TBD. For now, grab and build from <a href="https://github.com/adhocteam/pushup">git</a>.</p>
+        <li><strong>Download Pushup</strong> preview release v0.1
+            <ul>
+                <li>Linux
+                    <ul>
+                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-linux-arm64.zip">Linux AArch64</a></li>
+                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-linux-amd64.zip">Linux x86-64</a></li>
+                    </ul>
+                </li>
+                <li>macOS
+                    <ul>
+                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-darwin-arm64.zip">macOS Apple silicon</a></li>
+                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-darwin-amd64.zip">macOS x86-64</a></li>
+                    </ul>
+                </li>
+                <li>OpenBSD
+                    <ul>
+                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-openbsd-arm64.zip">OpenBSD AArch64</a></li>
+                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-openbsd-amd64.zip">OpenBSD x86-64</a></li>
+                    </ul>
+                </li>
+            </ul>
+            <p>Download Pushup for more platforms on the <a href="https://github.com/adhocteam/pushup/releases">official releases page</a>.
         </li>
         <li><strong>Read the documentation</strong>
             <p><a hx-boost="true" href="/docs/">Pushup docs</a></p>
