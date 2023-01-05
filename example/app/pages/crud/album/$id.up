@@ -14,7 +14,7 @@
 
 <h1>Album</h1>
 
-<p><a href="/crud">Back to album list</a></p>
+<p><a href="/crud/">Back to album list</a></p>
 
 <style>
 dl { display: flex; flex-flow: row wrap; }

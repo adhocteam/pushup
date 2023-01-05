@@ -48,14 +48,14 @@
                 http.Error(w, http.StatusText(500), 500)
                 return nil
             }
-            http.Redirect(w, req, "/crud", http.StatusSeeOther)
+            http.Redirect(w, req, "/crud/", http.StatusSeeOther)
         }
     }
 }
 
 <h1>Add new album</h1>
 
-<p><a href="/crud">Cancel</a></p>
+<p><a href="/crud/">Cancel</a></p>
 
 <style>
 form { border: 1px solid #ddd; background: #f3f4f0; padding: 2rem; }
