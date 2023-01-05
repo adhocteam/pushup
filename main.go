@@ -2722,11 +2722,17 @@ func (p *parser) advanceOffset(delta int) {
 
 // syntaxError represents a synax error in the Pushup template language.
 type syntaxError struct {
+	// err is the underlying error that caused this syntax error
 	err error
+	// lineNo and column are the positions in the source code where the
+	// error occurred
+	lineNo int
+	column int
 }
 
 func (e syntaxError) Error() string {
-	return e.err.Error()
+	// TODO(paulsmith): add source file name
+	return fmt.Sprintf("%d:%d: %s", e.lineNo, e.column, e.err.Error())
 }
 
 // errorf signals that a syntax error in the Pushup template language has been
@@ -2734,7 +2740,18 @@ func (e syntaxError) Error() string {
 // calling the parser higher up in the call stack can recover from the panic
 // and test for a syntax error (syntaxError type).
 func (p *parser) errorf(format string, args ...any) {
-	panic(syntaxError{fmt.Errorf(format, args...)})
+	offset := p.offset
+	if offset >= len(p.src) {
+		offset = len(p.src) - 1
+	}
+	upToErr := p.src[:offset]
+	lineNo := strings.Count(upToErr, "\n") + 1
+	lastNL := strings.LastIndex(upToErr, "\n")
+	column := p.offset + 1
+	if lastNL > -1 {
+		column = p.offset - lastNL
+	}
+	panic(syntaxError{fmt.Errorf(format, args...), lineNo, column})
 }
 
 // htmlParser is the Pushup HTML parser. It wraps the golang.org/x/net/html

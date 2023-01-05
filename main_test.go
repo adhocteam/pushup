@@ -930,8 +930,16 @@ func TestParse(t *testing.T) {
 func TestParseSyntaxErrors(t *testing.T) {
 	tests := []struct {
 		input string
+		// expected error conditions
+		lineNo int
+		column int
 	}{
-		{"^if"},
+		{"^if", 1, 4},
+		{
+			`^if true {
+	<illegal />
+}`, 2, 13,
+		},
 		// FIXME(paulsmith): add more syntax errors
 	}
 
@@ -943,6 +951,13 @@ func TestParseSyntaxErrors(t *testing.T) {
 			}
 			if err == nil {
 				t.Errorf("expected parse error, got nil")
+			}
+			serr, ok := err.(syntaxError)
+			if !ok {
+				t.Errorf("expected syntax error type, got %T", err)
+			}
+			if tt.lineNo != serr.lineNo || tt.column != serr.column {
+				t.Errorf("line:column: want %d:%d, got %d:%d", tt.lineNo, tt.column, serr.lineNo, serr.column)
 			}
 		})
 	}
