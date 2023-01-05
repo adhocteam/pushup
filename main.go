@@ -14,7 +14,6 @@ import (
 	"go/token"
 	"io"
 	"io/fs"
-	"io/ioutil"
 	"log"
 	"math"
 	"mime"
@@ -219,7 +218,7 @@ func initVcs(projectDir string, vcs vcs) error {
 
 		cmd := exec.Command(path, "init")
 		cmd.Dir = projectDir
-		if err := cmd.Run(); err != nil {
+		if err = cmd.Run(); err != nil {
 			return fmt.Errorf("git init: %w", err)
 		}
 
@@ -391,13 +390,13 @@ func (r *runCmd) do() error {
 		var mu sync.Mutex
 		buildComplete := sync.NewCond(&mu)
 		reload := make(chan struct{})
-		tmpdir, err := ioutil.TempDir("", "pushupdev")
+		tmpdir, err := os.MkdirTemp("", "pushupdev")
 		if err != nil {
 			return fmt.Errorf("creating temp dir: %v", err)
 		}
 		defer os.RemoveAll(tmpdir)
 		socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+".sock")
-		if err := startReloadRevProxy(socketPath, buildComplete, r.port); err != nil {
+		if err = startReloadRevProxy(socketPath, buildComplete, r.port); err != nil {
 			return fmt.Errorf("starting reverse proxy: %v", err)
 		}
 		ln, err := net.Listen("unix", socketPath)
@@ -607,7 +606,7 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 
 	pagesDir := filepath.Join(appDir, "pages")
 	{
-		if err := fs.WalkDir(os.DirFS(pagesDir), ".", func(path string, d fs.DirEntry, err error) error {
+		if err := fs.WalkDir(os.DirFS(pagesDir), ".", func(path string, d fs.DirEntry, _ error) error {
 			if !d.IsDir() && filepath.Ext(path) == upFileExt {
 				pfile := projectFile{path: filepath.Join(pagesDir, path), projectFilesSubdir: pagesDir}
 				pf.pages = append(pf.pages, pfile)
@@ -645,7 +644,7 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 	{
 		if err := fs.WalkDir(os.DirFS(staticDir), ".", func(path string, d fs.DirEntry, _ error) error {
 			if !d.IsDir() {
-				path := filepath.Join(staticDir, path)
+				path = filepath.Join(staticDir, path)
 				pf.static = append(pf.static, projectFile{path: path, projectFilesSubdir: staticDir})
 			}
 			return nil
@@ -658,7 +657,7 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 		}
 	}
 
-	//pf.debug()
+	// pf.debug()
 
 	return pf, nil
 }
@@ -783,7 +782,7 @@ func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compilePr
 	defer sourceFile.Close()
 	destPath := filepath.Join(projectParams.outDir, compiledOutputPath(pfile, ftype))
 	destDir := filepath.Dir(destPath)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err = os.MkdirAll(destDir, 0755); err != nil {
 		return fmt.Errorf("making destination file's directory %s: %w", destDir, err)
 	}
 	destFile, err := os.Create(destPath)
@@ -841,6 +840,9 @@ func compile(params compileParams) error {
 		}
 		codeGen := newLayoutCodeGen(layout, params.pfile, src)
 		code, err = genCodeLayout(codeGen)
+		if err != nil {
+			return fmt.Errorf("generating code layout: %w", err)
+		}
 	case upFilePage:
 		page, err := newPageFromTree(tree)
 		if err != nil {
@@ -848,6 +850,9 @@ func compile(params compileParams) error {
 		}
 		codeGen := newPageCodeGen(page, params.pfile, src)
 		code, err = genCodePage(codeGen)
+		if err != nil {
+			return fmt.Errorf("generating code for a page: %w", err)
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("generating code: %w", err)
@@ -868,8 +873,7 @@ type layout struct {
 func newLayoutFromTree(tree *syntaxTree) (*layout, error) {
 	layout := &layout{}
 	n := 0
-	var f inspector
-	f = func(e node) bool {
+	var f inspector = func(e node) bool {
 		switch e := e.(type) {
 		case *nodeImport:
 			layout.imports = append(layout.imports, e.decl)
@@ -1730,7 +1734,7 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 		return nil, fmt.Errorf("reading all buffers: %w", err)
 	}
 
-	//fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
+	// fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
 
 	formatted, err := format.Source(raw)
 	if err != nil {
@@ -1738,7 +1742,7 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 		return nil, fmt.Errorf("gofmt the generated code: %w", err)
 	}
 
-	//fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(formatted))
+	// fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(formatted))
 
 	return formatted, nil
 }
@@ -1750,7 +1754,7 @@ func watchForReload(ctx context.Context, cancel context.CancelFunc, root string,
 	}
 
 	go debounceEvents(ctx, 125*time.Millisecond, watcher, func(event fsnotify.Event) {
-		//log.Printf("name: %s\top: %s", event.Name, event.Op)
+		// log.Printf("name: %s\top: %s", event.Name, event.Op)
 		if !reloadableFilename(event.Name) {
 			return
 		}
@@ -1812,9 +1816,9 @@ func fileExists(path string) bool {
 }
 
 func watchDirRecursively(watcher *fsnotify.Watcher, root string) error {
-	err := fs.WalkDir(os.DirFS(root), ".", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(os.DirFS(root), ".", func(path string, d fs.DirEntry, _ error) error {
 		if d.IsDir() {
-			path := filepath.Join(root, path)
+			path = filepath.Join(root, path)
 			if err := watcher.Add(path); err != nil {
 				return fmt.Errorf("adding path %s to watch: %w", path, err)
 			}
@@ -2158,7 +2162,7 @@ type buildParams struct {
 
 // buildProject builds the Go program made up of the user's compiled .up
 // files and .go code, as well as Pushup's library APIs.
-func buildProject(ctx context.Context, b buildParams) error {
+func buildProject(_ context.Context, b buildParams) error {
 	mainExeDir := filepath.Join(b.compiledOutputDir, "cmd", b.projectName)
 	if err := os.MkdirAll(mainExeDir, 0755); err != nil {
 		return fmt.Errorf("making directory for command: %w", err)
@@ -4041,13 +4045,13 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#data-state
 		case openTagLexData:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '&':
+			switch ch {
+			case '&':
 				l.returnState = openTagLexData
 				l.switchState(openTagLexCharRef)
-			case ch == '<':
+			case '<':
 				l.switchState(openTagLexTagOpen)
-			case ch == 0:
+			case 0:
 				l.specParseError("unexpected-null-character")
 			default:
 				l.errorf("found '%c' in data state, expected '<'", ch)
@@ -4095,12 +4099,12 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-name-state
 		case openTagLexBeforeAttrName:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+			switch ch {
+			case '\t', '\n', '\f', ' ':
 				// ignore
-			case ch == '/' || ch == '>' || ch == eof:
+			case '/', '>', eof:
 				l.reconsumeIn(openTagLexAfterAttrName)
-			case ch == '=':
+			case '=':
 				l.errorf("found '%c' in before attribute name state", ch)
 			default:
 				l.newAttr()
@@ -4134,16 +4138,16 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-name-state
 		case openTagLexAfterAttrName:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+			switch ch {
+			case '\t', '\n', '\f', ' ':
 				// ignore
-			case ch == '/':
+			case '/':
 				l.switchState(openTagLexSelfClosingStartTag)
-			case ch == '=':
+			case '=':
 				l.switchState(openTagLexBeforeAttrVal)
-			case ch == '>':
+			case '>':
 				break loop
-			case ch == eof:
+			case eof:
 				l.specParseError("eof-in-tag")
 			default:
 				l.newAttr()
@@ -4153,14 +4157,14 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-value-state
 		case openTagLexBeforeAttrVal:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+			switch ch {
+			case '\t', '\n', '\f', ' ':
 				// ignore
-			case ch == '"':
+			case '"':
 				l.switchState(openTagLexAttrValDoubleQuote)
-			case ch == '\'':
+			case '\'':
 				l.switchState(openTagLexAttrValSingleQuote)
-			case ch == '>':
+			case '>':
 				l.specParseError("missing-attribute-value")
 				break loop
 			default:
@@ -4170,15 +4174,15 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(double-quoted)-state
 		case openTagLexAttrValDoubleQuote:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '"':
+			switch ch {
+			case '"':
 				l.switchState(openTagLexAfterAttrValQuoted)
-			case ch == '&':
+			case '&':
 				l.returnState = openTagLexAttrValDoubleQuote
 				l.switchState(openTagLexCharRef)
-			case ch == 0:
+			case 0:
 				l.errorf("found null in attribute value (double-quoted) state")
-			case ch == eof:
+			case eof:
 				l.errorf("found EOF in tag")
 			default:
 				l.appendCurrVal(ch)
@@ -4187,15 +4191,15 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(single-quoted)-state
 		case openTagLexAttrValSingleQuote:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '"':
+			switch ch {
+			case '"':
 				l.switchState(openTagLexAfterAttrValQuoted)
-			case ch == '&':
+			case '&':
 				l.returnState = openTagLexAttrValSingleQuote
 				l.switchState(openTagLexCharRef)
-			case ch == 0:
+			case 0:
 				l.errorf("found null in attribute value (single-quoted) state")
-			case ch == eof:
+			case eof:
 				l.errorf("found EOF in tag")
 			default:
 				l.appendCurrVal(ch)
@@ -4204,20 +4208,20 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(unquoted)-state
 		case openTagLexAttrValUnquoted:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+			switch ch {
+			case '\t', '\n', '\f', ' ':
 				l.switchState(openTagLexBeforeAttrName)
-			case ch == '&':
+			case '&':
 				l.returnState = openTagLexAttrValUnquoted
 				l.switchState(openTagLexCharRef)
-			case ch == '>':
+			case '>':
 				break loop
-			case ch == 0:
+			case 0:
 				l.errorf("found null in attribute value (unquoted) state")
-			case ch == '"' || ch == '\'' || ch == '<' || ch == '=' || ch == '`':
+			case '"', '\'', '<', '=', '`':
 				l.specParseError("unexpected-null-character")
 				l.appendCurrVal(ch)
-			case ch == eof:
+			case eof:
 				l.errorf("found EOF in tag")
 			default:
 				l.appendCurrVal(ch)
@@ -4226,14 +4230,14 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-value-(quoted)-state
 		case openTagLexAfterAttrValQuoted:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+			switch ch {
+			case '\t', '\n', '\f', ' ':
 				l.switchState(openTagLexBeforeAttrName)
-			case ch == '/':
+			case '/':
 				l.switchState(openTagLexSelfClosingStartTag)
-			case ch == '>':
+			case '>':
 				break loop
-			case ch == eof:
+			case eof:
 				l.errorf("found EOF in tag")
 			default:
 				l.specParseError("missing-whitespace-between-attributes")
@@ -4259,10 +4263,10 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#self-closing-start-tag-state
 		case openTagLexSelfClosingStartTag:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '>':
+			switch ch {
+			case '>':
 				break loop
-			case ch == eof:
+			case eof:
 				l.errorf("found EOF in tag")
 			default:
 				l.specParseError("unexpected-solidus-in-tag")
@@ -4423,11 +4427,11 @@ func (l *openTagLexer) reconsumeIn(state openTagLexState) {
 }
 
 func (l *openTagLexer) exitingState(state openTagLexState) {
-	//log.Printf("<- %s", state)
+	// log.Printf("<- %s", state)
 }
 
 func (l *openTagLexer) enteringState(state openTagLexState) {
-	//log.Printf("-> %s", state)
+	// log.Printf("-> %s", state)
 }
 
 func (l *openTagLexer) switchState(state openTagLexState) {
