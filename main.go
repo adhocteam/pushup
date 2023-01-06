@@ -657,8 +657,6 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 		}
 	}
 
-	// pf.debug()
-
 	return pf, nil
 }
 
@@ -841,7 +839,7 @@ func compile(params compileParams) error {
 		codeGen := newLayoutCodeGen(layout, params.pfile, src)
 		code, err = genCodeLayout(codeGen)
 		if err != nil {
-			return fmt.Errorf("generating code layout: %w", err)
+			return fmt.Errorf("generating code for a layout: %w", err)
 		}
 	case upFilePage:
 		page, err := newPageFromTree(tree)
@@ -1111,8 +1109,6 @@ outputSection := func(name string) template.HTML {
 	if err != nil {
 		return nil, fmt.Errorf("reading all buffers: %w", err)
 	}
-
-	// fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
 
 	formatted, err := format.Source(raw)
 	if err != nil {
@@ -1734,15 +1730,11 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 		return nil, fmt.Errorf("reading all buffers: %w", err)
 	}
 
-	// fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
-
 	formatted, err := format.Source(raw)
 	if err != nil {
 		log.Printf("ERROR: %v", err)
 		return nil, fmt.Errorf("gofmt the generated code: %w", err)
 	}
-
-	// fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(formatted))
 
 	return formatted, nil
 }
@@ -1754,7 +1746,6 @@ func watchForReload(ctx context.Context, cancel context.CancelFunc, root string,
 	}
 
 	go debounceEvents(ctx, 125*time.Millisecond, watcher, func(event fsnotify.Event) {
-		// log.Printf("name: %s\top: %s", event.Name, event.Op)
 		if !reloadableFilename(event.Name) {
 			return
 		}
@@ -2019,7 +2010,6 @@ func debounceEvents(ctx context.Context, interval time.Duration, watcher *fsnoti
 			}
 			log.Printf("file watch error: %v", err)
 		case ev, ok := <-watcher.Events:
-			// log.Printf("GOT EVENT: %s %d", ev.String(), ev.Op)
 			if !ok {
 				return
 			}
@@ -2621,7 +2611,6 @@ func coalesceLiterals(nodes []node) []node {
 		}
 		nodes = nodes[:n+1]
 	}
-	// log.Printf("SAVED %d NODES", before-len(nodes))
 	return nodes
 }
 
@@ -3252,7 +3241,6 @@ func (p *codeParser) lookahead() goToken {
 	} else {
 		t.lit = t.tok.String()
 	}
-	// log.Printf("pos %v\ttok %v\tlit %v", t.pos, t.tok, t.lit)
 	return t
 }
 
@@ -4427,11 +4415,9 @@ func (l *openTagLexer) reconsumeIn(state openTagLexState) {
 }
 
 func (l *openTagLexer) exitingState(state openTagLexState) {
-	// log.Printf("<- %s", state)
 }
 
 func (l *openTagLexer) enteringState(state openTagLexState) {
-	// log.Printf("-> %s", state)
 }
 
 func (l *openTagLexer) switchState(state openTagLexState) {
