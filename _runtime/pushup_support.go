@@ -84,7 +84,7 @@ func regexPatFromRoute(route string) routePat {
 	return routePat{strings.Join(out, "/"), slugs}
 }
 
-var NotFound = errors.New("page not found")
+var ErrNotFound = errors.New("page not found")
 
 type ctxKey struct{}
 
@@ -92,7 +92,7 @@ func Respond(w http.ResponseWriter, r *http.Request) error {
 	routeMatch := getRouteFromPath(r.URL.Path)
 	switch routeMatch.response {
 	case routeNotFound:
-		return NotFound
+		return ErrNotFound
 	case redirectTrailingSlash:
 		http.Redirect(w, r, routeMatch.route.path, http.StatusMovedPermanently)
 		return nil

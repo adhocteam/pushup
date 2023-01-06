@@ -111,7 +111,7 @@ func pushupHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := build.Respond(w, r); err != nil {
 		logger.Printf("responding with route: %v", err)
-		if errors.Is(err, build.NotFound) {
+		if errors.Is(err, build.ErrNotFound) {
 			http.NotFound(w, r)
 		} else {
 			http.Error(w, http.StatusText(500), 500)
