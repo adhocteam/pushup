@@ -304,12 +304,10 @@ func displayPartialHere(mainRoute string, partialPath string, requestPath string
 	} else {
 		path = mainRoute + partialPath
 	}
-	// log.Printf("PATH: %v\tREQUEST_PATH: %v", path, requestPath)
 	match := getRouteFromPath(path)
 	if match.response == routeFound {
 		return matchURLPathSegmentPrefix(match.route.regex, requestPath)
 	}
-	// log.Printf("MAIN ROUTE: %v\tPARTIAL PATH: %v\tREQUEST PATH: %v", mainRoute, partialPath, requestPath)
 	panic("internal error: unexpected path")
 }
 
@@ -368,7 +366,6 @@ func matchURLPathSegmentPrefix(re *regexp.Regexp, s string) bool {
 	if s != "" {
 		segments = strings.Split(s, "/")
 	}
-	// log.Printf("RESEGMENTS: %#v\tSEGMENTS: %#v", reSegments, segments)
 	for i := 0; i < min(len(reSegments), len(segments)); i++ {
 		reseg := reSegments[i]
 		seg := segments[i]
