@@ -221,7 +221,6 @@ func TestPushup(t *testing.T) {
 							case <-done:
 								if cmd != nil {
 									syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
-									cmd.Wait()
 								}
 								return nil
 							case <-ctx.Done():
