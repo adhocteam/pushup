@@ -163,6 +163,7 @@ func TestPushup(t *testing.T) {
 						var allgood bool
 						var cmd *exec.Cmd
 
+						t.Log(pushup, "run", "-build-pkg", "github.com/adhocteam/pushup/build", "-page", pushupFile, "-unix-socket", socketPath)
 						g.Go(func() error {
 							cmd = exec.Command(pushup, "run", "-build-pkg", "github.com/adhocteam/pushup/build", "-page", pushupFile, "-unix-socket", socketPath)
 							sysProcAttr(cmd)
@@ -175,14 +176,17 @@ func TestPushup(t *testing.T) {
 
 							cmd.Stderr = &errb
 
+							t.Log("pushup: launching")
 							if err := cmd.Start(); err != nil {
 								return err
 							}
 
+							t.Logf("pushup: waiting, pid %d", cmd.Process.Pid)
 							if err := cmd.Wait(); err != nil {
 								return err
 							}
 
+							t.Log("pushup: process done")
 							return nil
 						})
 
@@ -193,6 +197,7 @@ func TestPushup(t *testing.T) {
 							for {
 								select {
 								case <-ctx.Done():
+									t.Log("ready listener: context timeout")
 									err := ctx.Err()
 									return err
 								default:
@@ -201,11 +206,13 @@ func TestPushup(t *testing.T) {
 											n, err := stdout.Read(buf[:])
 											if n > 0 {
 												if bytes.Contains(buf[:], needle) {
+													t.Log("ready listener: needle found")
 													ready <- true
 													return nil
 												}
 											} else {
 												if errors.Is(err, io.EOF) {
+													t.Log("ready listener: EOF")
 													return nil
 												}
 												return err
@@ -219,12 +226,15 @@ func TestPushup(t *testing.T) {
 						g.Go(func() error {
 							select {
 							case <-done:
+								t.Logf("process killer: recvd done %d", -cmd.Process.Pid)
 								if cmd != nil {
 									syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
 									cmd.Wait()
+									t.Logf("process killer: killed %d", -cmd.Process.Pid)
 								}
 								return nil
 							case <-ctx.Done():
+								t.Log("process killer: context timeout")
 								err := ctx.Err()
 								return err
 							}
@@ -234,6 +244,7 @@ func TestPushup(t *testing.T) {
 							select {
 							case <-ready:
 							case <-ctx.Done():
+								t.Log("test runner: context timeout")
 								err := ctx.Err()
 								return err
 							}
@@ -249,6 +260,7 @@ func TestPushup(t *testing.T) {
 								queryParams = "?" + strings.Join(request.queryParams, "&")
 							}
 							reqUrl := "http://dummy" + request.path + queryParams
+							t.Log("test runner: making request")
 							resp, err := client.Get(reqUrl)
 							if err != nil {
 								return nil
@@ -258,17 +270,21 @@ func TestPushup(t *testing.T) {
 							if err != nil {
 								return nil
 							}
+							t.Log("test runner: sending done")
 							done <- true
 							if diff := cmp.Diff(request.expectedOutput, string(got)); diff != "" {
 								t.Errorf("expected render diff (-want +got)\n%s", diff)
 							} else {
 								allgood = true
 							}
+							t.Log("test runner: complete")
 							return nil
 						})
 
 						go func() {
+							t.Log("closer: waiting")
 							g.Wait()
+							t.Log("closer: wait complete")
 							close(ready)
 							close(done)
 						}()
