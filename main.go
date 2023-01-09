@@ -65,6 +65,8 @@ func main() {
 		log.Fatalf("Pushup requires Go to be installed.")
 	}
 
+	printBanner()
+
 	if flag.NArg() == 0 {
 		printPushupHelp()
 		os.Exit(1)
@@ -512,6 +514,14 @@ func printPushupHelp() {
 		fmt.Fprintf(w, "\t%s %s\t\t%s\n", c.name, c.usage, c.description)
 	}
 	w.Flush()
+}
+
+//go:embed banner.txt
+var bannerFile embed.FS
+var banner, _ = bannerFile.ReadFile("banner.txt")
+
+func printBanner() {
+	fmt.Fprintf(os.Stdout, "\n%s\n", banner)
 }
 
 type pushupContext struct {
