@@ -489,6 +489,29 @@ func (r *runCmd) do() error {
 	return nil
 }
 
+type routesCmd struct {
+	projectDir string
+}
+
+func newRoutesCmd(args []string) *routesCmd {
+	flags := flag.NewFlagSet("pushup routes", flag.ExitOnError)
+	r := new(routesCmd)
+	flags.Parse(args)
+	if flags.NArg() == 1 {
+		r.projectDir = flags.Arg(0)
+	} else {
+		r.projectDir = "."
+	}
+	return r
+}
+
+func (r *routesCmd) do() error {
+	fmt.Fprintf(os.Stderr, "routes! TBD\n")
+	return nil
+}
+
+var _ doer = (*routesCmd)(nil)
+
 type cliCmd struct {
 	name        string
 	usage       string
@@ -500,6 +523,7 @@ var cliCmds = []cliCmd{
 	{name: "new", usage: "[path]", description: "create new Pushup project directory", fn: func(args []string) doer { return newNewCmd(args) }},
 	{name: "build", usage: "", description: "compile Pushup project and build executable", fn: func(args []string) doer { return newBuildCmd(args) }},
 	{name: "run", usage: "", description: "build and run Pushup project app", fn: func(args []string) doer { return newRunCmd(args) }},
+	{name: "routes", usage: "", description: "print the routes in the Pushup project", fn: func(args []string) doer { return newRoutesCmd(args) }},
 }
 
 func printPushupHelp() {
