@@ -506,7 +506,26 @@ func newRoutesCmd(args []string) *routesCmd {
 }
 
 func (r *routesCmd) do() error {
-	fmt.Fprintf(os.Stderr, "routes! TBD\n")
+	appDir := filepath.Join(r.projectDir, appDirName)
+	files, err := findProjectFiles(appDir)
+	if err != nil {
+		return err
+	}
+	// TODO(paulsmith): sort by route match specificity
+	// TODO(paulsmith): colorize the dynamic path segments
+	// TODO(paulsmith): point to page/route source
+	var routes []string
+	var maxLen int
+	for _, page := range files.pages {
+		route := routeForPage(page.relpath())
+		if len(route) > maxLen {
+			maxLen = len(route)
+		}
+		routes = append(routes, route)
+	}
+	for _, route := range routes {
+		fmt.Printf("%-*s\n", maxLen, route)
+	}
 	return nil
 }
 
