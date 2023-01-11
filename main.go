@@ -513,7 +513,6 @@ func (r *routesCmd) do() error {
 	}
 	// TODO(paulsmith): sort by route match specificity
 	// TODO(paulsmith): colorize the dynamic path segments
-	// TODO(paulsmith): point to page/route source
 	w := new(tabwriter.Writer)
 	w.Init(os.Stdout, 0, 0, 1, ' ', 0)
 	for _, page := range files.pages {
