@@ -252,6 +252,12 @@ when it is built, and are accessed via a straightforward mapping under the
 Pushup maps file locations to URL route paths. So `about.up` becomes
 `/about`, and `foo/bar/baz.up` becomes `/foo/bar/baz`. More TK ...
 
+You can print a list of the app's routes with the command:
+
+```shell
+pushup routes
+```
+
 ### Dynamic routes
 
 If the filename of a Pushup page starts with a `$` dollar sign, the portion
