@@ -514,18 +514,13 @@ func (r *routesCmd) do() error {
 	// TODO(paulsmith): sort by route match specificity
 	// TODO(paulsmith): colorize the dynamic path segments
 	// TODO(paulsmith): point to page/route source
-	var routes []string
-	var maxLen int
+	w := new(tabwriter.Writer)
+	w.Init(os.Stdout, 0, 0, 1, ' ', 0)
 	for _, page := range files.pages {
-		route := routeForPage(page.relpath())
-		if len(route) > maxLen {
-			maxLen = len(route)
-		}
-		routes = append(routes, route)
+		route := page.route()
+		fmt.Fprintln(w, route+"\t"+page.relpath())
 	}
-	for _, route := range routes {
-		fmt.Printf("%-*s\n", maxLen, route)
-	}
+	w.Flush()
 	return nil
 }
 
@@ -601,6 +596,14 @@ func (f *projectFile) relpath() string {
 		panic("internal error: calling filepath.Rel(): " + err.Error())
 	}
 	return path
+}
+
+type router interface {
+	route() string
+}
+
+func (f *projectFile) route() string {
+	return routeForPage(f.relpath())
 }
 
 // projectFiles represents all the source files in a Pushup project.
