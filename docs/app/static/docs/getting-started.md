@@ -99,27 +99,16 @@ For example:
 ```shell
 $ pushup routes
 /about                    about.up
-/alt-layout               alt-layout.up
-/crud/album/:id           crud/album/$id.up
-/crud/album/delete/:id    crud/album/delete/$id.up
-/crud/album/edit/:id      crud/album/edit/$id.up
-/crud/album/new           crud/album/new.up
-/crud/                    crud/index.up
-/dump                     dump.up
+/album/:id                album/$id.up
+/album/delete/:id         album/delete/$id.up
+/album/edit/:id           album/edit/$id.up
+/album/new                album/new.up
+/album/                   album/index.up
 /dyn/:name                dyn/$name.up
-/escape                   escape.up
-/for                      for.up
 /htmx/active-search       htmx/active-search.up
 /htmx/click-to-load       htmx/click-to-load.up
 /htmx/                    htmx/index.up
 /htmx/value-select        htmx/value-select.up
-/if                       if.up
 /                         index.up
-/no-layout                no-layout.up
-/partials/architects/     partials/architects/index.up
-/partials/                partials/index.up
-/partials/nested          partials/nested.up
 /projects/:pid/users/:uid projects/$pid/users/$uid.up
-/source                   source.up
-/x/sub                    x/sub.up
 ```
