@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"embed"
@@ -300,8 +301,24 @@ func (b *buildCmd) rescanProjectFiles() error {
 }
 
 func (b *buildCmd) do() error {
-	if err := os.RemoveAll(b.outDir); err != nil {
-		return fmt.Errorf("removing build dir: %w", err)
+	if dirExists(b.outDir) {
+		if files, err := os.ReadDir(b.outDir); err != nil {
+			return fmt.Errorf("reading directory: %w", err)
+		} else if len(files) > 0 {
+			fmt.Printf("The build directory %s is not empty\nWould you like to remove all files? (y/N) ", b.outDir)
+			reader := bufio.NewReader(os.Stdin)
+			input, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("unable to get user input: %w", err)
+			}
+			if input == "y\n" || input == "Y\n" {
+				if err := os.RemoveAll(b.outDir); err != nil {
+					return fmt.Errorf("removing build dir: %w", err)
+				}
+			} else {
+				return fmt.Errorf("user chose not to clear build directory")
+			}
+		}
 	}
 
 	// FIXME(paulsmith): remove singleFile (and -single flag) and replace with
