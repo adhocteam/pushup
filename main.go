@@ -246,8 +246,10 @@ type buildCmd struct {
 	codeGenOnly        bool
 	compileOnly        bool
 	outDir             string
+	outFile            string
 	embedSource        bool
 	pages              stringSlice
+	verbose            bool
 
 	files  *projectFiles
 	appDir string
@@ -261,9 +263,11 @@ func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
 	flags.BoolVar(&b.parseOnly, "parse-only", false, "exit after dumping parse result")
 	flags.BoolVar(&b.codeGenOnly, "codegen-only", false, "codegen only, don't compile")
 	flags.BoolVar(&b.compileOnly, "compile-only", false, "compile only, don't start web server after")
-	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory")
+	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory. Defaults to ./build")
+	flags.StringVar(&b.outFile, "out-file", "", "path to output application binary. Defaults to ./build/bin/projectName.exe")
 	flags.BoolVar(&b.embedSource, "embed-source", true, "embed the source .up files in executable")
 	flags.Var(&b.pages, "page", "path to a Pushup page. mulitple can be given")
+	flags.BoolVar(&b.verbose, "verbose", false, "output verbose information")
 }
 
 const appDirName = "app"
@@ -338,6 +342,8 @@ func (b *buildCmd) do() error {
 			pkgName:           b.buildPkg,
 			compiledOutputDir: b.outDir,
 			buildDir:          b.outDir,
+			outFile:           b.outFile,
+			verbose:           b.verbose,
 		}
 		if err := buildProject(context.Background(), params); err != nil {
 			return fmt.Errorf("building project: %w", err)
@@ -2158,6 +2164,8 @@ type buildParams struct {
 	// path to directory with the compiled Pushup project code
 	compiledOutputDir string
 	buildDir          string
+	outFile           string
+	verbose           bool
 }
 
 // buildProject builds the Go program made up of the user's compiled .up
@@ -2178,8 +2186,15 @@ func buildProject(_ context.Context, b buildParams) error {
 	}
 	f.Close()
 
-	exeName := b.projectName + ".exe"
-	args := []string{"build", "-o", filepath.Join(b.buildDir, "bin", exeName), filepath.Join(b.pkgName, "cmd", b.projectName)}
+	// The default output file is buildDir/bin/projectName.exe
+	if b.outFile == "" {
+		b.outFile = filepath.Join(b.buildDir, "bin", b.projectName+".exe")
+	}
+
+	args := []string{"build", "-o", b.outFile, filepath.Join(b.pkgName, "cmd", b.projectName)}
+	if b.verbose {
+		fmt.Printf("build command: go %s\n", strings.Join(args, " "))
+	}
 	cmd := exec.Command("go", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
