@@ -710,7 +710,8 @@ func compileProject(c *compileProjectParams) error {
 				return fmt.Errorf("parsing file %s: %w", path, err)
 			}
 
-			prettyPrintTree(tree)
+			ast2source(tree)
+			///prettyPrintTree(tree)
 			fmt.Println()
 		}
 		os.Exit(0)
@@ -3861,6 +3862,68 @@ func prettyPrintTree(t *syntaxTree) {
 			fmt.Fprintf(w, "%s\n", n.decl.path)
 		case *nodeLayout:
 			fmt.Fprintf(w, "LAYOUT %s\n", n.name)
+		case nodeList:
+			for _, x := range n {
+				f(x)
+			}
+			return false
+		}
+		return true
+	}
+	inspect(nodeList(t.nodes), f)
+}
+
+func ast2source(t *syntaxTree) {
+	var f inspector
+	f = func(n node) bool {
+		switch n := n.(type) {
+		case *nodeLiteral:
+			fmt.Print(n.str)
+		case *nodeGoStrExpr:
+			fmt.Print(n.expr)
+		case *nodeGoCode:
+			fmt.Printf("%s{\n", transSymStr)
+			fmt.Print(n.code)
+			fmt.Printf("}\n")
+		case *nodeIf:
+			fmt.Printf("%sif ", transSymStr)
+			f(n.cond)
+			fmt.Print(" { ")
+			f(n.then)
+			if n.alt != nil {
+				fmt.Printf(" } %selse { ", transSymStr)
+				f(n.alt)
+			}
+			return false
+		case *nodeFor:
+			fmt.Printf("%sfor ", transSymStr)
+			f(n.clause)
+			f(n.block)
+			return false
+		case *nodeElement:
+			fmt.Printf("<%s", n.tag.start())
+			f(nodeList(n.children))
+			fmt.Printf("<%s", n.tag.end())
+			return false
+		case *nodeSection:
+			fmt.Printf("%ssection %s", transSymStr, n.name)
+			f(n.block)
+			return false
+		case *nodePartial:
+			fmt.Printf("%spartial %s", transSymStr, n.name)
+			f(n.block)
+			return false
+		case *nodeBlock:
+			f(nodeList(n.nodes))
+			return false
+		case *nodeImport:
+			fmt.Printf("%simport", transSymStr)
+			if n.decl.pkgName != "" {
+				fmt.Printf("%s", n.decl.pkgName)
+			}
+			fmt.Printf("%s\n", n.decl.path)
+		case *nodeLayout:
+			fmt.Printf("%slayout %s\n", transSymStr, n.name)
 		case nodeList:
 			for _, x := range n {
 				f(x)
