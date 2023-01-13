@@ -85,4 +85,30 @@ flags you can pick your own listener.
 Open [http://localhost:8080/](http://localhost:8080/) in your browser to see
 the default layout and a welcome index page.
 
+### Listing routes
 
+You can print a list of all the routes in your Pushup project with the command
+`pushup routes`.
+
+The lefthand column is the URL route, where any dynamic path segments are
+denoted with a leading `:` colon. The righthand column is the corresponding
+Pushup page.
+
+For example:
+
+```shell
+$ pushup routes
+/about                    about.up
+/album/:id                album/$id.up
+/album/delete/:id         album/delete/$id.up
+/album/edit/:id           album/edit/$id.up
+/album/new                album/new.up
+/album/                   album/index.up
+/dyn/:name                dyn/$name.up
+/htmx/active-search       htmx/active-search.up
+/htmx/click-to-load       htmx/click-to-load.up
+/htmx/                    htmx/index.up
+/htmx/value-select        htmx/value-select.up
+/                         index.up
+/projects/:pid/users/:uid projects/$pid/users/$uid.up
+```
