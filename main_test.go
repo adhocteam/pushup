@@ -270,6 +270,7 @@ func TestPushup(t *testing.T) {
 							g.Wait()
 							close(ready)
 							close(done)
+							os.RemoveAll("build")
 						}()
 
 						if err := g.Wait(); err != nil {
