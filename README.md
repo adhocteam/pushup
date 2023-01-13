@@ -206,7 +206,7 @@ syntax.
 Pushup treats projects as their own self-contained Go module. The build
 process assumes this is the case by default. But it is possible to include a
 Pushup project as part of a parent Go module. See the the `-module` option to
-`pushup new`, and the `-build-pkg` option to the `pushup run` command.
+`pushup new`.
 
 ## Project directory structure
 
