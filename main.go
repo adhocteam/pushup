@@ -264,7 +264,7 @@ func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
 	flags.BoolVar(&b.codeGenOnly, "codegen-only", false, "codegen only, don't compile")
 	flags.BoolVar(&b.compileOnly, "compile-only", false, "compile only, don't start web server after")
 	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory. Defaults to ./build")
-	flags.StringVar(&b.outFile, "out-file", "", "path to output application binary. Defaults to ./build/bin/projectName.exe")
+	flags.StringVar(&b.outFile, "out-file", "", "path to output application binary. Defaults to ./build/bin/projectName")
 	flags.BoolVar(&b.embedSource, "embed-source", true, "embed the source .up files in executable")
 	flags.Var(&b.pages, "page", "path to a Pushup page. mulitple can be given")
 	flags.BoolVar(&b.verbose, "verbose", false, "output verbose information")
@@ -468,7 +468,7 @@ func (r *runCmd) do() error {
 			go func() {
 				watchForReload(ctx, ctx.fileChangeCancel, r.appDir, reload)
 			}()
-			if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()+".exe"), ln); err != nil {
+			if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()), ln); err != nil {
 				return fmt.Errorf("building and running generated Go code: %v", err)
 			}
 		}
@@ -487,7 +487,7 @@ func (r *runCmd) do() error {
 				return fmt.Errorf("listening on TCP socket: %v", err)
 			}
 		}
-		if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()+".exe"), ln); err != nil {
+		if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()), ln); err != nil {
 			return fmt.Errorf("building and running generated Go code: %v", err)
 		}
 	}
@@ -2186,9 +2186,9 @@ func buildProject(_ context.Context, b buildParams) error {
 	}
 	f.Close()
 
-	// The default output file is buildDir/bin/projectName.exe
+	// The default output file is buildDir/bin/projectName
 	if b.outFile == "" {
-		b.outFile = filepath.Join(b.buildDir, "bin", b.projectName+".exe")
+		b.outFile = filepath.Join(b.buildDir, "bin", b.projectName)
 	}
 
 	args := []string{"build", "-o", b.outFile, filepath.Join(b.pkgName, "cmd", b.projectName)}
