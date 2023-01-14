@@ -164,7 +164,7 @@ func TestPushup(t *testing.T) {
 						var cmd *exec.Cmd
 
 						g.Go(func() error {
-							cmd = exec.Command(pushup, "run", "-build-pkg", "github.com/adhocteam/pushup/build", "-page", pushupFile, "-unix-socket", socketPath)
+							cmd = exec.Command(pushup, "run", "-page", pushupFile, "-unix-socket", socketPath)
 							sysProcAttr(cmd)
 
 							var err error

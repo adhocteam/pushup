@@ -37,6 +37,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/fsnotify/fsnotify"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 	"golang.org/x/sync/errgroup"
@@ -240,7 +241,6 @@ func initVcs(projectDir string, vcs vcs) error {
 type buildCmd struct {
 	projectName        *regexString
 	projectDir         string
-	buildPkg           string
 	applyOptimizations bool
 	parseOnly          bool
 	codeGenOnly        bool
@@ -258,7 +258,6 @@ type buildCmd struct {
 func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
 	b.projectName = newRegexString(`^\w+`, "myproject")
 	flags.Var(b.projectName, "project", "name of Pushup project")
-	flags.StringVar(&b.buildPkg, "build-pkg", "example/myproject/build", "name of package of compiled Pushup app")
 	flags.BoolVar(&b.applyOptimizations, "O", false, "apply simple optimizations to the parse tree")
 	flags.BoolVar(&b.parseOnly, "parse-only", false, "exit after dumping parse result")
 	flags.BoolVar(&b.codeGenOnly, "codegen-only", false, "codegen only, don't compile")
@@ -339,7 +338,6 @@ func (b *buildCmd) do() error {
 	{
 		params := buildParams{
 			projectName:       b.projectName.String(),
-			pkgName:           b.buildPkg,
 			compiledOutputDir: b.outDir,
 			buildDir:          b.outDir,
 			outFile:           b.outFile,
@@ -455,7 +453,6 @@ func (r *runCmd) do() error {
 			{
 				params := buildParams{
 					projectName:       r.projectName.String(),
-					pkgName:           r.buildPkg,
 					compiledOutputDir: r.outDir,
 					buildDir:          r.outDir,
 				}
@@ -2205,7 +2202,6 @@ func copyFileFS(fsys fs.FS, dest string, src string) error {
 
 type buildParams struct {
 	projectName string
-	pkgName     string
 	// path to directory with the compiled Pushup project code
 	compiledOutputDir string
 	buildDir          string
@@ -2216,6 +2212,19 @@ type buildParams struct {
 // buildProject builds the Go program made up of the user's compiled .up
 // files and .go code, as well as Pushup's library APIs.
 func buildProject(_ context.Context, b buildParams) error {
+	var pkgName string
+	{
+		goModContents, err := os.ReadFile("go.mod")
+		if err != nil {
+			return fmt.Errorf("could not read go.mod: %w", err)
+		}
+		f, err := modfile.Parse("go.mod", goModContents, nil)
+		if err != nil {
+			return fmt.Errorf("parsing go.mod file: %w", err)
+		}
+		pkgName = f.Module.Mod.Path + "/build"
+	}
+
 	mainExeDir := filepath.Join(b.compiledOutputDir, "cmd", b.projectName)
 	if err := os.MkdirAll(mainExeDir, 0755); err != nil {
 		return fmt.Errorf("making directory for command: %w", err)
@@ -2226,7 +2235,7 @@ func buildProject(_ context.Context, b buildParams) error {
 	if err != nil {
 		return fmt.Errorf("creating main.go: %w", err)
 	}
-	if err := t.Execute(f, map[string]any{"ProjectPkg": b.pkgName}); err != nil {
+	if err := t.Execute(f, map[string]any{"ProjectPkg": pkgName}); err != nil {
 		return fmt.Errorf("executing main.go template: %w", err)
 	}
 	f.Close()
@@ -2236,7 +2245,7 @@ func buildProject(_ context.Context, b buildParams) error {
 		b.outFile = filepath.Join(b.buildDir, "bin", b.projectName)
 	}
 
-	args := []string{"build", "-o", b.outFile, filepath.Join(b.pkgName, "cmd", b.projectName)}
+	args := []string{"build", "-o", b.outFile, filepath.Join(pkgName, "cmd", b.projectName)}
 	if b.verbose {
 		fmt.Printf("build command: go %s\n", strings.Join(args, " "))
 	}
