@@ -1666,16 +1666,16 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 		g.bodyPrintf("  }()\n")
 		g.used("bytes", "html/template")
 		save := g.ioWriterVar
-		g.ioWriterVar = "b"
+		g.ioWriterVar = "__pushup_b"
 		g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
 		g.generate()
-		g.bodyPrintf("  sections[\"contents\"] <- template.HTML(b.String())\n")
+		g.bodyPrintf("  sections[\"contents\"] <- template.HTML(%s.String())\n", g.ioWriterVar)
 		g.bodyPrintf("}()\n\n")
 		g.ioWriterVar = save
 
 		for name, block := range g.page.sections {
 			save := g.ioWriterVar
-			g.ioWriterVar = "b"
+			g.ioWriterVar = "__pushup_b"
 			g.bodyPrintf("wg.Add(1)\n")
 			g.bodyPrintf("go func() {\n")
 			g.bodyPrintf("  defer wg.Done()\n")
@@ -1689,7 +1689,7 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 			g.bodyPrintf("  }()\n")
 			g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
 			g.genNode(block)
-			g.bodyPrintf("  sections[%s] <- template.HTML(b.String())\n", strconv.Quote(name))
+			g.bodyPrintf("  sections[%s] <- template.HTML(%s.String())\n", strconv.Quote(name), g.ioWriterVar)
 			g.bodyPrintf("}()\n")
 			g.ioWriterVar = save
 		}
