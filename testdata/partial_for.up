@@ -1,0 +1,7 @@
+^layout !
+^for i := 0; i < 3; i++ {
+    <p>^i</p>
+}
+^partial p {
+    <p></p>
+}

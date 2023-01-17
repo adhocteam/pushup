@@ -1514,9 +1514,11 @@ func (g *pageCodeGen) genNodePartial(n node, p *partial) {
 					g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, n.expr)
 				}
 			case *nodeFor:
-				g.bodyPrintf("for %s {\n", n.clause.code)
-				f(n.block)
-				g.bodyPrintf("}\n")
+				if state == stateInPartialScope {
+					g.bodyPrintf("for %s {\n", n.clause.code)
+					f(n.block)
+					g.bodyPrintf("}\n")
+				}
 				return false
 			case *nodeIf:
 				g.bodyPrintf("if %s {\n", n.cond.expr)
