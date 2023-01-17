@@ -3,5 +3,9 @@
     <p>^i</p>
 }
 ^partial p {
-    <p></p>
+    <div>
+        ^for ii := 0; ii < 2; ii++ {
+            <text>^ii</text>
+        }
+    </div>
 }
