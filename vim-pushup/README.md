@@ -4,5 +4,5 @@ This is a vim plugin for Pushup. It provides syntax highlighting. You should be 
 
 -   Locate or create a `syntax` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
 -   Copy [`syntax/pushup.vim`](https://github.com/adhocteam/pushup/blob/main/vim-pushup/syntax/pushup.vim) into that directory
--   Locate or create a `ftdetect` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
+-   Locate or create a `ftdetect` directory in your vim config directory (Usually `~/.vim/ftdetect` for vim or `~/.config/nvim/ftdetect` for neovim)
 -   Copy [`ftdetect/pushup.vim`](https://github.com/adhocteam/pushup/blob/main/vim-pushup/ftdetect/pushup.vim) into that directory
