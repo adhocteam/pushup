@@ -220,7 +220,9 @@ func TestPushup(t *testing.T) {
 							select {
 							case <-done:
 								if cmd != nil {
-									syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+									if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
+										return err
+									}
 								}
 								return nil
 							case <-ctx.Done():
@@ -267,6 +269,7 @@ func TestPushup(t *testing.T) {
 						})
 
 						go func() {
+							//nolint:errcheck
 							g.Wait()
 							close(ready)
 							close(done)

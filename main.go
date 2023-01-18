@@ -137,6 +137,7 @@ func newNewCmd(arguments []string) *newCmd {
 	flags := flag.NewFlagSet("pushup new", flag.ExitOnError)
 	moduleNameFlag := newRegexString(`^\w[\w-]*$`, "example/myproject")
 	flags.Var(moduleNameFlag, "module", "name of Go module of the new Pushup app")
+	//nolint:errcheck
 	flags.Parse(arguments)
 	if flags.NArg() > 1 {
 		log.Fatalf("extra unprocessed argument(s)")
@@ -275,6 +276,7 @@ func newBuildCmd(arguments []string) *buildCmd {
 	flags := flag.NewFlagSet("pushup build", flag.ExitOnError)
 	b := new(buildCmd)
 	setBuildFlags(flags, b)
+	//nolint:errcheck
 	flags.Parse(arguments)
 	if flags.NArg() == 1 {
 		b.projectDir = flags.Arg(0)
@@ -367,6 +369,8 @@ func newRunCmd(arguments []string) *runCmd {
 	port := flags.String("port", "8080", "port to listen on with TCP IPv4")
 	unixSocket := flags.String("unix-socket", "", "path to listen on with Unix socket")
 	devReload := flags.Bool("dev", false, "compile and run the Pushup app and reload on changes")
+
+	//nolint:errcheck
 	flags.Parse(arguments)
 	// FIXME this logic is duplicated with newBuildCmd
 	if flags.NArg() == 1 {
@@ -499,6 +503,7 @@ type routesCmd struct {
 func newRoutesCmd(args []string) *routesCmd {
 	flags := flag.NewFlagSet("pushup routes", flag.ExitOnError)
 	r := new(routesCmd)
+	//nolint:errcheck
 	flags.Parse(args)
 	if flags.NArg() == 1 {
 		r.projectDir = flags.Arg(0)
@@ -600,6 +605,7 @@ func (f *projectFile) relpath() string {
 	return path
 }
 
+//nolint:unused
 type router interface {
 	route() string
 }
@@ -620,6 +626,7 @@ type projectFiles struct {
 	gofiles []string // TODO(paulsmith): convert to projectFile
 }
 
+//nolint:unused
 func (f *projectFiles) debug() {
 	fmt.Println("pages:")
 	for _, p := range f.pages {
@@ -1826,9 +1833,13 @@ func watchForReload(ctx context.Context, cancel context.CancelFunc, root string,
 	}
 }
 
+// stopWatching removes all watches from the WatchList and panics if any of
+// them cannot be removed
 func stopWatching(watcher *fsnotify.Watcher) {
 	for _, name := range watcher.WatchList() {
-		watcher.Remove(name)
+		if err := watcher.Remove(name); err != nil {
+			panic(fmt.Errorf("error removing watch: %w", err))
+		}
 	}
 }
 
@@ -1911,6 +1922,7 @@ func startReloadRevProxy(socketPath string, buildComplete *sync.Cond, port strin
 
 	srv := http.Server{Handler: mux}
 	// FIXME(paulsmith): shutdown
+	//nolint:errcheck
 	go srv.Serve(ln)
 	fmt.Fprintf(os.Stdout, "\x1b[1;36m↑↑ PUSHUP DEV RELOADER ON http://%s ↑↑\x1b[0m\n", addr)
 	return nil
@@ -1984,6 +1996,7 @@ loop:
 	for {
 		select {
 		case <-built:
+			//nolint:errcheck
 			w.Write([]byte("event: reload\ndata: \n\n"))
 		case <-r.Context().Done():
 			if d.verboseLogging {
@@ -1992,6 +2005,7 @@ loop:
 			close(done)
 			break loop
 		case <-time.After(1 * time.Second):
+			//nolint:errcheck
 			w.Write([]byte(":keepalive\n\n"))
 			flusher.Flush()
 		}
@@ -3770,6 +3784,7 @@ loop:
 }
 
 // offset is the current global offset into the original source code of the Pushup file.
+//nolint:unused
 func (p *codeParser) offset() int {
 	return p.parser.offset
 }
@@ -3870,6 +3885,7 @@ const padding = " "
 func prettyPrintTree(t *syntaxTree) {
 	depth := -1
 	var w io.Writer = os.Stdout
+	//nolint:errcheck
 	pad := func() { w.Write([]byte(strings.Repeat(padding, depth))) }
 	var f inspector
 	f = func(n node) bool {
