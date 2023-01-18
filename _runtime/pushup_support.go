@@ -84,7 +84,7 @@ func regexPatFromRoute(route string) routePat {
 	return routePat{strings.Join(out, "/"), slugs}
 }
 
-var NotFound = errors.New("page not found")
+var ErrNotFound = errors.New("page not found")
 
 type ctxKey struct{}
 
@@ -92,9 +92,9 @@ func Respond(w http.ResponseWriter, r *http.Request) error {
 	routeMatch := getRouteFromPath(r.URL.Path)
 	switch routeMatch.response {
 	case routeNotFound:
-		return NotFound
+		return ErrNotFound
 	case redirectTrailingSlash:
-		http.Redirect(w, r, routeMatch.route.path, 301)
+		http.Redirect(w, r, routeMatch.route.path, http.StatusMovedPermanently)
 		return nil
 	case routeFound:
 		route := routeMatch.route
@@ -114,7 +114,6 @@ func Respond(w http.ResponseWriter, r *http.Request) error {
 	default:
 		panic("unhandled route match response")
 	}
-	return nil
 }
 
 func mostSpecificMatch(routes []*route, path string) *route {
@@ -230,21 +229,27 @@ func zipMap[K comparable, V any](ks []K, vs []V) map[K]V {
 func printEscaped(w io.Writer, val any) {
 	switch val := val.(type) {
 	case string:
+		//nolint:errcheck
 		io.WriteString(w, template.HTMLEscapeString(val))
 	case fmt.Stringer:
+		//nolint:errcheck
 		io.WriteString(w, template.HTMLEscapeString(val.String()))
 	case []byte:
 		template.HTMLEscape(w, val)
 	case int:
+		//nolint:errcheck
 		io.WriteString(w, strconv.Itoa(val))
 	case template.HTML:
+		//nolint:errcheck
 		io.WriteString(w, string(val))
 	default:
+		//nolint:errcheck
 		io.WriteString(w, template.HTMLEscapeString(fmt.Sprint(val)))
 	}
 }
 
-//{{if .EmbedStatic}}
+// {{if .EmbedStatic}}
+//
 //go:embed static{{end}}
 var static embed.FS
 
@@ -254,6 +259,19 @@ func AddStaticHandler(mux *http.ServeMux) {
 		panic(err)
 	}
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(fsys))))
+}
+
+// GetStaticContents gets the contents of a static file at the path.
+func GetStaticContents(path string) []byte {
+	fsys, err := fs.Sub(static, "static")
+	if err != nil {
+		panic(err)
+	}
+	data, err := fsys.(fs.ReadFileFS).ReadFile(path)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }
 
 //go:embed src
@@ -279,10 +297,7 @@ func isPartialRoute(mainRoute string, requestPath string) bool {
 	match := getRouteFromPath(requestPath)
 	if match.response == routeFound {
 		route := match.route
-		if route.path == mainRoute {
-			return false
-		}
-		return true
+		return route.path != mainRoute
 	}
 	panic("internal error: unexpected path")
 }
@@ -294,15 +309,10 @@ func displayPartialHere(mainRoute string, partialPath string, requestPath string
 	} else {
 		path = mainRoute + partialPath
 	}
-	//log.Printf("PATH: %v\tREQUEST_PATH: %v", path, requestPath)
 	match := getRouteFromPath(path)
 	if match.response == routeFound {
-		if matchURLPathSegmentPrefix(match.route.regex, requestPath) {
-			return true
-		}
-		return false
+		return matchURLPathSegmentPrefix(match.route.regex, requestPath)
 	}
-	//log.Printf("MAIN ROUTE: %v\tPARTIAL PATH: %v\tREQUEST PATH: %v", mainRoute, partialPath, requestPath)
 	panic("internal error: unexpected path")
 }
 
@@ -361,7 +371,6 @@ func matchURLPathSegmentPrefix(re *regexp.Regexp, s string) bool {
 	if s != "" {
 		segments = strings.Split(s, "/")
 	}
-	//log.Printf("RESEGMENTS: %#v\tSEGMENTS: %#v", reSegments, segments)
 	for i := 0; i < min(len(reSegments), len(segments)); i++ {
 		reseg := reSegments[i]
 		seg := segments[i]
@@ -369,10 +378,7 @@ func matchURLPathSegmentPrefix(re *regexp.Regexp, s string) bool {
 			return false
 		}
 	}
-	if len(segments) > len(reSegments) {
-		return false
-	}
-	return true
+	return len(segments) <= len(reSegments)
 }
 
 func min(a int, b int) int {

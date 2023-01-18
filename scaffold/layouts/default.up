@@ -5,19 +5,18 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>^if sectionDefined("title") {
             <text>^outputSection("title")</text>
-        } else {
+        } ^else {
             <text>Pushup app</text>
         }</title>
-        <link rel="stylesheet" href="/static/pico.min.css" />
-        <link rel="stylesheet" href="/static/custom.css" />
+        <link rel="stylesheet" href="/static/style.css" />
         <script src="/static/htmx.min.js"></script>
     </head>
     <body>
-        <main class="container">
+        <main>
             ^outputSection("contents")
         </main>
-        <footer class="container">
-            <p>Made with Pushup. We're glad you're here.</p>
+        <footer>
+            <p>Made with <a href="https://pushup.adhoc.dev/">Pushup</a>. We're glad you're here.</p>
         </footer>
     </body>
 </html>

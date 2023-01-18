@@ -4,7 +4,7 @@
         <title>
             ^if sectionDefined("title") {
                 <text>^outputSection("title")</text>
-            } else {
+            } ^else {
                 <text>Example Pushup app</text>
             }
         </title>

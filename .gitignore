@@ -6,3 +6,6 @@ TODO
 *.db
 /example/build/
 node_modules
+.*.sw?
+.DS_Store
+/dist

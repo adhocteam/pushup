@@ -1,0 +1,9 @@
+run:
+  skip-dirs:
+    - "scaffold"
+    - "build"
+issues:
+  exclude-rules:
+    - path: "_runtime.*"
+      linters:
+        - unused

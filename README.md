@@ -1,16 +1,23 @@
 # Pushup - a page-oriented web framework for Go
 
-![workflow status](https://github.com/AdHocRandD/pushup/actions/workflows/go.yml/badge.svg)
+![workflow status](https://github.com/adhocteam/pushup/actions/workflows/go.yml/badge.svg)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](code_of_conduct.md)
+
+## Project status
+
+Pushup is an experiment. In terms of the development life cycle, it should be considered **preview** pre-release software: it is largely functional, likely has significant bugs (including potential for data loss) and/or subpar performance, but is suitable for demos and testing. It has a decent unit test suite, including fuzzing test cases for the parser. Don't count on it for anything serious yet, and expect significant breaking changes. 
 
 ![screenshot of syntax highlighting of an example Pushup page](./example-syntax-highlighting.png)
 
 - [Pushup - a page-oriented web framework for Go](#pushup---a-page-oriented-web-framework-for-go)
+  - [Project status](#project-status)
   - [What is Pushup?](#what-is-pushup)
     - [Pages in Pushup](#pages-in-pushup)
   - [Quick start with Docker](#quick-start-with-docker)
   - [Getting started](#getting-started)
     - [Installing Pushup](#installing-pushup)
       - [Prerequisites](#prerequisites)
+      - [Install an official release](#install-an-official-release)
       - [Install via git](#install-via-git)
       - [Install via `go install`](#install-via-go-install)
     - [Creating a new Pushup project](#creating-a-new-pushup-project)
@@ -96,7 +103,7 @@ The syntax of the Pushup markup language looks like this:
 
 ^if time.Now().Weekday() == time.Friday {
     <p>It's Friday! Enjoy the start to your weekend.</p>
-} else {
+} ^else {
     <p>Have a great day, we're glad you're here.</p>
 }
 
@@ -141,6 +148,10 @@ Make sure the directory where the go tool installs executables is in your
 echo $PATH | grep $(go env GOPATH)/bin > /dev/null && echo yes || echo no
 ```
 
+#### Install an official release
+
+Download Pushup for your platform from [the releases page](https://github.com/adhocteam/pushup/releases).
+
 #### Install via git
 
 ```shell
@@ -151,18 +162,11 @@ make
 
 #### Install via `go install`
 
-Because Pushup does not (yet) have a public repository, you need to [create a
-personal access token][token] on GitHub, and configure your ~/.netrc file.
-
 Make sure you have Go installed (at least version 1.18), and type:
 
 ```shell
-GOPRIVATE=github.com/AdHocRandD/pushup go install github.com/AdHocRandD/pushup@latest
+go install github.com/adhocteam/pushup@latest
 ```
-
-The `GOPRIVATE` environment variable is necessary to tell the go tool not to
-try to get the module from one of the central module services, but directly
-from GitHub.
 
 ### Creating a new Pushup project
 
@@ -221,7 +225,7 @@ syntax.
 Pushup treats projects as their own self-contained Go module. The build
 process assumes this is the case by default. But it is possible to include a
 Pushup project as part of a parent Go module. See the the `-module` option to
-`pushup new`, and the `-build-pkg` option to the `pushup run` command.
+`pushup new`.
 
 ## Project directory structure
 
@@ -266,6 +270,12 @@ when it is built, and are accessed via a straightforward mapping under the
 
 Pushup maps file locations to URL route paths. So `about.up` becomes
 `/about`, and `foo/bar/baz.up` becomes `/foo/bar/baz`. More TK ...
+
+You can print a list of the app's routes with the command:
+
+```shell
+pushup routes
+```
 
 ### Dynamic routes
 
@@ -561,7 +571,7 @@ Outputs:
 #### Explicit expressions
 
 Explicit expressions are written with `^` and followed by any valid Go
-expression surrounded by parentheses.
+expression grouped by parentheses.
 
 Example:
 
@@ -624,7 +634,7 @@ default markup that can be overridden by a page.
     <title>
         ^outputSection("title")
     </title>
-} else {
+} ^else {
     <title>Welcome to our site</title>
 }
 ```
@@ -695,6 +705,6 @@ each containing partial's name and a forward slash, for example,
 There is a vim plugin in the `vim-pushup` directory. You should be able to symlink it into your plugin manager's path. Alternatively, to install it manually:
 
 -   Locate or create a `syntax` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
--   Copy [`syntax/pushup.vim`](https://github.com/AdHocRandD/pushup/blob/main/vim-pushup/syntax/pushup.vim) into that directory
--   Locate or create a `ftdetect` directory in your vim config directory (Usually `~/.vim/syntax` for vim or `~/.config/nvim/syntax` for neovim)
--   Copy [`ftdetect/pushup.vim`](https://github.com/AdHocRandD/pushup/blob/main/vim-pushup/ftdetect/pushup.vim) into that directory
+-   Copy [`syntax/pushup.vim`](https://github.com/adhocteam/pushup/blob/main/vim-pushup/syntax/pushup.vim) into that directory
+-   Locate or create a `ftdetect` directory in your vim config directory (Usually `~/.vim/ftdetect` for vim or `~/.config/nvim/ftdetect` for neovim)
+-   Copy [`ftdetect/pushup.vim`](https://github.com/adhocteam/pushup/blob/main/vim-pushup/ftdetect/pushup.vim) into that directory

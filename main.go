@@ -14,7 +14,6 @@ import (
 	"go/token"
 	"io"
 	"io/fs"
-	"io/ioutil"
 	"log"
 	"math"
 	"mime"
@@ -38,6 +37,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/fsnotify/fsnotify"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 	"golang.org/x/sync/errgroup"
@@ -57,6 +57,16 @@ func main() {
 		printVersion(os.Stdout)
 		os.Exit(0)
 	}
+
+	log.SetFlags(0)
+
+	// Check that Go is installed
+	// TODO(paulsmith): check that a minimum Go version is installed
+	if _, err := exec.LookPath("go"); err != nil {
+		log.Fatalf("Pushup requires Go to be installed.")
+	}
+
+	printBanner()
 
 	if flag.NArg() == 0 {
 		printPushupHelp()
@@ -127,6 +137,7 @@ func newNewCmd(arguments []string) *newCmd {
 	flags := flag.NewFlagSet("pushup new", flag.ExitOnError)
 	moduleNameFlag := newRegexString(`^\w[\w-]*$`, "example/myproject")
 	flags.Var(moduleNameFlag, "module", "name of Go module of the new Pushup app")
+	//nolint:errcheck
 	flags.Parse(arguments)
 	if flags.NArg() > 1 {
 		log.Fatalf("extra unprocessed argument(s)")
@@ -162,8 +173,7 @@ func (n *newCmd) do() error {
 	scaffoldFiles := []string{
 		"layouts/default.up",
 		"pages/index.up",
-		"static/pico.min.css",
-		"static/custom.css",
+		"static/style.css",
 		"static/htmx.min.js",
 		"pkg/app.go",
 	}
@@ -212,7 +222,7 @@ func initVcs(projectDir string, vcs vcs) error {
 
 		cmd := exec.Command(path, "init")
 		cmd.Dir = projectDir
-		if err := cmd.Run(); err != nil {
+		if err = cmd.Run(); err != nil {
 			return fmt.Errorf("git init: %w", err)
 		}
 
@@ -232,14 +242,15 @@ func initVcs(projectDir string, vcs vcs) error {
 type buildCmd struct {
 	projectName        *regexString
 	projectDir         string
-	buildPkg           string
 	applyOptimizations bool
 	parseOnly          bool
 	codeGenOnly        bool
 	compileOnly        bool
 	outDir             string
+	outFile            string
 	embedSource        bool
 	pages              stringSlice
+	verbose            bool
 
 	files  *projectFiles
 	appDir string
@@ -248,14 +259,15 @@ type buildCmd struct {
 func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
 	b.projectName = newRegexString(`^\w+`, "myproject")
 	flags.Var(b.projectName, "project", "name of Pushup project")
-	flags.StringVar(&b.buildPkg, "build-pkg", "example/myproject/build", "name of package of compiled Pushup app")
 	flags.BoolVar(&b.applyOptimizations, "O", false, "apply simple optimizations to the parse tree")
 	flags.BoolVar(&b.parseOnly, "parse-only", false, "exit after dumping parse result")
 	flags.BoolVar(&b.codeGenOnly, "codegen-only", false, "codegen only, don't compile")
 	flags.BoolVar(&b.compileOnly, "compile-only", false, "compile only, don't start web server after")
-	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory")
+	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory. Defaults to ./build")
+	flags.StringVar(&b.outFile, "out-file", "", "path to output application binary. Defaults to ./build/bin/projectName")
 	flags.BoolVar(&b.embedSource, "embed-source", true, "embed the source .up files in executable")
 	flags.Var(&b.pages, "page", "path to a Pushup page. mulitple can be given")
+	flags.BoolVar(&b.verbose, "verbose", false, "output verbose information")
 }
 
 const appDirName = "app"
@@ -264,6 +276,7 @@ func newBuildCmd(arguments []string) *buildCmd {
 	flags := flag.NewFlagSet("pushup build", flag.ExitOnError)
 	b := new(buildCmd)
 	setBuildFlags(flags, b)
+	//nolint:errcheck
 	flags.Parse(arguments)
 	if flags.NArg() == 1 {
 		b.projectDir = flags.Arg(0)
@@ -327,9 +340,10 @@ func (b *buildCmd) do() error {
 	{
 		params := buildParams{
 			projectName:       b.projectName.String(),
-			pkgName:           b.buildPkg,
 			compiledOutputDir: b.outDir,
 			buildDir:          b.outDir,
+			outFile:           b.outFile,
+			verbose:           b.verbose,
 		}
 		if err := buildProject(context.Background(), params); err != nil {
 			return fmt.Errorf("building project: %w", err)
@@ -355,6 +369,8 @@ func newRunCmd(arguments []string) *runCmd {
 	port := flags.String("port", "8080", "port to listen on with TCP IPv4")
 	unixSocket := flags.String("unix-socket", "", "path to listen on with Unix socket")
 	devReload := flags.Bool("dev", false, "compile and run the Pushup app and reload on changes")
+
+	//nolint:errcheck
 	flags.Parse(arguments)
 	// FIXME this logic is duplicated with newBuildCmd
 	if flags.NArg() == 1 {
@@ -384,13 +400,13 @@ func (r *runCmd) do() error {
 		var mu sync.Mutex
 		buildComplete := sync.NewCond(&mu)
 		reload := make(chan struct{})
-		tmpdir, err := ioutil.TempDir("", "pushupdev")
+		tmpdir, err := os.MkdirTemp("", "pushupdev")
 		if err != nil {
 			return fmt.Errorf("creating temp dir: %v", err)
 		}
 		defer os.RemoveAll(tmpdir)
 		socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+".sock")
-		if err := startReloadRevProxy(socketPath, buildComplete, r.port); err != nil {
+		if err = startReloadRevProxy(socketPath, buildComplete, r.port); err != nil {
 			return fmt.Errorf("starting reverse proxy: %v", err)
 		}
 		ln, err := net.Listen("unix", socketPath)
@@ -441,7 +457,6 @@ func (r *runCmd) do() error {
 			{
 				params := buildParams{
 					projectName:       r.projectName.String(),
-					pkgName:           r.buildPkg,
 					compiledOutputDir: r.outDir,
 					buildDir:          r.outDir,
 				}
@@ -454,7 +469,7 @@ func (r *runCmd) do() error {
 			go func() {
 				watchForReload(ctx, ctx.fileChangeCancel, r.appDir, reload)
 			}()
-			if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()+".exe"), ln); err != nil {
+			if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()), ln); err != nil {
 				return fmt.Errorf("building and running generated Go code: %v", err)
 			}
 		}
@@ -473,13 +488,50 @@ func (r *runCmd) do() error {
 				return fmt.Errorf("listening on TCP socket: %v", err)
 			}
 		}
-		if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()+".exe"), ln); err != nil {
+		if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()), ln); err != nil {
 			return fmt.Errorf("building and running generated Go code: %v", err)
 		}
 	}
 
 	return nil
 }
+
+type routesCmd struct {
+	projectDir string
+}
+
+func newRoutesCmd(args []string) *routesCmd {
+	flags := flag.NewFlagSet("pushup routes", flag.ExitOnError)
+	r := new(routesCmd)
+	//nolint:errcheck
+	flags.Parse(args)
+	if flags.NArg() == 1 {
+		r.projectDir = flags.Arg(0)
+	} else {
+		r.projectDir = "."
+	}
+	return r
+}
+
+func (r *routesCmd) do() error {
+	appDir := filepath.Join(r.projectDir, appDirName)
+	files, err := findProjectFiles(appDir)
+	if err != nil {
+		return err
+	}
+	// TODO(paulsmith): sort by route match specificity
+	// TODO(paulsmith): colorize the dynamic path segments
+	w := new(tabwriter.Writer)
+	w.Init(os.Stdout, 0, 0, 1, ' ', 0)
+	for _, page := range files.pages {
+		route := page.route()
+		fmt.Fprintln(w, route+"\t"+page.relpath())
+	}
+	w.Flush()
+	return nil
+}
+
+var _ doer = (*routesCmd)(nil)
 
 type cliCmd struct {
 	name        string
@@ -492,6 +544,7 @@ var cliCmds = []cliCmd{
 	{name: "new", usage: "[path]", description: "create new Pushup project directory", fn: func(args []string) doer { return newNewCmd(args) }},
 	{name: "build", usage: "", description: "compile Pushup project and build executable", fn: func(args []string) doer { return newBuildCmd(args) }},
 	{name: "run", usage: "", description: "build and run Pushup project app", fn: func(args []string) doer { return newRunCmd(args) }},
+	{name: "routes", usage: "", description: "print the routes in the Pushup project", fn: func(args []string) doer { return newRoutesCmd(args) }},
 }
 
 func printPushupHelp() {
@@ -506,6 +559,14 @@ func printPushupHelp() {
 		fmt.Fprintf(w, "\t%s %s\t\t%s\n", c.name, c.usage, c.description)
 	}
 	w.Flush()
+}
+
+//go:embed banner.txt
+var bannerFile embed.FS
+var banner, _ = bannerFile.ReadFile("banner.txt")
+
+func printBanner() {
+	fmt.Fprintf(os.Stdout, "\n%s\n", banner)
 }
 
 type pushupContext struct {
@@ -544,6 +605,15 @@ func (f *projectFile) relpath() string {
 	return path
 }
 
+//nolint:unused
+type router interface {
+	route() string
+}
+
+func (f *projectFile) route() string {
+	return routeForPage(f.relpath())
+}
+
 // projectFiles represents all the source files in a Pushup project.
 type projectFiles struct {
 	// list of .up page files
@@ -556,6 +626,7 @@ type projectFiles struct {
 	gofiles []string // TODO(paulsmith): convert to projectFile
 }
 
+//nolint:unused
 func (f *projectFiles) debug() {
 	fmt.Println("pages:")
 	for _, p := range f.pages {
@@ -600,7 +671,7 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 
 	pagesDir := filepath.Join(appDir, "pages")
 	{
-		if err := fs.WalkDir(os.DirFS(pagesDir), ".", func(path string, d fs.DirEntry, err error) error {
+		if err := fs.WalkDir(os.DirFS(pagesDir), ".", func(path string, d fs.DirEntry, _ error) error {
 			if !d.IsDir() && filepath.Ext(path) == upFileExt {
 				pfile := projectFile{path: filepath.Join(pagesDir, path), projectFilesSubdir: pagesDir}
 				pf.pages = append(pf.pages, pfile)
@@ -638,7 +709,7 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 	{
 		if err := fs.WalkDir(os.DirFS(staticDir), ".", func(path string, d fs.DirEntry, _ error) error {
 			if !d.IsDir() {
-				path := filepath.Join(staticDir, path)
+				path = filepath.Join(staticDir, path)
 				pf.static = append(pf.static, projectFile{path: path, projectFilesSubdir: staticDir})
 			}
 			return nil
@@ -650,8 +721,6 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 			}
 		}
 	}
-
-	//pf.debug()
 
 	return pf, nil
 }
@@ -776,7 +845,7 @@ func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compilePr
 	defer sourceFile.Close()
 	destPath := filepath.Join(projectParams.outDir, compiledOutputPath(pfile, ftype))
 	destDir := filepath.Dir(destPath)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err = os.MkdirAll(destDir, 0755); err != nil {
 		return fmt.Errorf("making destination file's directory %s: %w", destDir, err)
 	}
 	destFile, err := os.Create(destPath)
@@ -834,6 +903,9 @@ func compile(params compileParams) error {
 		}
 		codeGen := newLayoutCodeGen(layout, params.pfile, src)
 		code, err = genCodeLayout(codeGen)
+		if err != nil {
+			return fmt.Errorf("generating code for a layout: %w", err)
+		}
 	case upFilePage:
 		page, err := newPageFromTree(tree)
 		if err != nil {
@@ -841,6 +913,9 @@ func compile(params compileParams) error {
 		}
 		codeGen := newPageCodeGen(page, params.pfile, src)
 		code, err = genCodePage(codeGen)
+		if err != nil {
+			return fmt.Errorf("generating code for a page: %w", err)
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("generating code: %w", err)
@@ -861,8 +936,7 @@ type layout struct {
 func newLayoutFromTree(tree *syntaxTree) (*layout, error) {
 	layout := &layout{}
 	n := 0
-	var f inspector
-	f = func(e node) bool {
+	var f inspector = func(e node) bool {
 		switch e := e.(type) {
 		case *nodeImport:
 			layout.imports = append(layout.imports, e.decl)
@@ -1100,8 +1174,6 @@ outputSection := func(name string) template.HTML {
 	if err != nil {
 		return nil, fmt.Errorf("reading all buffers: %w", err)
 	}
-
-	// fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
 
 	formatted, err := format.Source(raw)
 	if err != nil {
@@ -1449,9 +1521,11 @@ func (g *pageCodeGen) genNodePartial(n node, p *partial) {
 					g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, n.expr)
 				}
 			case *nodeFor:
-				g.bodyPrintf("for %s {\n", n.clause.code)
-				f(n.block)
-				g.bodyPrintf("}\n")
+				if state == stateInPartialScope {
+					g.bodyPrintf("for %s {\n", n.clause.code)
+					f(n.block)
+					g.bodyPrintf("}\n")
+				}
 				return false
 			case *nodeIf:
 				g.bodyPrintf("if %s {\n", n.cond.expr)
@@ -1601,16 +1675,16 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 		g.bodyPrintf("  }()\n")
 		g.used("bytes", "html/template")
 		save := g.ioWriterVar
-		g.ioWriterVar = "b"
+		g.ioWriterVar = "__pushup_b"
 		g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
 		g.generate()
-		g.bodyPrintf("  sections[\"contents\"] <- template.HTML(b.String())\n")
+		g.bodyPrintf("  sections[\"contents\"] <- template.HTML(%s.String())\n", g.ioWriterVar)
 		g.bodyPrintf("}()\n\n")
 		g.ioWriterVar = save
 
 		for name, block := range g.page.sections {
 			save := g.ioWriterVar
-			g.ioWriterVar = "b"
+			g.ioWriterVar = "__pushup_b"
 			g.bodyPrintf("wg.Add(1)\n")
 			g.bodyPrintf("go func() {\n")
 			g.bodyPrintf("  defer wg.Done()\n")
@@ -1624,7 +1698,7 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 			g.bodyPrintf("  }()\n")
 			g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
 			g.genNode(block)
-			g.bodyPrintf("  sections[%s] <- template.HTML(b.String())\n", strconv.Quote(name))
+			g.bodyPrintf("  sections[%s] <- template.HTML(%s.String())\n", strconv.Quote(name), g.ioWriterVar)
 			g.bodyPrintf("}()\n")
 			g.ioWriterVar = save
 		}
@@ -1723,15 +1797,11 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 		return nil, fmt.Errorf("reading all buffers: %w", err)
 	}
 
-	//fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(raw))
-
 	formatted, err := format.Source(raw)
 	if err != nil {
 		log.Printf("ERROR: %v", err)
 		return nil, fmt.Errorf("gofmt the generated code: %w", err)
 	}
-
-	//fmt.Fprintf(os.Stderr, "\x1b[36m%s\x1b[0m", string(formatted))
 
 	return formatted, nil
 }
@@ -1743,7 +1813,9 @@ func watchForReload(ctx context.Context, cancel context.CancelFunc, root string,
 	}
 
 	go debounceEvents(ctx, 125*time.Millisecond, watcher, func(event fsnotify.Event) {
-		//log.Printf("name: %s\top: %s", event.Name, event.Op)
+		if !reloadableFilename(event.Name) {
+			return
+		}
 		if isDir(event.Name) {
 			if err := watchDirRecursively(watcher, event.Name); err != nil {
 				panic(err)
@@ -1761,16 +1833,41 @@ func watchForReload(ctx context.Context, cancel context.CancelFunc, root string,
 	}
 }
 
+// stopWatching removes all watches from the WatchList and panics if any of
+// them cannot be removed
 func stopWatching(watcher *fsnotify.Watcher) {
 	for _, name := range watcher.WatchList() {
-		watcher.Remove(name)
+		if err := watcher.Remove(name); err != nil {
+			panic(fmt.Errorf("error removing watch: %w", err))
+		}
 	}
+}
+
+// reloadableFilename tests whether the file is one we want to trigger a reload
+// from if it is modified. it tries not to cause a lot of unnecessary reloads
+// by ignoring temporary files from editors like vim and Emacs.
+func reloadableFilename(path string) bool {
+	ext := filepath.Ext(path)
+	// ignore vim swap files: .swp, .swo, .swn, etc
+	if len(ext) == 4 && strings.HasPrefix(ext, ".sw") {
+		return false
+	}
+	// ignore vim and Emacs backup files
+	if strings.HasSuffix(ext, "~") {
+		return false
+	}
+	// ignore Emacs autosave files
+	if strings.HasPrefix(ext, "#") && strings.HasSuffix(ext, "#") {
+		return false
+	}
+	return true
 }
 
 func isDir(path string) bool {
 	fi, err := os.Stat(path)
 	if err != nil {
-		panic(err)
+		log.Printf("error stat'ing path %s, skipping", path)
+		return false
 	}
 	return fi.IsDir()
 }
@@ -1781,9 +1878,9 @@ func fileExists(path string) bool {
 }
 
 func watchDirRecursively(watcher *fsnotify.Watcher, root string) error {
-	err := fs.WalkDir(os.DirFS(root), ".", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(os.DirFS(root), ".", func(path string, d fs.DirEntry, _ error) error {
 		if d.IsDir() {
-			path := filepath.Join(root, path)
+			path = filepath.Join(root, path)
 			if err := watcher.Add(path); err != nil {
 				return fmt.Errorf("adding path %s to watch: %w", path, err)
 			}
@@ -1825,6 +1922,7 @@ func startReloadRevProxy(socketPath string, buildComplete *sync.Cond, port strin
 
 	srv := http.Server{Handler: mux}
 	// FIXME(paulsmith): shutdown
+	//nolint:errcheck
 	go srv.Serve(ln)
 	fmt.Fprintf(os.Stdout, "\x1b[1;36m↑↑ PUSHUP DEV RELOADER ON http://%s ↑↑\x1b[0m\n", addr)
 	return nil
@@ -1898,6 +1996,7 @@ loop:
 	for {
 		select {
 		case <-built:
+			//nolint:errcheck
 			w.Write([]byte("event: reload\ndata: \n\n"))
 		case <-r.Context().Done():
 			if d.verboseLogging {
@@ -1906,6 +2005,7 @@ loop:
 			close(done)
 			break loop
 		case <-time.After(1 * time.Second):
+			//nolint:errcheck
 			w.Write([]byte(":keepalive\n\n"))
 			flusher.Flush()
 		}
@@ -1984,7 +2084,6 @@ func debounceEvents(ctx context.Context, interval time.Duration, watcher *fsnoti
 			}
 			log.Printf("file watch error: %v", err)
 		case ev, ok := <-watcher.Events:
-			// log.Printf("GOT EVENT: %s %d", ev.String(), ev.Op)
 			if !ok {
 				return
 			}
@@ -2073,6 +2172,8 @@ func (s *cancellationSource) Err() error {
 	return s.err
 }
 
+var _ context.Context = (*cancellationSource)(nil)
+
 func (s *cancellationSource) Value(key any) any {
 	panic("not implemented") // TODO: Implement
 }
@@ -2117,15 +2218,29 @@ func copyFileFS(fsys fs.FS, dest string, src string) error {
 
 type buildParams struct {
 	projectName string
-	pkgName     string
 	// path to directory with the compiled Pushup project code
 	compiledOutputDir string
 	buildDir          string
+	outFile           string
+	verbose           bool
 }
 
 // buildProject builds the Go program made up of the user's compiled .up
 // files and .go code, as well as Pushup's library APIs.
-func buildProject(ctx context.Context, b buildParams) error {
+func buildProject(_ context.Context, b buildParams) error {
+	var pkgName string
+	{
+		goModContents, err := os.ReadFile("go.mod")
+		if err != nil {
+			return fmt.Errorf("could not read go.mod: %w", err)
+		}
+		f, err := modfile.Parse("go.mod", goModContents, nil)
+		if err != nil {
+			return fmt.Errorf("parsing go.mod file: %w", err)
+		}
+		pkgName = f.Module.Mod.Path + "/build"
+	}
+
 	mainExeDir := filepath.Join(b.compiledOutputDir, "cmd", b.projectName)
 	if err := os.MkdirAll(mainExeDir, 0755); err != nil {
 		return fmt.Errorf("making directory for command: %w", err)
@@ -2136,13 +2251,20 @@ func buildProject(ctx context.Context, b buildParams) error {
 	if err != nil {
 		return fmt.Errorf("creating main.go: %w", err)
 	}
-	if err := t.Execute(f, map[string]any{"ProjectPkg": b.pkgName}); err != nil {
+	if err := t.Execute(f, map[string]any{"ProjectPkg": pkgName}); err != nil {
 		return fmt.Errorf("executing main.go template: %w", err)
 	}
 	f.Close()
 
-	exeName := b.projectName + ".exe"
-	args := []string{"build", "-o", filepath.Join(b.buildDir, "bin", exeName), filepath.Join(b.pkgName, "cmd", b.projectName)}
+	// The default output file is buildDir/bin/projectName
+	if b.outFile == "" {
+		b.outFile = filepath.Join(b.buildDir, "bin", b.projectName)
+	}
+
+	args := []string{"build", "-o", b.outFile, filepath.Join(pkgName, "cmd", b.projectName)}
+	if b.verbose {
+		fmt.Printf("build command: go %s\n", strings.Join(args, " "))
+	}
 	cmd := exec.Command("go", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -2197,6 +2319,8 @@ func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 				log.Printf("\x1b[35mFILE CHANGED\x1b[0m")
 			} else if ctx.final.source == cancelSourceSignal {
 				log.Printf("\x1b[34mSIGNAL TRAPPED\x1b[0m")
+			} else {
+				panic("unknown source of cancellation")
 			}
 		}
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
@@ -2258,6 +2382,10 @@ func compiledOutputPath(pfile projectFile, ftype upFileType) string {
 	rel, err := filepath.Rel(pfile.projectFilesSubdir, pfile.path)
 	if err != nil {
 		panic("internal error: relative path from project files subdir to .up file: " + err.Error())
+	}
+	// a .go file with a leading '$' in the name is invalid to the go tool
+	if rel[0] == '$' {
+		rel = "0x24" + rel[1:]
 	}
 	var dirs []string
 	dir := filepath.Dir(rel)
@@ -2465,7 +2593,7 @@ var _ node = (*nodeGoCode)(nil)
 type nodeIf struct {
 	cond *nodeGoStrExpr
 	then *nodeBlock
-	alt  *nodeBlock
+	alt  node
 }
 
 func (e nodeIf) Pos() span { return e.cond.pos }
@@ -2578,7 +2706,6 @@ func coalesceLiterals(nodes []node) []node {
 		}
 		nodes = nodes[:n+1]
 	}
-	// log.Printf("SAVED %d NODES", before-len(nodes))
 	return nodes
 }
 
@@ -2683,11 +2810,17 @@ func (p *parser) advanceOffset(delta int) {
 
 // syntaxError represents a synax error in the Pushup template language.
 type syntaxError struct {
+	// err is the underlying error that caused this syntax error
 	err error
+	// lineNo and column are the positions in the source code where the
+	// error occurred
+	lineNo int
+	column int
 }
 
 func (e syntaxError) Error() string {
-	return e.err.Error()
+	// TODO(paulsmith): add source file name
+	return fmt.Sprintf("%d:%d: %s", e.lineNo, e.column, e.err.Error())
 }
 
 // errorf signals that a syntax error in the Pushup template language has been
@@ -2695,7 +2828,18 @@ func (e syntaxError) Error() string {
 // calling the parser higher up in the call stack can recover from the panic
 // and test for a syntax error (syntaxError type).
 func (p *parser) errorf(format string, args ...any) {
-	panic(syntaxError{fmt.Errorf(format, args...)})
+	offset := p.offset
+	if offset >= len(p.src) {
+		offset = len(p.src) - 1
+	}
+	upToErr := p.src[:offset]
+	lineNo := strings.Count(upToErr, "\n") + 1
+	lastNL := strings.LastIndex(upToErr, "\n")
+	column := p.offset + 1
+	if lastNL > -1 {
+		column = p.offset - lastNL
+	}
+	panic(syntaxError{fmt.Errorf(format, args...), lineNo, column})
 }
 
 // htmlParser is the Pushup HTML parser. It wraps the golang.org/x/net/html
@@ -3125,13 +3269,35 @@ loop:
 	return result
 }
 
+type Optional[T any] struct {
+	value *T
+}
+
+func None[T any]() Optional[T] {
+	return Optional[T]{}
+}
+
+func Some[T any](val T) Optional[T] {
+	return Optional[T]{value: &val}
+}
+
+func Value[T any](o Optional[T]) (T, bool) {
+	if o.value != nil {
+		return *o.value, true
+	} else {
+		var zero T
+		return zero, false
+	}
+}
+
 type codeParser struct {
 	parser         *parser
 	baseOffset     int
 	file           *token.File
 	scanner        *scanner.Scanner
-	acceptedToken  goToken
-	lookaheadToken goToken
+	bufferedToken  Optional[goToken]
+	acceptedToken  Optional[goToken]
+	lookaheadToken Optional[goToken]
 }
 
 func (p *codeParser) reset() {
@@ -3141,8 +3307,9 @@ func (p *codeParser) reset() {
 	p.file = fset.AddFile("", fset.Base(), len(source))
 	p.scanner = new(scanner.Scanner)
 	p.scanner.Init(p.file, []byte(source), nil, scanner.ScanComments)
-	p.acceptedToken = goToken{}
-	p.lookaheadToken = goToken{}
+	p.bufferedToken = None[goToken]()
+	p.acceptedToken = None[goToken]()
+	p.lookaheadToken = None[goToken]()
 }
 
 func (p *codeParser) errorf(format string, args ...any) {
@@ -3157,7 +3324,12 @@ func (p *codeParser) sourceRange(start, end int) string {
 	return p.parser.src[start:end]
 }
 
-func (p *codeParser) lookahead() (t goToken) {
+func (p *codeParser) lookahead() goToken {
+	if tok, ok := Value(p.bufferedToken); ok {
+		p.bufferedToken = None[goToken]()
+		return tok
+	}
+	var t goToken
 	var lit string
 	t.pos, t.tok, lit = p.scanner.Scan()
 	// from go/scanner docs:
@@ -3181,7 +3353,6 @@ func (p *codeParser) lookahead() (t goToken) {
 	} else {
 		t.lit = t.tok.String()
 	}
-	// log.Printf("pos %v\ttok %v\tlit %v", t.pos, t.tok, t.lit)
 	return t
 }
 
@@ -3196,10 +3367,12 @@ func (t goToken) String() string {
 }
 
 func (p *codeParser) peek() goToken {
-	if p.lookaheadToken.pos == 0 {
-		p.lookaheadToken = p.lookahead()
+	if tok, ok := Value(p.lookaheadToken); ok {
+		return tok
 	}
-	return p.lookaheadToken
+	tok := p.lookahead()
+	p.lookaheadToken = Some(tok)
+	return tok
 }
 
 // charAt() returns the byte at the offset in the input source string. because
@@ -3215,23 +3388,44 @@ func (p *codeParser) charAt(offset int) byte {
 }
 
 func (p *codeParser) prev() goToken {
-	return p.acceptedToken
+	if tok, ok := Value(p.acceptedToken); ok {
+		return tok
+	}
+	panic("internal error: expected some accepted token, got none")
 }
 
 // sync synchronizes the global offset position in the main Pushup parser with
 // the Go code scanner.
 func (p *codeParser) sync() goToken {
 	t := p.peek()
+	// the Go scanner skips over whitespace so we need to be careful about the
+	// logic for advancing the main parser internal source offset.
 	p.parser.offset = p.tokenOffset(t) + len(t.String())
 	return t
 }
 
+// advance consumes the lookahead token (which should be accessed via p.peek())
 func (p *codeParser) advance() {
-	// the Go scanner skips over whitespace so we need to be careful about the
-	// logic for advancing the main parser internal source offset.
-	t := p.sync()
-	p.acceptedToken = t
-	p.lookaheadToken = p.lookahead()
+	p.acceptedToken = Some(p.sync())
+	p.lookaheadToken = Some(p.lookahead())
+}
+
+// backup undoes a call to p.advance(). may only be called once between calls
+// to p.advance(). must have called p.advance() at least once prior.
+func (p *codeParser) backup() {
+	if _, ok := Value(p.bufferedToken); ok {
+		panic("internal error: p.backup() called more than once before p.advance()")
+	}
+	if _, ok := Value(p.lookaheadToken); !ok {
+		panic("internal error: p.backup() called before p.advance()")
+	}
+	if tok, ok := Value(p.acceptedToken); ok {
+		p.parser.offset = p.tokenOffset(tok)
+	} else {
+		panic("internal error: expected some accepted token, got none")
+	}
+	p.bufferedToken = p.lookaheadToken
+	p.lookaheadToken = p.acceptedToken
 }
 
 func (p *codeParser) transition() *nodeBlock {
@@ -3332,10 +3526,23 @@ loop:
 		p.errorf("parsing Go expression in IF conditional: %w", err)
 	}
 	stmt.then = p.parseStmtBlock()
-	if p.peek().tok == token.ELSE {
+	// parse ^else clause
+	if p.peek().tok == token.XOR {
 		p.advance()
-		elseBlock := p.parseStmtBlock()
-		stmt.alt = elseBlock
+		if p.peek().tok == token.ELSE {
+			p.advance()
+			if p.peek().tok == token.XOR {
+				p.advance()
+				if p.peek().tok == token.IF {
+					p.advance()
+					stmt.alt = p.parseIfStmt()
+				} else {
+					p.errorf("expected `if' after transition character, got %v", p.peek().String())
+				}
+			} else {
+				stmt.alt = p.parseStmtBlock()
+			}
+		}
 	}
 	return &stmt
 }
@@ -3577,6 +3784,7 @@ loop:
 }
 
 // offset is the current global offset into the original source code of the Pushup file.
+//nolint:unused
 func (p *codeParser) offset() int {
 	return p.parser.offset
 }
@@ -3640,19 +3848,25 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 					p.advance()
 				}
 			} else if p.peek().tok == token.PERIOD {
+				last := p.peek().pos
 				p.advance()
-				if p.peek().tok == token.IDENT {
-					adv := 1 + len(p.peek().String())
-					end += adv
-					if unicode.IsSpace(rune(p.charAt(end))) {
-						// done
-						p.advance()
-						break
-					}
-					p.advance()
-				} else {
+				end++
+				// if space between period and next token, regardless of what
+				// it is, need to break. the period needs to be pushed back on
+				// to the stream to be parsed.
+				if p.peek().pos-last > 1 || p.peek().tok != token.IDENT {
+					p.backup()
+					end--
 					break
 				}
+				adv := len(p.peek().String())
+				end += adv
+				if unicode.IsSpace(rune(p.charAt(end))) {
+					// done
+					p.advance()
+					break
+				}
+				p.advance()
 			} else {
 				break
 			}
@@ -3671,6 +3885,7 @@ const padding = " "
 func prettyPrintTree(t *syntaxTree) {
 	depth := -1
 	var w io.Writer = os.Stdout
+	//nolint:errcheck
 	pad := func() { w.Write([]byte(strings.Repeat(padding, depth))) }
 	var f inspector
 	f = func(n node) bool {
@@ -3932,13 +4147,13 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#data-state
 		case openTagLexData:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '&':
+			switch ch {
+			case '&':
 				l.returnState = openTagLexData
 				l.switchState(openTagLexCharRef)
-			case ch == '<':
+			case '<':
 				l.switchState(openTagLexTagOpen)
-			case ch == 0:
+			case 0:
 				l.specParseError("unexpected-null-character")
 			default:
 				l.errorf("found '%c' in data state, expected '<'", ch)
@@ -3986,12 +4201,12 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-name-state
 		case openTagLexBeforeAttrName:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+			switch ch {
+			case '\t', '\n', '\f', ' ':
 				// ignore
-			case ch == '/' || ch == '>' || ch == eof:
+			case '/', '>', eof:
 				l.reconsumeIn(openTagLexAfterAttrName)
-			case ch == '=':
+			case '=':
 				l.errorf("found '%c' in before attribute name state", ch)
 			default:
 				l.newAttr()
@@ -4025,16 +4240,16 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-name-state
 		case openTagLexAfterAttrName:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+			switch ch {
+			case '\t', '\n', '\f', ' ':
 				// ignore
-			case ch == '/':
+			case '/':
 				l.switchState(openTagLexSelfClosingStartTag)
-			case ch == '=':
+			case '=':
 				l.switchState(openTagLexBeforeAttrVal)
-			case ch == '>':
+			case '>':
 				break loop
-			case ch == eof:
+			case eof:
 				l.specParseError("eof-in-tag")
 			default:
 				l.newAttr()
@@ -4044,14 +4259,14 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-value-state
 		case openTagLexBeforeAttrVal:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+			switch ch {
+			case '\t', '\n', '\f', ' ':
 				// ignore
-			case ch == '"':
+			case '"':
 				l.switchState(openTagLexAttrValDoubleQuote)
-			case ch == '\'':
+			case '\'':
 				l.switchState(openTagLexAttrValSingleQuote)
-			case ch == '>':
+			case '>':
 				l.specParseError("missing-attribute-value")
 				break loop
 			default:
@@ -4061,15 +4276,15 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(double-quoted)-state
 		case openTagLexAttrValDoubleQuote:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '"':
+			switch ch {
+			case '"':
 				l.switchState(openTagLexAfterAttrValQuoted)
-			case ch == '&':
+			case '&':
 				l.returnState = openTagLexAttrValDoubleQuote
 				l.switchState(openTagLexCharRef)
-			case ch == 0:
+			case 0:
 				l.errorf("found null in attribute value (double-quoted) state")
-			case ch == eof:
+			case eof:
 				l.errorf("found EOF in tag")
 			default:
 				l.appendCurrVal(ch)
@@ -4078,15 +4293,15 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(single-quoted)-state
 		case openTagLexAttrValSingleQuote:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '"':
+			switch ch {
+			case '"':
 				l.switchState(openTagLexAfterAttrValQuoted)
-			case ch == '&':
+			case '&':
 				l.returnState = openTagLexAttrValSingleQuote
 				l.switchState(openTagLexCharRef)
-			case ch == 0:
+			case 0:
 				l.errorf("found null in attribute value (single-quoted) state")
-			case ch == eof:
+			case eof:
 				l.errorf("found EOF in tag")
 			default:
 				l.appendCurrVal(ch)
@@ -4095,20 +4310,20 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(unquoted)-state
 		case openTagLexAttrValUnquoted:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+			switch ch {
+			case '\t', '\n', '\f', ' ':
 				l.switchState(openTagLexBeforeAttrName)
-			case ch == '&':
+			case '&':
 				l.returnState = openTagLexAttrValUnquoted
 				l.switchState(openTagLexCharRef)
-			case ch == '>':
+			case '>':
 				break loop
-			case ch == 0:
+			case 0:
 				l.errorf("found null in attribute value (unquoted) state")
-			case ch == '"' || ch == '\'' || ch == '<' || ch == '=' || ch == '`':
+			case '"', '\'', '<', '=', '`':
 				l.specParseError("unexpected-null-character")
 				l.appendCurrVal(ch)
-			case ch == eof:
+			case eof:
 				l.errorf("found EOF in tag")
 			default:
 				l.appendCurrVal(ch)
@@ -4117,14 +4332,14 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-value-(quoted)-state
 		case openTagLexAfterAttrValQuoted:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '\t' || ch == '\n' || ch == '\f' || ch == ' ':
+			switch ch {
+			case '\t', '\n', '\f', ' ':
 				l.switchState(openTagLexBeforeAttrName)
-			case ch == '/':
+			case '/':
 				l.switchState(openTagLexSelfClosingStartTag)
-			case ch == '>':
+			case '>':
 				break loop
-			case ch == eof:
+			case eof:
 				l.errorf("found EOF in tag")
 			default:
 				l.specParseError("missing-whitespace-between-attributes")
@@ -4150,10 +4365,10 @@ loop:
 		// https://html.spec.whatwg.org/multipage/parsing.html#self-closing-start-tag-state
 		case openTagLexSelfClosingStartTag:
 			ch := l.consumeNextInputChar()
-			switch {
-			case ch == '>':
+			switch ch {
+			case '>':
 				break loop
-			case ch == eof:
+			case eof:
 				l.errorf("found EOF in tag")
 			default:
 				l.specParseError("unexpected-solidus-in-tag")
@@ -4314,11 +4529,9 @@ func (l *openTagLexer) reconsumeIn(state openTagLexState) {
 }
 
 func (l *openTagLexer) exitingState(state openTagLexState) {
-	//log.Printf("<- %s", state)
 }
 
 func (l *openTagLexer) enteringState(state openTagLexState) {
-	//log.Printf("-> %s", state)
 }
 
 func (l *openTagLexer) switchState(state openTagLexState) {

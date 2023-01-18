@@ -15,7 +15,7 @@
         if err := deleteAlbum(DB, id); err != nil {
             return err
         }
-        http.Redirect(w, req, "/crud", http.StatusSeeOther)
+        http.Redirect(w, req, "/crud/", http.StatusSeeOther)
         return nil
     }
 }

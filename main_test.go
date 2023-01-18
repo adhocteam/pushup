@@ -6,15 +6,12 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"io/ioutil"
 	"log"
-	"math/rand"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -27,6 +24,7 @@ import (
 type testRequest struct {
 	name           string
 	path           string
+	queryParams    []string
 	expectedOutput string
 }
 
@@ -86,13 +84,15 @@ func TestPushup(t *testing.T) {
 								for _, line := range lines {
 									line := strings.TrimSpace(line)
 									if line != "" {
-										pair := strings.Split(line, "=")
+										pair := strings.SplitN(line, "=", 2)
 										if len(pair) != 2 {
 											t.Fatalf("illegal request key-value pair: %q", line)
 										}
 										switch pair[0] {
 										case "requestPath":
 											config.path = pair[1]
+										case "queryParam":
+											config.queryParams = append(config.queryParams, pair[1])
 										default:
 											log.Printf("unhandled request config key: %q", pair[0])
 										}
@@ -128,6 +128,8 @@ func TestPushup(t *testing.T) {
 
 				// FIXME(paulsmith): add metadata to the testdata files with the
 				// desired path to avoid these hacks
+				// TODO(paulsmith): strip /testdata/ from request paths so tests
+				// don't need to be aware of where they live
 				requestPath := "/testdata/" + basename
 				if basename == "index" {
 					requestPath = "/testdata/"
@@ -143,26 +145,30 @@ func TestPushup(t *testing.T) {
 				for _, request := range requests {
 					t.Run(request.name, func(t *testing.T) {
 						g, ctx0 := errgroup.WithContext(context.Background())
-						ctx, cancel := context.WithTimeout(ctx0, 5*time.Second)
+						ctx, cancel := context.WithTimeout(ctx0, 10*time.Second)
 						defer cancel()
 
 						ready := make(chan bool)
 						done := make(chan bool)
 
-						tmpdir, err := ioutil.TempDir("", "pushuptests")
+						tmpdir, err := os.MkdirTemp("", "pushup")
 						if err != nil {
 							t.Fatalf("creating temp dir: %v", err)
 						}
 						defer os.RemoveAll(tmpdir)
-						socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+"-"+strconv.Itoa(int(rand.Uint32()))+".sock")
+						socketPath := filepath.Join(tmpdir, "sock")
 
 						var errb bytes.Buffer
+						var stdout io.ReadCloser
+						var allgood bool
+						var cmd *exec.Cmd
 
 						g.Go(func() error {
-							cmd := exec.Command(pushup, "run", "-build-pkg", "github.com/AdHocRandD/pushup/build", "-page", pushupFile, "-unix-socket", socketPath)
+							cmd = exec.Command(pushup, "run", "-page", pushupFile, "-unix-socket", socketPath)
 							sysProcAttr(cmd)
 
-							stdout, err := cmd.StdoutPipe()
+							var err error
+							stdout, err = cmd.StdoutPipe()
 							if err != nil {
 								return err
 							}
@@ -173,44 +179,6 @@ func TestPushup(t *testing.T) {
 								return err
 							}
 
-							g.Go(func() error {
-								var buf [256]byte
-								// NOTE(paulsmith): keep this in sync with the string in main.go
-								needle := []byte("Pushup ready and listening on ")
-								select {
-								case <-ctx.Done():
-									err := ctx.Err()
-									return err
-								default:
-									for {
-										n, err := stdout.Read(buf[:])
-										if n > 0 {
-											if bytes.Contains(buf[:], needle) {
-												ready <- true
-												return nil
-											}
-										} else {
-											if errors.Is(err, io.EOF) {
-												return nil
-											}
-											return err
-										}
-									}
-								}
-							})
-
-							g.Go(func() error {
-								select {
-								case <-done:
-									syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
-									cmd.Wait()
-									return nil
-								case <-ctx.Done():
-									err := ctx.Err()
-									return err
-								}
-							})
-
 							if err := cmd.Wait(); err != nil {
 								return err
 							}
@@ -218,7 +186,50 @@ func TestPushup(t *testing.T) {
 							return nil
 						})
 
-						var allgood bool
+						g.Go(func() error {
+							var buf [256]byte
+							// NOTE(paulsmith): keep this in sync with the string in main.go
+							needle := []byte("Pushup ready and listening on ")
+							for {
+								select {
+								case <-ctx.Done():
+									err := ctx.Err()
+									return err
+								default:
+									if stdout != nil {
+										for {
+											n, err := stdout.Read(buf[:])
+											if n > 0 {
+												if bytes.Contains(buf[:], needle) {
+													ready <- true
+													return nil
+												}
+											} else {
+												if errors.Is(err, io.EOF) {
+													return nil
+												}
+												return err
+											}
+										}
+									}
+								}
+							}
+						})
+
+						g.Go(func() error {
+							select {
+							case <-done:
+								if cmd != nil {
+									if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
+										return err
+									}
+								}
+								return nil
+							case <-ctx.Done():
+								err := ctx.Err()
+								return err
+							}
+						})
 
 						g.Go(func() error {
 							select {
@@ -234,7 +245,12 @@ func TestPushup(t *testing.T) {
 									},
 								},
 							}
-							resp, err := client.Get("http://dummy" + request.path)
+							var queryParams string
+							if len(request.queryParams) > 0 {
+								queryParams = "?" + strings.Join(request.queryParams, "&")
+							}
+							reqUrl := "http://dummy" + request.path + queryParams
+							resp, err := client.Get(reqUrl)
 							if err != nil {
 								return nil
 							}
@@ -253,6 +269,7 @@ func TestPushup(t *testing.T) {
 						})
 
 						go func() {
+							//nolint:errcheck
 							g.Wait()
 							close(ready)
 							close(done)
@@ -260,6 +277,8 @@ func TestPushup(t *testing.T) {
 
 						if err := g.Wait(); err != nil {
 							if _, ok := err.(*exec.ExitError); ok && allgood {
+								// no-op
+							} else if _, ok := err.(*os.SyscallError); ok && allgood {
 								// no-op
 							} else {
 								t.Logf("stderr:\n%s\n", errb.String())
@@ -378,6 +397,11 @@ func TestCompiledOutputPath(t *testing.T) {
 			projectFile{path: "app/layouts/default.up", projectFilesSubdir: "app/layouts"},
 			"default.layout.up.go",
 			upFileLayout,
+		},
+		{
+			projectFile{path: "app/pages/$foo.up", projectFilesSubdir: "app/pages"},
+			"0x24foo.up.go",
+			upFilePage,
 		},
 	}
 
@@ -541,7 +565,7 @@ func TestParse(t *testing.T) {
 		{
 			`^if name != "" {
 	<h1>Hello, ^name!</h1>
-} else {
+} ^else {
 	<h1>Hello, world!</h1>
 }`,
 			&syntaxTree{
@@ -568,13 +592,13 @@ func TestParse(t *testing.T) {
 						},
 						alt: &nodeBlock{
 							nodes: []node{
-								&nodeLiteral{str: "\n\t", pos: span{start: 49, end: 51}},
+								&nodeLiteral{str: "\n\t", pos: span{start: 50, end: 52}},
 								&nodeElement{
 									tag:           tag{name: "h1"},
-									startTagNodes: []node{&nodeLiteral{str: "<h1>", pos: span{start: 51, end: 55}}},
-									pos:           span{start: 51, end: 55},
+									startTagNodes: []node{&nodeLiteral{str: "<h1>", pos: span{start: 52, end: 56}}},
+									pos:           span{start: 52, end: 56},
 									children: []node{
-										&nodeLiteral{str: "Hello, world!", pos: span{start: 55, end: 68}},
+										&nodeLiteral{str: "Hello, world!", pos: span{start: 56, end: 69}},
 									},
 								},
 							},
@@ -588,7 +612,7 @@ func TestParse(t *testing.T) {
     <div>
         <h1>Hello, world!</h1>
     </div>
-} else {
+} ^else {
     <div>
         <h1>Hello, ^name!</h1>
     </div>
@@ -624,24 +648,24 @@ func TestParse(t *testing.T) {
 						},
 						alt: &nodeBlock{
 							nodes: []node{
-								&nodeLiteral{str: "\n    ", pos: span{start: 77, end: 82}},
+								&nodeLiteral{str: "\n    ", pos: span{start: 78, end: 83}},
 								&nodeElement{
 									tag:           tag{name: "div"},
-									pos:           span{start: 82, end: 87},
-									startTagNodes: []node{&nodeLiteral{str: "<div>", pos: span{start: 82, end: 87}}},
+									pos:           span{start: 83, end: 88},
+									startTagNodes: []node{&nodeLiteral{str: "<div>", pos: span{start: 83, end: 88}}},
 									children: []node{
-										&nodeLiteral{str: "\n        ", pos: span{start: 87, end: 96}},
+										&nodeLiteral{str: "\n        ", pos: span{start: 88, end: 97}},
 										&nodeElement{
 											tag:           tag{name: "h1"},
-											startTagNodes: []node{&nodeLiteral{str: "<h1>", pos: span{start: 96, end: 100}}},
-											pos:           span{start: 96, end: 100},
+											startTagNodes: []node{&nodeLiteral{str: "<h1>", pos: span{start: 97, end: 101}}},
+											pos:           span{start: 97, end: 101},
 											children: []node{
-												&nodeLiteral{str: "Hello, ", pos: span{start: 100, end: 107}},
-												&nodeGoStrExpr{expr: "name", pos: span{start: 108, end: 112}},
-												&nodeLiteral{str: "!", pos: span{start: 112, end: 113}},
+												&nodeLiteral{str: "Hello, ", pos: span{start: 101, end: 108}},
+												&nodeGoStrExpr{expr: "name", pos: span{start: 109, end: 113}},
+												&nodeLiteral{str: "!", pos: span{start: 113, end: 114}},
 											},
 										},
-										&nodeLiteral{str: "\n    ", pos: span{start: 118, end: 123}},
+										&nodeLiteral{str: "\n    ", pos: span{start: 119, end: 124}},
 									},
 								},
 							},
@@ -869,6 +893,27 @@ func TestParse(t *testing.T) {
 				},
 			},
 		},
+		{
+			`My name is ^name. What's yours?`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeLiteral{str: "My name is ", pos: span{end: 11}},
+					&nodeGoStrExpr{expr: "name", pos: span{start: 12, end: 16}},
+					&nodeLiteral{str: ". What's yours?", pos: span{start: 16, end: 31}},
+				},
+			},
+		},
+		{
+			`<p>^foo.</p>`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeLiteral{str: "<p>", pos: span{end: 3}},
+					&nodeGoStrExpr{expr: "foo", pos: span{start: 4, end: 7}},
+					&nodeLiteral{str: ".", pos: span{start: 7, end: 8}},
+					&nodeLiteral{str: "</p>", pos: span{start: 8, end: 12}},
+				},
+			},
+		},
 	}
 	opts := cmp.AllowUnexported(unexported...)
 	for _, test := range tests {
@@ -887,8 +932,16 @@ func TestParse(t *testing.T) {
 func TestParseSyntaxErrors(t *testing.T) {
 	tests := []struct {
 		input string
+		// expected error conditions
+		lineNo int
+		column int
 	}{
-		{"^if"},
+		{"^if", 1, 4},
+		{
+			`^if true {
+	<illegal />
+}`, 2, 13,
+		},
 		// FIXME(paulsmith): add more syntax errors
 	}
 
@@ -900,6 +953,13 @@ func TestParseSyntaxErrors(t *testing.T) {
 			}
 			if err == nil {
 				t.Errorf("expected parse error, got nil")
+			}
+			serr, ok := err.(syntaxError)
+			if !ok {
+				t.Errorf("expected syntax error type, got %T", err)
+			}
+			if tt.lineNo != serr.lineNo || tt.column != serr.column {
+				t.Errorf("line:column: want %d:%d, got %d:%d", tt.lineNo, tt.column, serr.lineNo, serr.column)
 			}
 		})
 	}

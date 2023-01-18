@@ -25,29 +25,32 @@
     <h2>^title</h2>
 </hgroup>
 
-<h3>Pushup is a modern web framework for Go with an old-school PHP vibe.</h3>
+<p>You just created, built, and ran a new web in Pushup.</p>
 
-<h4>Features</h4>
-
-<ul>
-    <li>Compiled</li>
-    <li>Modern hypertext</li>
-    <li>File-based routing</li>
-    <li>Builds on Go <tt>net/http</tt></li>
-    <li>Live-reloading dev mode</li>
-</ul>
+<p>Pushup is a server-side web framework for Go.</p>
 
 <p>It is currently ^time.Now().Format(time.UnixDate).</p>
 
-<h4>What to do next?</h4>
-<ul>
-    <li>Design the layout template at <tt>app/layouts/default.up</tt></li>
-    <li>Override this file at <tt>app/pages/index.up</tt></li>
-    ^if !devReloadFlagSet {
-        <li>Check out the live reloading mode with the CLI flag <tt>-dev</tt></li>
-    } else {
-        <li>Great, you set the <tt>-dev</tt> flag for live reloading!</li>
-    }
-    <li>Add new Pushup pages to <tt>app/pages</tt> and see them appear as routes</li>
-    <li><a href="https://github.com/AdHocRandD/pushup/blob/main/README.md">Read the docs</a></li>
-</ul>
+<section>
+    <h3>Features</h3>
+    <ul>
+        <li><strong>Page-oriented</strong> &mdash; <tt>.up</tt> files combining HTML and Go map to URL routes</li>
+        <li><strong>Compiled</strong> &mdash; compiles to pure Go code using <tt>net/http</tt>, builds a single static binary executable</li>
+        <li><strong>Inline partials</strong> &mdash; enhanced hypermedia for better client-side interactivity with less JavaScript</li>
+    </ul>
+</section>
+
+<section>
+    <h3>What to do next?</h3>
+    <ul>
+        <li>Design the layout template at <tt>app/layouts/default.up</tt></li>
+        <li>Override this file at <tt>app/pages/index.up</tt></li>
+        ^if !devReloadFlagSet {
+            <li>Check out the live reloading mode with the CLI flag <tt>-dev</tt></li>
+        } ^else {
+            <li>Great, you set the <tt>-dev</tt> flag for live reloading!</li>
+        }
+        <li>Add new Pushup pages to <tt>app/pages</tt> and see them appear as routes</li>
+        <li><a href="https://adhocteam.github.io/pushup/docs/">Read the docs</a></li>
+    </ul>
+</section>
