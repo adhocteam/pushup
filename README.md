@@ -12,6 +12,7 @@ Pushup is an experiment. In terms of the development life cycle, it should be co
 -   [Pushup - a page-oriented web framework for Go](#pushup---a-page-oriented-web-framework-for-go)
     -   [What is Pushup?](#what-is-pushup)
         -   [Pages in Pushup](#pages-in-pushup)
+    -   [Quick start with Docker](#quick-start-with-docker)
     -   [Getting started](#getting-started)
         -   [Installing Pushup](#installing-pushup)
             -   [Prerequisites](#prerequisites)
@@ -111,6 +112,24 @@ You would then place this code in a file somewhere in your `app/pages`
 directory, like `hello.up`. The `.up` extension is important and tells
 the compiler that it is a Pushup page. Once you build and run your Pushup app,
 that page is automatically mapped to the URL path `/hello`.
+
+## Quick start with Docker
+
+```shell
+git clone https://github.com/adhocteam/pushup.git
+cd pushup
+make build-docker
+```
+
+Then create a scaffolded new project in the current directory:
+
+```shell
+docker run --rm -v $(pwd):/usr/src/app --user $(id -u):$(id -g) pushup new myproject
+cd myproject
+docker run --rm -v $(pwd):/usr/src/app --user $(id -u):$(id -g) -p 8080:8080 pushup run
+```
+
+See [Creating a new Pushup project](#creating-a-new-pushup-project) for more information.
 
 ## Getting started
 
