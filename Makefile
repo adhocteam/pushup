@@ -23,3 +23,10 @@ entities.go: tools/getnamedcharrefs.go
 
 banner.txt:
 	echo '^ Pushup' | figlet -c -k -f lean | tr ' _/' ' //' > $@
+
+lint:
+	$(if $(shell command -v golangci-lint 2> /dev/null),$(info),$(error Please install golangci-lint https://golangci-lint.run/usage/install/))
+	golangci-lint run
+
+.PHONY: lint
+
