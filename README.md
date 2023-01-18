@@ -112,6 +112,22 @@ directory, like `hello.up`. The `.up` extension is important and tells
 the compiler that it is a Pushup page. Once you build and run your Pushup app,
 that page is automatically mapped to the URL path `/hello`.
 
+## Quick start with Docker
+
+```shell
+git clone git@github.com:AdHocRandD/pushup.git
+cd pushup
+make build-docker
+```
+
+Then create a scaffolded new project in the current directory:
+
+```shell
+docker run --rm -v $(pwd):/usr/src/app --user $(id -u):$(id -g) -p 8080:8080 pushup new
+```
+
+See [Creating a new Pushup project](#creating-a-new-pushup-project) for more information.
+
 ## Getting started
 
 To make a new Pushup app, first install the main Pushup executable.
