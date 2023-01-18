@@ -15,11 +15,11 @@ jobs:
     steps:
       - uses: actions/setup-go@v3
         with:
-          # golang-ci doesn't support 1.18 yet (!)
+          # golang-ci action doesn't support 1.18 yet (!) so we'll run it ourselves. This
+          # kind of sucks because we lose out on caching and annotations, but
+          # we can't compile on 1.17. golang-ci action seems to be pretty dead
           # https://github.com/golangci/golangci-lint-action/issues/434#issuecomment-1088100765
-          go-version: 1.17
+          go-version: 1.19
       - uses: actions/checkout@v3
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
-        with:
-          version: v1.29
+        run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.50.1 && golangci-lint run
