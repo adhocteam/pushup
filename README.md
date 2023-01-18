@@ -116,7 +116,7 @@ that page is automatically mapped to the URL path `/hello`.
 ## Quick start with Docker
 
 ```shell
-git clone git@github.com:AdHocRandD/pushup.git
+git clone https://github.com/adhocteam/pushup.git
 cd pushup
 make build-docker
 ```
@@ -124,7 +124,9 @@ make build-docker
 Then create a scaffolded new project in the current directory:
 
 ```shell
-docker run --rm -v $(pwd):/usr/src/app --user $(id -u):$(id -g) -p 8080:8080 pushup new
+docker run --rm -v $(pwd):/usr/src/app --user $(id -u):$(id -g) pushup new myproject
+cd myproject
+docker run --rm -v $(pwd):/usr/src/app --user $(id -u):$(id -g) -p 8080:8080 pushup run
 ```
 
 See [Creating a new Pushup project](#creating-a-new-pushup-project) for more information.
