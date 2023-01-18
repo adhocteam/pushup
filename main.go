@@ -137,9 +137,8 @@ func newNewCmd(arguments []string) *newCmd {
 	flags := flag.NewFlagSet("pushup new", flag.ExitOnError)
 	moduleNameFlag := newRegexString(`^\w[\w-]*$`, "example/myproject")
 	flags.Var(moduleNameFlag, "module", "name of Go module of the new Pushup app")
-	if err := flags.Parse(arguments); err != nil {
-		log.Fatalf("unable to parse arguments: %s", err)
-	}
+	//nolint:errcheck
+	flags.Parse(arguments)
 	if flags.NArg() > 1 {
 		log.Fatalf("extra unprocessed argument(s)")
 	}
@@ -277,9 +276,8 @@ func newBuildCmd(arguments []string) *buildCmd {
 	flags := flag.NewFlagSet("pushup build", flag.ExitOnError)
 	b := new(buildCmd)
 	setBuildFlags(flags, b)
-	if err := flags.Parse(arguments); err != nil {
-		log.Fatalf("unable to parse arguments: %s", err)
-	}
+	//nolint:errcheck
+	flags.Parse(arguments)
 	if flags.NArg() == 1 {
 		b.projectDir = flags.Arg(0)
 	} else {
@@ -371,9 +369,9 @@ func newRunCmd(arguments []string) *runCmd {
 	port := flags.String("port", "8080", "port to listen on with TCP IPv4")
 	unixSocket := flags.String("unix-socket", "", "path to listen on with Unix socket")
 	devReload := flags.Bool("dev", false, "compile and run the Pushup app and reload on changes")
-	if err := flags.Parse(arguments); err != nil {
-		log.Fatalf("unable to parse arguments: %s", err)
-	}
+
+	//nolint:errcheck
+	flags.Parse(arguments)
 	// FIXME this logic is duplicated with newBuildCmd
 	if flags.NArg() == 1 {
 		b.projectDir = flags.Arg(0)
@@ -505,9 +503,8 @@ type routesCmd struct {
 func newRoutesCmd(args []string) *routesCmd {
 	flags := flag.NewFlagSet("pushup routes", flag.ExitOnError)
 	r := new(routesCmd)
-	if err := flags.Parse(args); err != nil {
-		log.Fatalf("unable to parse arguments: %s", err)
-	}
+	//nolint:errcheck
+	flags.Parse(args)
 	if flags.NArg() == 1 {
 		r.projectDir = flags.Arg(0)
 	} else {
