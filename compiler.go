@@ -5,7 +5,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
+)
+
+type upFileType int
+
+const (
+	upFilePage upFileType = iota
+	upFileLayout
 )
 
 type compileProjectParams struct {
@@ -149,6 +157,32 @@ func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compilePr
 	return nil
 }
 
+// compiledOutputPath returns the filename for the .go file containing the
+// generated code for the Pushup page.
+func compiledOutputPath(pfile projectFile, ftype upFileType) string {
+	rel, err := filepath.Rel(pfile.projectFilesSubdir, pfile.path)
+	if err != nil {
+		panic("internal error: relative path from project files subdir to .up file: " + err.Error())
+	}
+	// a .go file with a leading '$' in the name is invalid to the go tool
+	if rel[0] == '$' {
+		rel = "0x24" + rel[1:]
+	}
+	var dirs []string
+	dir := filepath.Dir(rel)
+	if dir != "." {
+		dirs = strings.Split(dir, string([]rune{os.PathSeparator}))
+	}
+	file := filepath.Base(rel)
+	base := strings.TrimSuffix(file, filepath.Ext(file))
+	suffix := upFileExt
+	if ftype == upFileLayout {
+		suffix = ".layout.up"
+	}
+	result := strings.Join(append(dirs, base), "__") + suffix + ".go"
+	return result
+}
+
 type compileParams struct {
 	source             io.Reader
 	dest               io.Writer
@@ -206,6 +240,19 @@ func compile(params compileParams) error {
 
 	if _, err := params.dest.Write(code); err != nil {
 		return fmt.Errorf("writing generated page code: %w", err)
+	}
+
+	return nil
+}
+
+func copyFile(dest, src string) error {
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(dest, b, 0664); err != nil {
+		return err
 	}
 
 	return nil

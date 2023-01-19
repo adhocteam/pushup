@@ -22,7 +22,6 @@ import (
 	"syscall"
 	"text/tabwriter"
 	"text/template"
-	"time"
 	"unicode"
 
 	"golang.org/x/mod/modfile"
@@ -712,107 +711,6 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 	return pf, nil
 }
 
-type layout struct {
-	imports []importDecl
-	nodes   []node
-}
-
-func newLayoutFromTree(tree *syntaxTree) (*layout, error) {
-	layout := &layout{}
-	n := 0
-	var f inspector = func(e node) bool {
-		switch e := e.(type) {
-		case *nodeImport:
-			layout.imports = append(layout.imports, e.decl)
-		default:
-			layout.nodes = append(layout.nodes, e)
-			n++
-		}
-		return false
-	}
-	inspect(nodeList(tree.nodes), f)
-	layout.nodes = layout.nodes[:n]
-	return layout, nil
-}
-
-// cancellationSource implements the context.Context interface and allows a
-// caller to distinguish between one of two possible contexts for which one was
-// responsible for cancellation, by testing for identity against the `final'
-// struct member.
-type cancellationSource struct {
-	a     contextSource
-	b     contextSource
-	final contextSource
-	done  chan struct{}
-	err   error
-}
-
-type contextSource struct {
-	context.Context
-	source cancelSourceID
-}
-
-type cancelSourceID int
-
-const (
-	cancelSourceFileChange cancelSourceID = iota
-	cancelSourceSignal
-)
-
-func newCancellationSource(a contextSource, b contextSource) *cancellationSource {
-	s := new(cancellationSource)
-	s.a = a
-	s.b = b
-	s.done = make(chan struct{})
-	go s.run()
-	return s
-}
-
-func (s *cancellationSource) run() {
-	select {
-	case <-s.a.Done():
-		s.final = s.a
-		s.err = s.final.Err()
-	case <-s.b.Done():
-		s.final = s.b
-		s.err = s.final.Err()
-	case <-s.done:
-		return
-	}
-	close(s.done)
-}
-
-func (s *cancellationSource) Deadline() (deadline time.Time, ok bool) {
-	return time.Time{}, false
-}
-
-func (s *cancellationSource) Done() <-chan struct{} {
-	return s.done
-}
-
-func (s *cancellationSource) Err() error {
-	return s.err
-}
-
-var _ context.Context = (*cancellationSource)(nil)
-
-func (s *cancellationSource) Value(key any) any {
-	panic("not implemented") // TODO: Implement
-}
-
-func copyFile(dest, src string) error {
-	b, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(dest, b, 0664); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 //go:embed _runtime/pushup_support.go _runtime/cmd/main.go
 var runtimeFiles embed.FS
 
@@ -991,123 +889,6 @@ func dirExists(path string) bool {
 	return fi.IsDir()
 }
 
-type upFileType int
-
-const (
-	upFilePage upFileType = iota
-	upFileLayout
-)
-
-// compiledOutputPath returns the filename for the .go file containing the
-// generated code for the Pushup page.
-func compiledOutputPath(pfile projectFile, ftype upFileType) string {
-	rel, err := filepath.Rel(pfile.projectFilesSubdir, pfile.path)
-	if err != nil {
-		panic("internal error: relative path from project files subdir to .up file: " + err.Error())
-	}
-	// a .go file with a leading '$' in the name is invalid to the go tool
-	if rel[0] == '$' {
-		rel = "0x24" + rel[1:]
-	}
-	var dirs []string
-	dir := filepath.Dir(rel)
-	if dir != "." {
-		dirs = strings.Split(dir, string([]rune{os.PathSeparator}))
-	}
-	file := filepath.Base(rel)
-	base := strings.TrimSuffix(file, filepath.Ext(file))
-	suffix := upFileExt
-	if ftype == upFileLayout {
-		suffix = ".layout.up"
-	}
-	result := strings.Join(append(dirs, base), "__") + suffix + ".go"
-	return result
-}
-
-// generatedTypename returns the name of the type of the Go struct that
-// holds the generated code for the Pushup page and related methods.
-func generatedTypename(pfile projectFile, ftype upFileType) string {
-	relpath := pfile.relpath()
-	ext := filepath.Ext(relpath)
-	relpath = relpath[:len(relpath)-len(ext)]
-	typename := typenameFromPath(relpath)
-	var suffix string
-	switch ftype {
-	case upFilePage:
-		suffix = "Page"
-	case upFileLayout:
-		suffix = "Layout"
-	default:
-		panic("unhandled file type")
-	}
-	result := typename + suffix
-	return result
-}
-
-func generatedTypenamePartial(partial *partial, pfile projectFile) string {
-	relpath := pfile.relpath()
-	ext := filepath.Ext(relpath)
-	relpath = relpath[:len(relpath)-len(ext)]
-	typename := typenameFromPath(strings.Join([]string{relpath, partial.urlpath()}, "/"))
-	result := typename + "Partial"
-	return result
-}
-
-// routeForPage produces the URL path route from the name of the Pushup page.
-// relpath is the path to the Pushup file, relative to its containing app
-// directory in the Pushup project (so that part should not be part of the
-// path).
-func routeForPage(relpath string) string {
-	var dirs []string
-	dir := filepath.Dir(relpath)
-	if dir != "." {
-		dirs = strings.Split(dir, string([]rune{os.PathSeparator}))
-	}
-	file := filepath.Base(relpath)
-	base := strings.TrimSuffix(file, filepath.Ext(file))
-	var route string
-	if base != "index" {
-		dirs = append(dirs, base)
-	}
-	for i := range dirs {
-		if strings.HasPrefix(dirs[i], "$") {
-			dirs[i] = ":" + dirs[i][1:]
-		}
-	}
-	route = "/" + strings.Join(dirs, "/")
-	if base == "index" && route[len(route)-1] != '/' {
-		// indexes always have a trailing slash
-		route += "/"
-	}
-	return route
-}
-
-func routeForPartial(relpath string, partialUrlpath string) string {
-	prefix := strings.TrimSuffix(relpath, filepath.Ext(relpath))
-	if filepath.Base(prefix) == "index" {
-		prefix = filepath.Dir(prefix)
-	}
-	route := routeForPage(prefix + "/" + partialUrlpath)
-	return route
-}
-
-func layoutName(relpath string) string {
-	ext := filepath.Ext(relpath)
-	if ext != upFileExt {
-		panic("internal error: unexpected file extension " + ext)
-	}
-	return strings.TrimSuffix(relpath, ext)
-}
-
-type span struct {
-	start int
-	end   int
-}
-
-func lineCount(s string) int {
-	return strings.Count(s, "\n") + 1
-}
-
 func typenameFromPath(path string) string {
 	path = strings.ReplaceAll(path, "$", "DollarSign_")
 	buf := make([]rune, len(path))
@@ -1127,11 +908,6 @@ func typenameFromPath(path string) string {
 		}
 	}
 	return string(buf[:i])
-}
-
-type importDecl struct {
-	pkgName string
-	path    string
 }
 
 func init() {

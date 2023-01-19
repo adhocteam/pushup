@@ -2,6 +2,11 @@ package main
 
 import "fmt"
 
+type span struct {
+	start int
+	end   int
+}
+
 // node represents a portion of the Pushup syntax, like a chunk of HTML,
 // or a Go expression to be evaluated, or a control flow construct like `if'
 // or `for'.

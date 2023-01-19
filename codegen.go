@@ -7,9 +7,38 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
+
+type importDecl struct {
+	pkgName string
+	path    string
+}
+
+type layout struct {
+	imports []importDecl
+	nodes   []node
+}
+
+func newLayoutFromTree(tree *syntaxTree) (*layout, error) {
+	layout := &layout{}
+	n := 0
+	var f inspector = func(e node) bool {
+		switch e := e.(type) {
+		case *nodeImport:
+			layout.imports = append(layout.imports, e.decl)
+		default:
+			layout.nodes = append(layout.nodes, e)
+			n++
+		}
+		return false
+	}
+	inspect(nodeList(tree.nodes), f)
+	layout.nodes = layout.nodes[:n]
+	return layout, nil
+}
 
 type layoutCodeGen struct {
 	layout  *layout
@@ -45,6 +74,10 @@ func newLayoutCodeGen(layout *layout, pfile projectFile, source string) *layoutC
 		l.imports[im] = true
 	}
 	return l
+}
+
+func lineCount(s string) int {
+	return strings.Count(s, "\n") + 1
 }
 
 func (c *layoutCodeGen) lineNo(s span) int {
@@ -151,6 +184,14 @@ func (g *layoutCodeGen) genNode(n node) {
 		return true
 	}
 	inspect(n, f)
+}
+
+func layoutName(relpath string) string {
+	ext := filepath.Ext(relpath)
+	if ext != upFileExt {
+		panic("internal error: unexpected file extension " + ext)
+	}
+	return strings.TrimSuffix(relpath, ext)
 }
 
 const methodReceiverName = "up"
@@ -628,6 +669,44 @@ func (g *pageCodeGen) genNodePartial(n node, p *partial) {
 	inspect(n, f)
 }
 
+// routeForPage produces the URL path route from the name of the Pushup page.
+// relpath is the path to the Pushup file, relative to its containing app
+// directory in the Pushup project (so that part should not be part of the
+// path).
+func routeForPage(relpath string) string {
+	var dirs []string
+	dir := filepath.Dir(relpath)
+	if dir != "." {
+		dirs = strings.Split(dir, string([]rune{os.PathSeparator}))
+	}
+	file := filepath.Base(relpath)
+	base := strings.TrimSuffix(file, filepath.Ext(file))
+	var route string
+	if base != "index" {
+		dirs = append(dirs, base)
+	}
+	for i := range dirs {
+		if strings.HasPrefix(dirs[i], "$") {
+			dirs[i] = ":" + dirs[i][1:]
+		}
+	}
+	route = "/" + strings.Join(dirs, "/")
+	if base == "index" && route[len(route)-1] != '/' {
+		// indexes always have a trailing slash
+		route += "/"
+	}
+	return route
+}
+
+func routeForPartial(relpath string, partialUrlpath string) string {
+	prefix := strings.TrimSuffix(relpath, filepath.Ext(relpath))
+	if filepath.Base(prefix) == "index" {
+		prefix = filepath.Dir(prefix)
+	}
+	route := routeForPage(prefix + "/" + partialUrlpath)
+	return route
+}
+
 func genCodePage(g *pageCodeGen) ([]byte, error) {
 	type initRoute struct {
 		typename string
@@ -864,4 +943,33 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 	}
 
 	return formatted, nil
+}
+
+// generatedTypename returns the name of the type of the Go struct that
+// holds the generated code for the Pushup page and related methods.
+func generatedTypename(pfile projectFile, ftype upFileType) string {
+	relpath := pfile.relpath()
+	ext := filepath.Ext(relpath)
+	relpath = relpath[:len(relpath)-len(ext)]
+	typename := typenameFromPath(relpath)
+	var suffix string
+	switch ftype {
+	case upFilePage:
+		suffix = "Page"
+	case upFileLayout:
+		suffix = "Layout"
+	default:
+		panic("unhandled file type")
+	}
+	result := typename + suffix
+	return result
+}
+
+func generatedTypenamePartial(partial *partial, pfile projectFile) string {
+	relpath := pfile.relpath()
+	ext := filepath.Ext(relpath)
+	relpath = relpath[:len(relpath)-len(ext)]
+	typename := typenameFromPath(strings.Join([]string{relpath, partial.urlpath()}, "/"))
+	result := typename + "Partial"
+	return result
 }
