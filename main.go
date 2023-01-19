@@ -22,7 +22,6 @@ import (
 	"syscall"
 	"text/tabwriter"
 	"text/template"
-	"unicode"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/net/html/atom"
@@ -887,27 +886,6 @@ func dirExists(path string) bool {
 		panic(err)
 	}
 	return fi.IsDir()
-}
-
-func typenameFromPath(path string) string {
-	path = strings.ReplaceAll(path, "$", "DollarSign_")
-	buf := make([]rune, len(path))
-	i := 0
-	wordBoundary := true
-	for _, r := range path {
-		if unicode.IsLetter(r) || unicode.IsNumber(r) {
-			if wordBoundary {
-				wordBoundary = false
-				buf[i] = unicode.ToUpper(r)
-			} else {
-				buf[i] = r
-			}
-			i++
-		} else {
-			wordBoundary = true
-		}
-	}
-	return string(buf[:i])
 }
 
 func init() {

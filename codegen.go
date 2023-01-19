@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 type importDecl struct {
@@ -972,4 +973,25 @@ func generatedTypenamePartial(partial *partial, pfile projectFile) string {
 	typename := typenameFromPath(strings.Join([]string{relpath, partial.urlpath()}, "/"))
 	result := typename + "Partial"
 	return result
+}
+
+func typenameFromPath(path string) string {
+	path = strings.ReplaceAll(path, "$", "DollarSign_")
+	buf := make([]rune, len(path))
+	i := 0
+	wordBoundary := true
+	for _, r := range path {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			if wordBoundary {
+				wordBoundary = false
+				buf[i] = unicode.ToUpper(r)
+			} else {
+				buf[i] = r
+			}
+			i++
+		} else {
+			wordBoundary = true
+		}
+	}
+	return string(buf[:i])
 }
