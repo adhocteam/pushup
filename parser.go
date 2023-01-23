@@ -350,11 +350,11 @@ func (p *htmlParser) parseTextToken() []node {
 	p.parser.offset = newOffset
 	leading := p.raw[:idx]
 	if idx > 0 {
-		var htmlNode nodeLiteral
-		htmlNode.pos.start = p.start
-		htmlNode.pos.end = p.start + len(leading)
-		htmlNode.str = leading
-		nodes = append(nodes, &htmlNode)
+		e := new(nodeLiteral)
+		e.pos.start = p.start
+		e.pos.end = p.start + len(leading)
+		e.str = leading
+		nodes = append(nodes, e)
 	}
 	// NOTE(paulsmith): this bubbles up nil due to parseImportKeyword,
 	// the result of which we don't treat as a node in the syntax tree
