@@ -223,50 +223,51 @@ func (p *htmlParser) emitLiteralFromRange(start, end int) node {
 }
 
 func (p *htmlParser) parseStartTag() []node {
-	var nodes []node
-
+	// if there are no attributes, there's no more processing to do
 	if len(p.attrs) == 0 {
-		nodes = append(nodes, p.emitLiteralFromRange(0, len(p.raw)))
-	} else {
-		// bytesRead keeps track of how far we've parsed into this p.raw string
-		bytesRead := 0
+		return []node{p.emitLiteralFromRange(0, len(p.raw))}
+	}
 
-		for _, attr := range p.attrs {
-			name := attr.name.string
-			value := attr.value.string
-			nameStartPos := int(attr.name.start)
-			valStartPos := int(attr.value.start)
-			nameEndPos := nameStartPos + len(name)
-			valEndPos := valStartPos + len(value)
+	nodes := []node{}
 
-			// emit raw chars between tag name or last attribute and this
-			// attribute
-			if n := nameStartPos - bytesRead; n > 0 {
-				nodes = append(nodes, p.emitLiteralFromRange(bytesRead, bytesRead+n))
-				bytesRead += n
-			}
+	// bytesRead keeps track of how far we've parsed into this p.raw string
+	bytesRead := 0
 
-			// emit attribute name
-			nameNodes, newPos := p.parseAttributeNameOrValue(name, nameStartPos, nameEndPos, bytesRead)
-			nodes = append(nodes, nameNodes...)
-			bytesRead = newPos
+	for _, attr := range p.attrs {
+		name := attr.name.string
+		value := attr.value.string
+		nameStartPos := int(attr.name.start)
+		valStartPos := int(attr.value.start)
+		nameEndPos := nameStartPos + len(name)
+		valEndPos := valStartPos + len(value)
 
-			if valStartPos > bytesRead {
-				// emit any chars, including equals and quotes, between
-				// attribute name and attribute value, if any
-				nodes = append(nodes, p.emitLiteralFromRange(bytesRead, valStartPos))
-				bytesRead = valStartPos
-
-				// emit attribute value
-				valNodes, newPos := p.parseAttributeNameOrValue(value, valStartPos, valEndPos, bytesRead)
-				nodes = append(nodes, valNodes...)
-				bytesRead = newPos
-			}
+		// emit raw chars between tag name or last attribute and this
+		// attribute
+		if n := nameStartPos - bytesRead; n > 0 {
+			nodes = append(nodes, p.emitLiteralFromRange(bytesRead, bytesRead+n))
+			bytesRead += n
 		}
 
-		// emit anything from the last attribute to the close of the tag
-		nodes = append(nodes, p.emitLiteralFromRange(bytesRead, len(p.raw)))
+		// emit attribute name
+		nameNodes, newPos := p.parseAttributeNameOrValue(name, nameStartPos, nameEndPos, bytesRead)
+		nodes = append(nodes, nameNodes...)
+		bytesRead = newPos
+
+		if valStartPos > bytesRead {
+			// emit any chars, including equals and quotes, between
+			// attribute name and attribute value, if any
+			nodes = append(nodes, p.emitLiteralFromRange(bytesRead, valStartPos))
+			bytesRead = valStartPos
+
+			// emit attribute value
+			valNodes, newPos := p.parseAttributeNameOrValue(value, valStartPos, valEndPos, bytesRead)
+			nodes = append(nodes, valNodes...)
+			bytesRead = newPos
+		}
 	}
+
+	// emit anything from the last attribute to the close of the tag
+	nodes = append(nodes, p.emitLiteralFromRange(bytesRead, len(p.raw)))
 
 	return nodes
 }
