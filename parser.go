@@ -279,6 +279,86 @@ func (p *htmlParser) emitLiteral() node {
 	return e
 }
 
+func (p *htmlParser) parseTextToken() []node {
+	nodes := []node{}
+	if idx := strings.IndexRune(p.raw, transSym); idx >= 0 {
+		if escaped := strings.Index(p.raw, transSymEsc); escaped >= 0 {
+			// it's an escaped transition symbol
+			if escaped > 0 {
+				// emit the leading text before the doubled escape
+				e := new(nodeLiteral)
+				e.pos.start = p.start
+				e.pos.end = p.start + escaped
+				e.str = p.raw[:escaped]
+				nodes = append(nodes, e)
+			}
+			e := new(nodeLiteral)
+			e.pos.start = p.start + escaped
+			e.pos.end = p.start + escaped + 2
+			e.str = transSymStr
+			nodes = append(nodes, e)
+			p.parser.offset = p.start + escaped + 2
+		} else {
+			// FIXME(paulsmith): clean this up!
+			if strings.HasPrefix(p.raw[idx+1:], "layout") {
+				s := p.raw[idx+1+len("layout"):]
+				n := 0
+				if len(s) < 1 || s[0] != ' ' {
+					p.errorf(transSymStr + "layout must be followed by a space")
+				}
+				s = s[1:]
+				n++
+				e := new(nodeLayout)
+				if len(s) > 0 && s[0] == '!' {
+					e.name = "!"
+					n++
+				} else {
+					var name []rune
+					for {
+						r, size := utf8.DecodeRuneInString(s)
+						if r == 0 {
+							break
+						}
+						if unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' || r == '-' || r == '.' {
+							name = append(name, r)
+							s = s[size:]
+							n += size
+						} else {
+							break
+						}
+					}
+					e.name = string(name)
+				}
+				e.pos.start = p.start + idx + 1
+				newOffset := e.pos.start + len("layout") + n
+				e.pos.end = newOffset
+				p.parser.offset = newOffset
+				nodes = append(nodes, e)
+			} else {
+				newOffset := p.start + idx + 1
+				p.parser.offset = newOffset
+				leading := p.raw[:idx]
+				if idx > 0 {
+					var htmlNode nodeLiteral
+					htmlNode.pos.start = p.start
+					htmlNode.pos.end = p.start + len(leading)
+					htmlNode.str = leading
+					nodes = append(nodes, &htmlNode)
+				}
+				// NOTE(paulsmith): this bubbles up nil due to parseImportKeyword,
+				// the result of which we don't treat as a node in the syntax tree
+				if e := p.transition(); e != nil {
+					nodes = append(nodes, e)
+				}
+			}
+		}
+	} else {
+		nodes = append(nodes, p.emitLiteral())
+	}
+
+	return nodes
+}
+
 func (p *htmlParser) parseDocument() *syntaxTree {
 	tree := new(syntaxTree)
 
@@ -298,81 +378,7 @@ tokenLoop:
 		case html.EndTagToken, html.DoctypeToken, html.CommentToken:
 			tree.nodes = append(tree.nodes, p.emitLiteral())
 		case html.TextToken:
-			if idx := strings.IndexRune(p.raw, transSym); idx >= 0 {
-				if escaped := strings.Index(p.raw, transSymEsc); escaped >= 0 {
-					// it's an escaped transition symbol
-					if escaped > 0 {
-						// emit the leading text before the doubled escape
-						e := new(nodeLiteral)
-						e.pos.start = p.start
-						e.pos.end = p.start + escaped
-						e.str = p.raw[:escaped]
-						tree.nodes = append(tree.nodes, e)
-					}
-					e := new(nodeLiteral)
-					e.pos.start = p.start + escaped
-					e.pos.end = p.start + escaped + 2
-					e.str = transSymStr
-					tree.nodes = append(tree.nodes, e)
-					p.parser.offset = p.start + escaped + 2
-				} else {
-					// FIXME(paulsmith): clean this up!
-					if strings.HasPrefix(p.raw[idx+1:], "layout") {
-						s := p.raw[idx+1+len("layout"):]
-						n := 0
-						if len(s) < 1 || s[0] != ' ' {
-							p.errorf(transSymStr + "layout must be followed by a space")
-						}
-						s = s[1:]
-						n++
-						e := new(nodeLayout)
-						if len(s) > 0 && s[0] == '!' {
-							e.name = "!"
-							n++
-						} else {
-							var name []rune
-							for {
-								r, size := utf8.DecodeRuneInString(s)
-								if r == 0 {
-									break
-								}
-								if unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' || r == '-' || r == '.' {
-									name = append(name, r)
-									s = s[size:]
-									n += size
-								} else {
-									break
-								}
-							}
-							e.name = string(name)
-						}
-						e.pos.start = p.start + idx + 1
-						newOffset := e.pos.start + len("layout") + n
-						e.pos.end = newOffset
-						p.parser.offset = newOffset
-						tree.nodes = append(tree.nodes, e)
-					} else {
-						newOffset := p.start + idx + 1
-						p.parser.offset = newOffset
-						leading := p.raw[:idx]
-						if idx > 0 {
-							var htmlNode nodeLiteral
-							htmlNode.pos.start = p.start
-							htmlNode.pos.end = p.start + len(leading)
-							htmlNode.str = leading
-							tree.nodes = append(tree.nodes, &htmlNode)
-						}
-						e := p.transition()
-						// NOTE(paulsmith): this bubbles up nil due to parseImportKeyword,
-						// the result of which we don't treat as a node in the syntax tree
-						if e != nil {
-							tree.nodes = append(tree.nodes, e)
-						}
-					}
-				}
-			} else {
-				tree.nodes = append(tree.nodes, p.emitLiteral())
-			}
+			tree.nodes = append(tree.nodes, p.parseTextToken()...)
 		default:
 			panic("")
 		}
