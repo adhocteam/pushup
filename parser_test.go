@@ -25,12 +25,25 @@ func TestParse(t *testing.T) {
 			`<a href="^^foo"></a>`,
 			&syntaxTree{
 				nodes: []node{
-					&nodeLiteral{str: "<a ", pos: span{end: 3}},
-					&nodeLiteral{str: "href", pos: span{start: 3, end: 7}},
-					&nodeLiteral{str: `="`, pos: span{start: 7, end: 9}},
-					&nodeLiteral{str: "^", pos: span{start: 9, end: 10}},
-					&nodeLiteral{str: `foo">`, pos: span{start: 11, end: 16}},
-					&nodeLiteral{str: "</a>", pos: span{start: 16, end: 20}},
+					&nodeElement{
+						tag: tag{
+							name: "a",
+							attrs: []*attr{
+								{
+									name:  stringPos{string: "href", start: pos(3)},
+									value: stringPos{string: "^^foo", start: pos(9)},
+								},
+							},
+						},
+						startTagNodes: []node{
+							&nodeLiteral{str: "<a ", pos: span{end: 3}},
+							&nodeLiteral{str: "href", pos: span{start: 3, end: 7}},
+							&nodeLiteral{str: `="`, pos: span{start: 7, end: 9}},
+							&nodeLiteral{str: "^", pos: span{start: 9, end: 10}},
+							&nodeLiteral{str: `foo">`, pos: span{start: 11, end: 16}},
+						},
+						pos: span{start: 0, end: 16},
+					},
 				},
 			},
 		},
@@ -42,11 +55,23 @@ func TestParse(t *testing.T) {
 `,
 			&syntaxTree{
 				nodes: []node{
-					&nodeLiteral{str: "<p>", pos: span{start: 0, end: 3}},
-					&nodeLiteral{str: "Hello, ", pos: span{start: 3, end: 10}},
-					&nodeGoStrExpr{expr: "name", pos: span{start: 11, end: 15}},
-					&nodeLiteral{str: "!", pos: span{start: 15, end: 16}},
-					&nodeLiteral{str: "</p>", pos: span{start: 16, end: 20}},
+					&nodeElement{
+						tag: tag{
+							name: "p",
+						},
+						startTagNodes: []node{
+							&nodeLiteral{str: "<p>", pos: span{end: 3}},
+						},
+						children: []node{
+							&nodeLiteral{str: "Hello, ", pos: span{start: 3, end: 10}},
+							&nodeGoStrExpr{expr: "name", pos: span{start: 11, end: 15}},
+							&nodeLiteral{str: "!", pos: span{start: 15, end: 16}},
+						},
+						pos: span{
+							start: 0,
+							end:   3,
+						},
+					},
 					&nodeLiteral{str: "\n", pos: span{start: 20, end: 21}},
 					&nodeGoCode{code: "name := \"world\"\n", pos: span{start: 23, end: 39}},
 					&nodeLiteral{str: "\n", pos: span{start: 42, end: 43}},
@@ -215,13 +240,28 @@ func TestParse(t *testing.T) {
 			`<a href="^url">x</a>`,
 			&syntaxTree{
 				nodes: []node{
-					&nodeLiteral{str: "<a ", pos: span{start: 0, end: 3}},
-					&nodeLiteral{str: "href", pos: span{start: 3, end: 7}},
-					&nodeLiteral{str: "=\"", pos: span{start: 7, end: 9}},
-					&nodeGoStrExpr{expr: "url", pos: span{start: 0, end: 3}}, // FIXME(paulsmith): should be 9 and 13 but this part of the parser is not correct yet
-					&nodeLiteral{str: "\">", pos: span{start: 13, end: 15}},
-					&nodeLiteral{str: "x", pos: span{start: 15, end: 16}},
-					&nodeLiteral{str: "</a>", pos: span{start: 16, end: 20}},
+					&nodeElement{
+						tag: tag{
+							name: "a",
+							attrs: []*attr{
+								{
+									name:  stringPos{string: "href", start: 3},
+									value: stringPos{string: "^url", start: 9},
+								},
+							},
+						},
+						startTagNodes: []node{
+							&nodeLiteral{str: "<a ", pos: span{start: 0, end: 3}},
+							&nodeLiteral{str: "href", pos: span{start: 3, end: 7}},
+							&nodeLiteral{str: "=\"", pos: span{start: 7, end: 9}},
+							&nodeGoStrExpr{expr: "url", pos: span{start: 0, end: 3}}, // FIXME(paulsmith): should be 9 and 13 but this part of the parser is not correct yet
+							&nodeLiteral{str: "\">", pos: span{start: 13, end: 15}},
+						},
+						children: []node{
+							&nodeLiteral{str: "x", pos: span{start: 15, end: 16}},
+						},
+						pos: span{start: 0, end: 15},
+					},
 				},
 			},
 		},
@@ -398,10 +438,17 @@ func TestParse(t *testing.T) {
 			`<p>^foo.</p>`,
 			&syntaxTree{
 				nodes: []node{
-					&nodeLiteral{str: "<p>", pos: span{end: 3}},
-					&nodeGoStrExpr{expr: "foo", pos: span{start: 4, end: 7}},
-					&nodeLiteral{str: ".", pos: span{start: 7, end: 8}},
-					&nodeLiteral{str: "</p>", pos: span{start: 8, end: 12}},
+					&nodeElement{
+						tag: tag{name: "p"},
+						startTagNodes: []node{
+							&nodeLiteral{str: "<p>", pos: span{end: 3}},
+						},
+						children: []node{
+							&nodeGoStrExpr{expr: "foo", pos: span{start: 4, end: 7}},
+							&nodeLiteral{str: ".", pos: span{start: 7, end: 8}},
+						},
+						pos: span{start: 0, end: 3},
+					},
 				},
 			},
 		},

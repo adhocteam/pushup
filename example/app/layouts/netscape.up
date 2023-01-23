@@ -22,7 +22,7 @@
         <main>
             ^outputSection("contents")
         </main>
-        <hr>
+        <hr />
         <footer>
             <p>&copy;2022 Ad Hoc</p>
         </footer>

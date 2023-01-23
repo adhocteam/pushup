@@ -379,9 +379,13 @@ tokenLoop:
 			}
 		}
 		switch p.toktyp {
-		case html.StartTagToken, html.SelfClosingTagToken:
+		case html.StartTagToken:
+			tree.nodes = append(tree.nodes, p.parseElement())
+		case html.SelfClosingTagToken:
 			tree.nodes = append(tree.nodes, p.parseStartTag()...)
-		case html.EndTagToken, html.DoctypeToken, html.CommentToken:
+		case html.EndTagToken:
+			panic("UNREACHABLE")
+		case html.DoctypeToken, html.CommentToken:
 			tree.nodes = append(tree.nodes, p.emitLiteral())
 		case html.TextToken:
 			tree.nodes = append(tree.nodes, p.parseTextToken()...)

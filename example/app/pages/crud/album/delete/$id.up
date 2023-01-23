@@ -26,7 +26,7 @@
 
 <p><a href="/crud/album/^album.id">No, get me out of here</a></p>
 <form method="post">
-    <input type="hidden" name="_method" value="delete">
-    <input type="hidden" name="id" value="^album.id">
+    <input type="hidden" name="_method" value="delete" />
+    <input type="hidden" name="id" value="^album.id" />
     <button>Yes, delete</button>
 </form>
