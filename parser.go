@@ -279,6 +279,43 @@ func (p *htmlParser) emitLiteral() node {
 	return e
 }
 
+func (p *htmlParser) parseLayout() node {
+	idx := strings.IndexRune(p.raw, transSym)
+	s := p.raw[idx+1+len("layout"):]
+	n := 0
+	if len(s) < 1 || s[0] != ' ' {
+		p.errorf(transSymStr + "layout must be followed by a space")
+	}
+	s = s[1:]
+	n++
+	e := new(nodeLayout)
+	if len(s) > 0 && s[0] == '!' {
+		e.name = "!"
+		n++
+	} else {
+		var name []rune
+		for {
+			r, size := utf8.DecodeRuneInString(s)
+			if r == 0 {
+				break
+			}
+			if unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' || r == '-' || r == '.' {
+				name = append(name, r)
+				s = s[size:]
+				n += size
+			} else {
+				break
+			}
+		}
+		e.name = string(name)
+	}
+	e.pos.start = p.start + idx + 1
+	newOffset := e.pos.start + len("layout") + n
+	e.pos.end = newOffset
+	p.parser.offset = newOffset
+	return e
+}
+
 func (p *htmlParser) parseTextToken() []node {
 	nodes := []node{}
 	if idx := strings.IndexRune(p.raw, transSym); idx >= 0 {
@@ -299,41 +336,8 @@ func (p *htmlParser) parseTextToken() []node {
 			nodes = append(nodes, e)
 			p.parser.offset = p.start + escaped + 2
 		} else {
-			// FIXME(paulsmith): clean this up!
 			if strings.HasPrefix(p.raw[idx+1:], "layout") {
-				s := p.raw[idx+1+len("layout"):]
-				n := 0
-				if len(s) < 1 || s[0] != ' ' {
-					p.errorf(transSymStr + "layout must be followed by a space")
-				}
-				s = s[1:]
-				n++
-				e := new(nodeLayout)
-				if len(s) > 0 && s[0] == '!' {
-					e.name = "!"
-					n++
-				} else {
-					var name []rune
-					for {
-						r, size := utf8.DecodeRuneInString(s)
-						if r == 0 {
-							break
-						}
-						if unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' || r == '-' || r == '.' {
-							name = append(name, r)
-							s = s[size:]
-							n += size
-						} else {
-							break
-						}
-					}
-					e.name = string(name)
-				}
-				e.pos.start = p.start + idx + 1
-				newOffset := e.pos.start + len("layout") + n
-				e.pos.end = newOffset
-				p.parser.offset = newOffset
-				nodes = append(nodes, e)
+				nodes = append(nodes, p.parseLayout())
 			} else {
 				newOffset := p.start + idx + 1
 				p.parser.offset = newOffset
