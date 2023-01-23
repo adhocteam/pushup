@@ -317,49 +317,50 @@ func (p *htmlParser) parseLayout() node {
 }
 
 func (p *htmlParser) parseTextToken() []node {
-	nodes := []node{}
-	if idx := strings.IndexRune(p.raw, transSym); idx >= 0 {
-		if escaped := strings.Index(p.raw, transSymEsc); escaped >= 0 {
-			// it's an escaped transition symbol
-			if escaped > 0 {
-				// emit the leading text before the doubled escape
-				e := new(nodeLiteral)
-				e.pos.start = p.start
-				e.pos.end = p.start + escaped
-				e.str = p.raw[:escaped]
-				nodes = append(nodes, e)
-			}
-			e := new(nodeLiteral)
-			e.pos.start = p.start + escaped
-			e.pos.end = p.start + escaped + 2
-			e.str = transSymStr
-			nodes = append(nodes, e)
-			p.parser.offset = p.start + escaped + 2
-		} else {
-			if strings.HasPrefix(p.raw[idx+1:], "layout") {
-				nodes = append(nodes, p.parseLayout())
-			} else {
-				newOffset := p.start + idx + 1
-				p.parser.offset = newOffset
-				leading := p.raw[:idx]
-				if idx > 0 {
-					var htmlNode nodeLiteral
-					htmlNode.pos.start = p.start
-					htmlNode.pos.end = p.start + len(leading)
-					htmlNode.str = leading
-					nodes = append(nodes, &htmlNode)
-				}
-				// NOTE(paulsmith): this bubbles up nil due to parseImportKeyword,
-				// the result of which we don't treat as a node in the syntax tree
-				if e := p.transition(); e != nil {
-					nodes = append(nodes, e)
-				}
-			}
-		}
-	} else {
-		nodes = append(nodes, p.emitLiteral())
+	if !strings.ContainsRune(p.raw, transSym) {
+		return []node{p.emitLiteral()}
 	}
 
+	if escaped := strings.Index(p.raw, transSymEsc); escaped >= 0 {
+		// it's an escaped transition symbol
+		nodes := []node{}
+		if escaped > 0 {
+			// emit the leading text before the doubled escape
+			e := new(nodeLiteral)
+			e.pos.start = p.start
+			e.pos.end = p.start + escaped
+			e.str = p.raw[:escaped]
+			nodes = append(nodes, e)
+		}
+		e := new(nodeLiteral)
+		e.pos.start = p.start + escaped
+		e.pos.end = p.start + escaped + 2
+		e.str = transSymStr
+		nodes = append(nodes, e)
+		p.parser.offset = p.start + escaped + 2
+		return nodes
+	}
+
+	idx := strings.IndexRune(p.raw, transSym)
+	if strings.HasPrefix(p.raw[idx+1:], "layout") {
+		return []node{p.parseLayout()}
+	}
+	nodes := []node{}
+	newOffset := p.start + idx + 1
+	p.parser.offset = newOffset
+	leading := p.raw[:idx]
+	if idx > 0 {
+		var htmlNode nodeLiteral
+		htmlNode.pos.start = p.start
+		htmlNode.pos.end = p.start + len(leading)
+		htmlNode.str = leading
+		nodes = append(nodes, &htmlNode)
+	}
+	// NOTE(paulsmith): this bubbles up nil due to parseImportKeyword,
+	// the result of which we don't treat as a node in the syntax tree
+	if e := p.transition(); e != nil {
+		nodes = append(nodes, e)
+	}
 	return nodes
 }
 
