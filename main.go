@@ -16,6 +16,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,11 +34,25 @@ const upFileExt = ".up"
 
 func main() {
 	var version bool
+	var cpuprofile = flag.String("cpuprofile", "", "")
+	var memprofile = flag.String("memprofile", "", "")
 
 	flag.Usage = printPushupHelp
 	flag.BoolVar(&version, "version", false, "Print the version number and exit")
 
 	flag.Parse()
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		defer f.Close() // error handling omitted for example
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
 
 	if version {
 		printVersion(os.Stdout)
@@ -61,19 +77,34 @@ func main() {
 	cmdName := flag.Arg(0)
 	args := flag.Args()[1:]
 
+	var found bool
 	for _, c := range cliCmds {
 		if c.name == cmdName {
+			found = true
 			cmd := c.fn(args)
 			if err := cmd.do(); err != nil {
 				log.Fatalf("%s command: %v", c.name, err)
-			} else {
-				os.Exit(0)
 			}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "unknown command %q\n", cmdName)
-	flag.Usage()
-	os.Exit(1)
+
+	if !found {
+		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmdName)
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+		defer f.Close() // error handling omitted for example
+		runtime.GC()    // get up-to-date statistics
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatal("could not write memory profile: ", err)
+		}
+	}
 }
 
 type regexString struct {
@@ -534,10 +565,12 @@ var cliCmds = []cliCmd{
 
 func printPushupHelp() {
 	w := tabwriter.NewWriter(os.Stderr, 0, 0, 1, ' ', 0)
-	fmt.Fprintln(w, "Usage: pushup [command] [options]")
+	fmt.Fprintln(w, "Usage: pushup [flags] [command] [options]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Flags:")
 	fmt.Fprintln(w, "\t-version\t\tPrint the version number and exit")
+	fmt.Fprintln(w, "\t-cpuprofile\t\tWrite CPU profile to `file`")
+	fmt.Fprintln(w, "\t-memprofile\t\tWrite memory profile to `file`")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
 	for _, c := range cliCmds {
