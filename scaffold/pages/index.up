@@ -25,7 +25,7 @@
     <h2>^title</h2>
 </hgroup>
 
-<p>You just created, built, and ran a new web in Pushup.</p>
+<p>You just created, built, and ran a new web app in Pushup.</p>
 
 <p>Pushup is a server-side web framework for Go.</p>
 
