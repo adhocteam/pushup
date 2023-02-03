@@ -368,6 +368,9 @@ func newRunCmd(arguments []string) *runCmd {
 	return &runCmd{buildCmd: b, host: *host, port: *port, unixSocket: *unixSocket, devReload: *devReload}
 }
 
+var errFileChanged = fmt.Errorf("file change detected")
+var errSignalCaught = fmt.Errorf("signal caught")
+
 func (r *runCmd) do() error {
 	if err := r.buildCmd.do(); err != nil {
 		return fmt.Errorf("build command: %w", err)
@@ -377,14 +380,14 @@ func (r *runCmd) do() error {
 		return nil
 	}
 
-	// TODO(paulsmith): add a linkOnly flag (or a releaseMode flag,
-	// alternatively?)
-	ctx := newPushupContext(context.Background())
+	// TODO(paulsmith): add a linkOnly flag (or a releaseMode flag, alternatively?)
 
 	if r.devReload {
 		var mu sync.Mutex
 		buildComplete := sync.NewCond(&mu)
+
 		reload := make(chan struct{})
+
 		tmpdir, err := os.MkdirTemp("", "pushupdev")
 		if err != nil {
 			return fmt.Errorf("creating temp dir: %v", err)
@@ -394,28 +397,26 @@ func (r *runCmd) do() error {
 		if err = startReloadRevProxy(socketPath, buildComplete, r.port); err != nil {
 			return fmt.Errorf("starting reverse proxy: %v", err)
 		}
+
 		ln, err := net.Listen("unix", socketPath)
 		if err != nil {
 			return fmt.Errorf("listening on Unix socket: %v", err)
 		}
-		go func() {
-			for {
+
+		for {
+			ctx, cancel := context.WithCancelCause(context.Background())
+			signals := make(chan os.Signal, 1)
+			signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+
+			go func() {
 				select {
 				case <-reload:
-					ctx.fileChangeCancel()
-				case <-ctx.sigNotifyCtx.Done():
-					ctx.sigStop()
-					return
+					cancel(errFileChanged)
+				case <-signals:
+					cancel(errSignalCaught)
+				case <-ctx.Done():
 				}
-			}
-		}()
-		for {
-			select {
-			case <-ctx.sigNotifyCtx.Done():
-				ctx.sigStop()
-				return nil
-			default:
-			}
+			}()
 
 			if err := r.rescanProjectFiles(); err != nil {
 				return fmt.Errorf("scanning for project files: %v", err)
@@ -437,8 +438,6 @@ func (r *runCmd) do() error {
 				}
 			}
 
-			ctx = newPushupContext(context.Background())
-
 			{
 				params := buildParams{
 					projectName:       r.projectName.String(),
@@ -448,14 +447,18 @@ func (r *runCmd) do() error {
 				if err := buildProject(ctx, params); err != nil {
 					return fmt.Errorf("building Pushup project: %v", err)
 				}
+				buildComplete.Broadcast()
 			}
 
-			buildComplete.Broadcast()
-			go func() {
-				watchForReload(ctx, ctx.fileChangeCancel, r.appDir, reload)
-			}()
+			watchForReload(ctx, r.appDir, reload)
 			if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()), ln); err != nil {
 				return fmt.Errorf("building and running generated Go code: %v", err)
+			}
+
+			signal.Stop(signals)
+
+			if err := context.Cause(ctx); errors.Is(err, errSignalCaught) {
+				return nil
 			}
 		}
 	} else {
@@ -473,7 +476,7 @@ func (r *runCmd) do() error {
 				return fmt.Errorf("listening on TCP socket: %v", err)
 			}
 		}
-		if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()), ln); err != nil {
+		if err := runProject(context.Background(), filepath.Join(r.outDir, "bin", r.projectName.String()), ln); err != nil {
 			return fmt.Errorf("building and running generated Go code: %v", err)
 		}
 	}
@@ -832,15 +835,12 @@ func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 		case <-done:
 			return nil
 		}
-		// FIXME(paulsmith): don't like this interface
-		if ctx, ok := ctx.(*pushupContext); ok {
-			if ctx.final.source == cancelSourceFileChange {
-				log.Printf("\x1b[35mFILE CHANGED\x1b[0m")
-			} else if ctx.final.source == cancelSourceSignal {
-				log.Printf("\x1b[34mSIGNAL TRAPPED\x1b[0m")
-			} else {
-				panic("unknown source of cancellation")
-			}
+		if err := context.Cause(ctx); errors.Is(err, errFileChanged) {
+			log.Printf("\x1b[35mFILE CHANGED\x1b[0m")
+		} else if errors.Is(err, errSignalCaught) {
+			log.Printf("\x1b[34mSIGNAL TRAPPED\x1b[0m")
+		} else {
+			log.Printf("context cancelled (unknown reason)")
 		}
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
 			return fmt.Errorf("syscall kill: %w", err)
@@ -859,8 +859,7 @@ func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 		// waiting for context cancellation.
 		if err := cmd.Wait(); err != nil {
 			if ee, ok := err.(*exec.ExitError); ok {
-				// FIXME(paulsmith): don't like this interface
-				if _, ok := ctx.(*pushupContext); !ok {
+				if err := context.Cause(ctx); errors.Is(err, errFileChanged) || errors.Is(err, errSignalCaught) {
 					return fmt.Errorf("wait: %w", ee)
 				}
 			} else {
