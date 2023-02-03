@@ -386,8 +386,6 @@ func (r *runCmd) do() error {
 		var mu sync.Mutex
 		buildComplete := sync.NewCond(&mu)
 
-		reload := make(chan struct{})
-
 		tmpdir, err := os.MkdirTemp("", "pushupdev")
 		if err != nil {
 			return fmt.Errorf("creating temp dir: %v", err)
@@ -407,6 +405,7 @@ func (r *runCmd) do() error {
 			ctx, cancel := context.WithCancelCause(context.Background())
 			signals := make(chan os.Signal, 1)
 			signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+			reload := make(chan struct{})
 
 			go func() {
 				select {
