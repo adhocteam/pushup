@@ -557,25 +557,6 @@ func printBanner() {
 	fmt.Fprintf(os.Stdout, "\n%s\n", banner)
 }
 
-type pushupContext struct {
-	*cancellationSource
-	fileChangeCtx    context.Context
-	fileChangeCancel context.CancelFunc
-	sigNotifyCtx     context.Context
-	sigStop          context.CancelFunc
-}
-
-func newPushupContext(parent context.Context) *pushupContext {
-	c := new(pushupContext)
-	c.fileChangeCtx, c.fileChangeCancel = context.WithCancel(parent)
-	c.sigNotifyCtx, c.sigStop = signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
-	c.cancellationSource = newCancellationSource(
-		contextSource{c.fileChangeCtx, cancelSourceFileChange},
-		contextSource{c.sigNotifyCtx, cancelSourceSignal},
-	)
-	return c
-}
-
 // project file represents an .up file in a Pushup project context.
 type projectFile struct {
 	// path from cwd to the .up file
