@@ -365,6 +365,24 @@ func (p *htmlParser) parseTextToken() []node {
 	return nodes
 }
 
+// https://html.spec.whatwg.org/multipage/syntax.html#void-elements
+var voidElements = []string{
+	"area",
+	"base",
+	"br",
+	"col",
+	"embed",
+	"hr",
+	"img",
+	"input",
+	"link",
+	"meta",
+	"param",
+	"source",
+	"track",
+	"wbr",
+}
+
 func (p *htmlParser) parseDocument() *syntaxTree {
 	tree := new(syntaxTree)
 
@@ -379,6 +397,7 @@ tokenLoop:
 			}
 		}
 		switch p.toktyp {
+		// TODO(paulsmith): check for void element self-closing tags
 		case html.StartTagToken:
 			tree.nodes = append(tree.nodes, p.parseElement())
 		case html.SelfClosingTagToken:
@@ -510,6 +529,8 @@ loop:
 			elem := elemStack[len(elemStack)-1]
 			if elem.tag.name == string(p.tagname) {
 				elemStack = elemStack[:len(elemStack)-1]
+				// NOTE(paulsmith): we don't put the end tag on the result AST,
+				// because the thinking is that it's implied by the start tag.
 				p.advance()
 			} else {
 				p.errorf("mismatch end tag, expected </%s>, got </%s>", elem.tag.name, p.tagname)

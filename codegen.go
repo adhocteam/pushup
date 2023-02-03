@@ -509,6 +509,14 @@ func (g *pageCodeGen) generate() {
 	g.genNode(nodeList(nodes))
 }
 
+func (g *pageCodeGen) genElement(e *nodeElement, f inspector) {
+	g.used("io")
+	g.nodeLineNo(e)
+	f(nodeList(e.startTagNodes))
+	f(nodeList(e.children))
+	g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.tag.end()))
+}
+
 func (g *pageCodeGen) genNode(n node) {
 	var f inspector
 	f = func(e node) bool {
@@ -518,11 +526,7 @@ func (g *pageCodeGen) genNode(n node) {
 			g.nodeLineNo(e)
 			g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.str))
 		case *nodeElement:
-			g.used("io")
-			g.nodeLineNo(e)
-			f(nodeList(e.startTagNodes))
-			f(nodeList(e.children))
-			g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.tag.end()))
+			g.genElement(e, f)
 			return false
 		case *nodeGoStrExpr:
 			g.nodeLineNo(e)
