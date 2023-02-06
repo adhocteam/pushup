@@ -51,6 +51,6 @@
             <li>Great, you set the <tt>-dev</tt> flag for live reloading!</li>
         }
         <li>Add new Pushup pages to <tt>app/pages</tt> and see them appear as routes</li>
-        <li><a href="https://adhocteam.github.io/pushup/docs/">Read the docs</a></li>
+        <li><a href="https://pushup.adhoc.dev/docs/">Read the docs</a></li>
     </ul>
 </section>
