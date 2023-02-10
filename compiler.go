@@ -76,13 +76,6 @@ func compileProject(c *compileProjectParams) error {
 		}
 	}
 
-	// "compile" user Go code
-	for _, path := range c.files.gofiles {
-		if err := copyFile(filepath.Join(c.outDir, filepath.Base(path)), path); err != nil {
-			return fmt.Errorf("copying Go package file %s: %w", path, err)
-		}
-	}
-
 	// "compile" static files
 	for _, pfile := range c.files.static {
 		relpath := pfile.relpath()

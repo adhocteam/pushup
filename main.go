@@ -623,8 +623,6 @@ type projectFiles struct {
 	layouts []projectFile
 	// paths to static files like JS, CSS, etc.
 	static []projectFile
-	// paths to user-contributed .go code
-	gofiles []string // TODO(paulsmith): convert to projectFile
 }
 
 //nolint:unused
@@ -640,10 +638,6 @@ func (f *projectFiles) debug() {
 	fmt.Println("static:")
 	for _, p := range f.static {
 		fmt.Printf("\t%v\n", p)
-	}
-	fmt.Println("gofiles:")
-	for _, p := range f.gofiles {
-		fmt.Printf("\t%s\n", p)
 	}
 }
 
@@ -683,25 +677,6 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 				return nil, fmt.Errorf("invalid Pushup project directory structure: couldn't find `pages` subdir")
 			} else {
 				return nil, err
-			}
-		}
-	}
-
-	pkgDir := filepath.Join(appDir, "pkg")
-	{
-		entries, err := os.ReadDir(pkgDir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("invalid Pushup project directory structure: couldn't find `pkg` subdir")
-			} else {
-				return nil, fmt.Errorf("reading app pkg directory: %w", err)
-			}
-		}
-
-		for _, entry := range entries {
-			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
-				path := filepath.Join(pkgDir, entry.Name())
-				pf.gofiles = append(pf.gofiles, path)
 			}
 		}
 	}
