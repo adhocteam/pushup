@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -29,6 +31,19 @@ type testRequest struct {
 }
 
 func TestPushup(t *testing.T) {
+	// do a `kill -QUIT <pid>` to get a stack trace of all goroutines, useful
+	// if the test seems to hang
+	go func() {
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGQUIT)
+		buf := make([]byte, 1<<20)
+		for {
+			<-sigs
+			stacklen := runtime.Stack(buf, true)
+			log.Printf("=== received SIGQUIT ===\n*** goroutine dump...\n%s\n*** end\n", buf[:stacklen])
+		}
+	}()
+
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
@@ -159,30 +174,27 @@ func TestPushup(t *testing.T) {
 						socketPath := filepath.Join(tmpdir, "sock")
 
 						var errb bytes.Buffer
-						var stdout io.ReadCloser
 						var allgood bool
 						var cmd *exec.Cmd
 
+						cmd = exec.Command(pushup, "run", "-page", pushupFile, "-unix-socket", socketPath)
+						sysProcAttr(cmd)
+
+						stdout, err := cmd.StdoutPipe()
+						if err != nil {
+							t.Fatal(err)
+						}
+
+						cmd.Stderr = &errb
+
+						if err := cmd.Start(); err != nil {
+							t.Fatal(err)
+						}
+
 						g.Go(func() error {
-							cmd = exec.Command(pushup, "run", "-page", pushupFile, "-unix-socket", socketPath)
-							sysProcAttr(cmd)
-
-							var err error
-							stdout, err = cmd.StdoutPipe()
-							if err != nil {
-								return err
-							}
-
-							cmd.Stderr = &errb
-
-							if err := cmd.Start(); err != nil {
-								return err
-							}
-
 							if err := cmd.Wait(); err != nil {
 								return err
 							}
-
 							return nil
 						})
 
@@ -220,7 +232,7 @@ func TestPushup(t *testing.T) {
 							select {
 							case <-done:
 								if cmd != nil {
-									if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
+									if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
 										return err
 									}
 								}
