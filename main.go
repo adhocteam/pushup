@@ -27,6 +27,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/net/html/atom"
+	"golang.org/x/sync/errgroup"
 )
 
 const upFileExt = ".up"
@@ -835,9 +836,27 @@ func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 	cmd.Stderr = os.Stderr
 	cmd.ExtraFiles = []*os.File{file}
 	cmd.Env = append(os.Environ(), "PUSHUP_LISTENER_FD=3")
-	// NOTE(paulsmith): intentionally ignoring *ExitError because the child
-	// process will be signal killed here as a matter of course
-	_ = cmd.Run()
+
+	g := new(errgroup.Group)
+
+	g.Go(func() error {
+		<-ctx.Done()
+		if errors.Is(context.Cause(ctx), errFileChanged) {
+			log.Printf("[PUSHUP RELOADER] file changed, reloading")
+		} else if errors.Is(context.Cause(ctx), errSignalCaught) {
+			log.Printf("[PUSHUP] got signal, shutting down")
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		// NOTE(paulsmith): intentionally ignoring *ExitError because the child
+		// process will be signal killed here as a matter of course
+		_ = cmd.Run()
+		return nil
+	})
+
+	g.Wait()
 
 	return nil
 }

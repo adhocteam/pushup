@@ -42,7 +42,6 @@ func watchForReload(ctx context.Context, root string, reload chan struct{}) {
 			}
 			return
 		}
-		log.Printf("[PUSHUP RELOADER] file change detected")
 		reload <- struct{}{}
 		watcher.Close()
 	})
