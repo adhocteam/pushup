@@ -852,10 +852,14 @@ func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 	g.Go(func() error {
 		// NOTE(paulsmith): intentionally ignoring *ExitError because the child
 		// process will be signal killed here as a matter of course
-		_ = cmd.Run()
+		//nolint:errcheck
+		cmd.Run()
 		return nil
 	})
 
+	// NOTE(paulsmith): intentionally ignoring *ExitError for same reason as
+	// above
+	//nolint:errcheck
 	g.Wait()
 
 	return nil

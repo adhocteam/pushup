@@ -173,11 +173,12 @@ func TestPushup(t *testing.T) {
 						defer os.RemoveAll(tmpdir)
 						socketPath := filepath.Join(tmpdir, "sock")
 
-						var errb bytes.Buffer
-						var allgood bool
-						var cmd *exec.Cmd
+						var (
+							errb    bytes.Buffer
+							allgood bool
+						)
 
-						cmd = exec.Command(pushup, "run", "-page", pushupFile, "-unix-socket", socketPath)
+						cmd := exec.Command(pushup, "run", "-page", pushupFile, "-unix-socket", socketPath)
 						sysProcAttr(cmd)
 
 						stdout, err := cmd.StdoutPipe()
