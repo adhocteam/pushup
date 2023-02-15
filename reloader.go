@@ -42,7 +42,6 @@ func watchForReload(ctx context.Context, root string, reload chan struct{}) {
 			}
 			return
 		}
-		log.Printf("change detected in project directory, reloading")
 		reload <- struct{}{}
 		watcher.Close()
 	})
