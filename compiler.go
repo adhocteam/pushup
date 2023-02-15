@@ -20,9 +20,6 @@ type compileProjectParams struct {
 	// path to project root directory
 	root string
 
-	// path to app dir within project
-	appDir string
-
 	// path to output build directory
 	outDir string
 

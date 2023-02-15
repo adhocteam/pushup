@@ -1,4 +1,5 @@
 ^import "strconv"
+^import "github.com/adhocteam/pushup/example/htmx"
 
 ^handler{
     pageQuery := req.FormValue("page")
@@ -36,7 +37,7 @@ tbody tr { border-bottom: 1px solid #ccc; }
                     <tr>
                         <td>Agent Smith</td>
                         <td>void^i@pizza.null</td>
-                        <td>^uid()</td>
+                        <td>^htmx.UID()</td>
                     </tr>
                 }
                 <tr id="replace-me">

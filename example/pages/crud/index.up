@@ -1,5 +1,7 @@
+^import "github.com/adhocteam/pushup/example/crud"
+
 ^handler {
-    albums, err := getAlbums(DB, 0, 0)
+    albums, err := crud.GetAlbums(crud.DB, 0, 0)
     if err != nil {
         return err
     }
@@ -30,7 +32,7 @@ ul.albums {
 
 <ul class="albums">
     ^for _, album := range albums {
-        <li><a href="/crud/album/^album.id"><b>^album.title</b><br/>^album.artist</a></li>
+        <li><a href="/crud/album/^album.ID"><b>^album.Title</b><br/>^album.Artist</a></li>
     }
 </ul>
 

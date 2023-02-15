@@ -1,4 +1,5 @@
 ^import "strconv"
+^import "github.com/adhocteam/pushup/example/crud"
 
 ^handler {
     id, err := strconv.Atoi(getParam(req, "id"))
@@ -6,13 +7,13 @@
         return err
     }
 
-    album, err := getAlbumById(DB, id)
+    album, err := crud.GetAlbumById(crud.DB, id)
     if err != nil {
         return err
     }
 
     if req.Method == "DELETE" || (req.Method == "POST" && req.FormValue("_method") == "delete") {
-        if err := deleteAlbum(DB, id); err != nil {
+        if err := crud.DeleteAlbum(crud.DB, id); err != nil {
             return err
         }
         http.Redirect(w, req, "/crud/", http.StatusSeeOther)
@@ -20,13 +21,13 @@
     }
 }
 
-<h1>Delete ^album.title ?</h1>
+<h1>Delete ^album.Title ?</h1>
 
 <p>Are you sure?</p>
 
-<p><a href="/crud/album/^album.id">No, get me out of here</a></p>
+<p><a href="/crud/album/^album.ID">No, get me out of here</a></p>
 <form method="post">
     <input type="hidden" name="_method" value="delete" />
-    <input type="hidden" name="id" value="^album.id" />
+    <input type="hidden" name="id" value="^album.ID" />
     <button>Yes, delete</button>
 </form>

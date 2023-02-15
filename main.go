@@ -180,7 +180,7 @@ func (n *newCmd) do() error {
 
 	// create project directory structure
 	for _, name := range []string{"pages", "layouts", "pkg", "static"} {
-		path := filepath.Join(n.projectDir, appDirName, name)
+		path := filepath.Join(n.projectDir, name)
 		if err := os.MkdirAll(path, 0755); err != nil {
 			return fmt.Errorf("creating project directory %s: %w", path, err)
 		}
@@ -268,8 +268,7 @@ type buildCmd struct {
 	pages              stringSlice
 	verbose            bool
 
-	files  *projectFiles
-	appDir string
+	files *projectFiles
 }
 
 func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
@@ -286,8 +285,6 @@ func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
 	flags.BoolVar(&b.verbose, "verbose", false, "output verbose information")
 }
 
-const appDirName = "app"
-
 func newBuildCmd(arguments []string) *buildCmd {
 	flags := flag.NewFlagSet("pushup build", flag.ExitOnError)
 	b := new(buildCmd)
@@ -299,14 +296,13 @@ func newBuildCmd(arguments []string) *buildCmd {
 	} else {
 		b.projectDir = "."
 	}
-	b.appDir = filepath.Join(b.projectDir, appDirName)
 	return b
 }
 
 func (b *buildCmd) rescanProjectFiles() error {
 	if len(b.pages) == 0 {
 		var err error
-		b.files, err = findProjectFiles(b.appDir)
+		b.files, err = findProjectFiles(b.projectDir)
 		if err != nil {
 			return err
 		}
@@ -335,7 +331,6 @@ func (b *buildCmd) do() error {
 	{
 		params := &compileProjectParams{
 			root:               b.projectDir,
-			appDir:             b.appDir,
 			outDir:             b.outDir,
 			parseOnly:          b.parseOnly,
 			files:              b.files,
@@ -394,9 +389,13 @@ func newRunCmd(arguments []string) *runCmd {
 	} else {
 		b.projectDir = "."
 	}
-	// FIXME this logic is duplicated with newBuildCmd
-	b.appDir = filepath.Join(b.projectDir, appDirName)
-	return &runCmd{buildCmd: b, host: *host, port: *port, unixSocket: *unixSocket, devReload: *devReload}
+	return &runCmd{
+		buildCmd:   b,
+		host:       *host,
+		port:       *port,
+		unixSocket: *unixSocket,
+		devReload:  *devReload,
+	}
 }
 
 var errFileChanged = fmt.Errorf("file change detected")
@@ -457,7 +456,6 @@ func (r *runCmd) do() error {
 			{
 				params := &compileProjectParams{
 					root:               r.projectDir,
-					appDir:             r.appDir,
 					outDir:             r.outDir,
 					parseOnly:          r.parseOnly,
 					files:              r.files,
@@ -482,7 +480,7 @@ func (r *runCmd) do() error {
 				buildComplete.Broadcast()
 			}
 
-			watchForReload(ctx, r.appDir, reload)
+			watchForReload(ctx, r.projectDir, reload)
 			if err := runProject(ctx, binExePath, ln); err != nil {
 				return fmt.Errorf("building and running generated Go code: %v", err)
 			}
@@ -534,8 +532,7 @@ func newRoutesCmd(args []string) *routesCmd {
 }
 
 func (r *routesCmd) do() error {
-	appDir := filepath.Join(r.projectDir, appDirName)
-	files, err := findProjectFiles(appDir)
+	files, err := findProjectFiles(r.projectDir)
 	if err != nil {
 		return err
 	}
@@ -643,10 +640,10 @@ func (f *projectFiles) debug() {
 	}
 }
 
-func findProjectFiles(appDir string) (*projectFiles, error) {
+func findProjectFiles(root string) (*projectFiles, error) {
 	pf := new(projectFiles)
 
-	layoutsDir := filepath.Join(appDir, "layouts")
+	layoutsDir := filepath.Join(root, "layouts")
 	{
 		entries, err := os.ReadDir(layoutsDir)
 		if err != nil {
@@ -666,7 +663,7 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 		}
 	}
 
-	pagesDir := filepath.Join(appDir, "pages")
+	pagesDir := filepath.Join(root, "pages")
 	{
 		if err := fs.WalkDir(os.DirFS(pagesDir), ".", func(path string, d fs.DirEntry, _ error) error {
 			if !d.IsDir() && filepath.Ext(path) == upFileExt {
@@ -683,7 +680,7 @@ func findProjectFiles(appDir string) (*projectFiles, error) {
 		}
 	}
 
-	staticDir := filepath.Join(appDir, "static")
+	staticDir := filepath.Join(root, "static")
 	{
 		if err := fs.WalkDir(os.DirFS(staticDir), ".", func(path string, d fs.DirEntry, _ error) error {
 			if !d.IsDir() {

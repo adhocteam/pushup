@@ -1,4 +1,5 @@
 ^import "strconv"
+^import "github.com/adhocteam/pushup/example/crud"
 
 ^handler {
     id, err := strconv.Atoi(getParam(req, "id"))
@@ -6,7 +7,7 @@
         return err
     }
 
-    album, err := getAlbumById(DB, id)
+    album, err := crud.GetAlbumById(crud.DB, id)
     if err != nil {
         return err
     }
@@ -24,16 +25,16 @@ dd { font-weight: normal; flex-basis: 70%; flex-grow: 1; padding: 0.1em; }
 
 <dl>
     <dt>Artist</dt>
-    <dd>^album.artist</dd>
+    <dd>^album.Artist</dd>
 
     <dt>Title</dt>
-    <dd>^album.title</dd>
+    <dd>^album.Title</dd>
 
     <dt>Released</dt>
-    <dd>^album.released</dd>
+    <dd>^album.Released</dd>
 
     <dt>Length</dt>
-    <dd>^album.length minutes</dd>
+    <dd>^album.Length minutes</dd>
 </dl>
 
-<p><a href="./edit/^album.id">Edit</a>, <a href="./delete/^album.id">Delete &hellip;</a></p>
+<p><a href="./edit/^album.ID">Edit</a>, <a href="./delete/^album.ID">Delete &hellip;</a></p>

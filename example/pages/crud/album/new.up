@@ -4,6 +4,7 @@
 ^import "strconv"
 ^import "strings"
 ^import "time"
+^import "github.com/adhocteam/pushup/example/crud"
 
 ^handler {
     isNumber := func(val string) (int, bool) {
@@ -42,8 +43,13 @@
         }
 
         if len(errors) == 0 {
-            a := &album{artist: artist, title: title, released: released, length: length}
-            if err := addAlbum(DB, a); err != nil {
+            a := &crud.Album{
+                Artist: artist,
+                Title: title,
+                Released: released,
+                Length: length,
+            }
+            if err := crud.AddAlbum(crud.DB, a); err != nil {
                 log.Printf("error: %v", err)
                 http.Error(w, http.StatusText(500), 500)
                 return nil

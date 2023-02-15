@@ -1,10 +1,11 @@
 ^import "strings"
+^import "github.com/adhocteam/pushup/example/htmx"
 
 ^{
     var results []string
     search := strings.TrimSpace(strings.ToLower(req.FormValue("search")))
     if search != "" {
-        for _, name := range fakeNames {
+        for _, name := range htmx.FakeNames {
             if strings.Contains(strings.ToLower(name), search) {
                 results = append(results, name)
             }
