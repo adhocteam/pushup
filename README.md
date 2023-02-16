@@ -279,33 +279,40 @@ pushup routes
 
 ### Dynamic routes
 
-If the filename of a Pushup page starts with a `$` dollar sign, the portion
-of the URL path that matches will be available to the page via the `getParam()`
-Pushup API method.
+If a Pushup page filename ends with `__param` before the `.up` extension, then
+Pushup will treat it as a dynamic route. This means that the prefix portion of
+the filename prior to `__param` becomes a URL parameter, and will be dynamically
+substituted with the value in a request's URL at that path segment.
 
-For example, let's say there is a Pushup page at `app/pages/people/$id.up`.
-If a browser visits the URL `/people/1234`, the page can access it like a named
-parameter with the API method `getParam()`, for example:
+For example, let's say there is a Pushup page named `pages/users/username__param.up`.
+If a user-agent (i.e., browser) makes a request to the URL `/users/example`, the
+Pushup page can access the username via the `getParam()` API method:
 
 ```pushup
-<p>ID: ^getParam(req, "id")</p>
+<p>username: ^getParam(req, "username")</p>
 ```
 
 would output:
 
 ```html
-<p>ID: 1234</p>
+<p>username: 1234</p>
 ```
 
-The name of the parameter is the word following the `$` dollar sign, up to a dot
-or a slash. Conceptually, the URL route is `/people/:id`, where `:id` is the
-named parameter that is substituted for the actual value in the request URL.
+The name of the parameter is the word preceding `__param`, up to a dot or a
+slash. Conceptually, the URL route is `/users/:username`, where `:username`
+is the named parameter that is substituted for the actual value in the
+request URL.
 
-Directories can be dynamic, too. `app/pages/products/$pid/details.up` maps
+Directories can be dynamic, too. `app/pages/products/pid__param/details.up` maps
 to `/products/:pid/details`.
 
-Multiple named parameters are allowed, for example, `app/pages/users/$uid/projects/$pid.up`
-maps to `/users/:uid/projects/:pid`.
+Multiple named parameters are allowed in an entire path. For
+example, `app/pages/users/uid__param/projects/pid__param.up` maps to
+`/users/:uid/projects/:pid`. Each must be uniquely named.
+
+However, only one file or directory with `__param` is allowed per directory,
+because Pushup matches the entirety of the path segment, so more than one would
+cause a conflict.
 
 ## Enhanced hypertext
 
