@@ -324,7 +324,7 @@ func TestTypenameFromPath(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run("", func(t *testing.T) {
-			got := typenameFromPath(test.path)
+			got := typenameFromFilename(test.path)
 			if diff := cmp.Diff(test.want, got); diff != "" {
 				t.Errorf("(-want, +got)\n%s", diff)
 			}

@@ -71,11 +71,11 @@ func TestRouteForPage(t *testing.T) {
 			"/testdata/foo",
 		},
 		{
-			"x/$name.up",
+			"x/name__param.up",
 			"/x/:name",
 		},
 		{
-			"$projectId/$productId",
+			"projectId__param/productId__param",
 			"/:projectId/:productId",
 		},
 		{
@@ -99,11 +99,10 @@ func TestGeneratedTypename(t *testing.T) {
 		strategy upFileType
 		want     string
 	}{
-		{projectFile{path: "index.up", projectFilesSubdir: "."}, upFilePage, "IndexPage"},
-		{projectFile{path: "foo-bar.up", projectFilesSubdir: "."}, upFilePage, "FooBarPage"},
-		{projectFile{path: "foo_bar.up", projectFilesSubdir: "."}, upFilePage, "FooBarPage"},
-		{projectFile{path: "a/b/c.up", projectFilesSubdir: "."}, upFilePage, "ABCPage"},
-		{projectFile{path: "a/b/$c.up", projectFilesSubdir: "."}, upFilePage, "ABDollarSignCPage"},
+		{projectFile{path: "index.up"}, upFilePage, "IndexPage"},
+		{projectFile{path: "foo-bar.up"}, upFilePage, "FooBarPage"},
+		{projectFile{path: "foo_bar.up"}, upFilePage, "FooBarPage"},
+		{projectFile{path: "a/b/c.up"}, upFilePage, "CPage"},
 	}
 
 	for _, test := range tests {

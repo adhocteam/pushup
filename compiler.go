@@ -115,23 +115,19 @@ func compileProject(c *compileProjectParams) error {
 	return nil
 }
 
-// compileUpFile compiles a single .up file in a Pushup project context. it
-// outputs .go code to a file in the build directory.
+// compileUpFile compiles a single .up file in a Pushup project context. It
+// outputs Go code to a .up.go file in the same directory as the .up file.
 func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compileProjectParams) error {
-	path := pfile.path
-	sourceFile, err := os.Open(path)
+	sourcePath := pfile.path
+	sourceFile, err := os.Open(sourcePath)
 	if err != nil {
-		return fmt.Errorf("opening source file %s: %w", path, err)
+		return fmt.Errorf("opening source file %s: %w", sourcePath, err)
 	}
 	defer sourceFile.Close()
-	destPath := filepath.Join(projectParams.outDir, compiledOutputPath(pfile, ftype))
-	destDir := filepath.Dir(destPath)
-	if err = os.MkdirAll(destDir, 0755); err != nil {
-		return fmt.Errorf("making destination file's directory %s: %w", destDir, err)
-	}
+	destPath := compiledOutputPath(pfile, ftype)
 	destFile, err := os.Create(destPath)
 	if err != nil {
-		return fmt.Errorf("opening destination file %s: %w", destPath, err)
+		return fmt.Errorf("creating/truncating destination file %s: %w", destPath, err)
 	}
 	defer destFile.Close()
 	params := compileParams{
@@ -142,7 +138,7 @@ func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compilePr
 		applyOptimizations: projectParams.applyOptimizations,
 	}
 	if err := compile(params); err != nil {
-		return fmt.Errorf("compiling page file %s: %w", path, err)
+		return fmt.Errorf("compiling page file %s: %w", sourcePath, err)
 	}
 	return nil
 }
@@ -150,26 +146,10 @@ func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compilePr
 // compiledOutputPath returns the filename for the .go file containing the
 // generated code for the Pushup page.
 func compiledOutputPath(pfile projectFile, ftype upFileType) string {
-	rel, err := filepath.Rel(pfile.projectFilesSubdir, pfile.path)
-	if err != nil {
-		panic("internal error: relative path from project files subdir to .up file: " + err.Error())
-	}
-	// a .go file with a leading '$' in the name is invalid to the go tool
-	if rel[0] == '$' {
-		rel = "0x24" + rel[1:]
-	}
-	var dirs []string
-	dir := filepath.Dir(rel)
-	if dir != "." {
-		dirs = strings.Split(dir, string([]rune{os.PathSeparator}))
-	}
-	file := filepath.Base(rel)
+	path := pfile.path
+	file := filepath.Base(path)
 	base := strings.TrimSuffix(file, filepath.Ext(file))
-	suffix := upFileExt
-	if ftype == upFileLayout {
-		suffix = ".layout.up"
-	}
-	result := strings.Join(append(dirs, base), "__") + suffix + ".go"
+	result := filepath.Join(filepath.Dir(path), base+compiledFileExt)
 	return result
 }
 

@@ -675,28 +675,26 @@ func (g *pageCodeGen) genNodePartial(n node, p *partial) {
 }
 
 // routeForPage produces the URL path route from the name of the Pushup page.
-// relpath is the path to the Pushup file, relative to its containing app
-// directory in the Pushup project (so that part should not be part of the
-// path).
-func routeForPage(relpath string) string {
+// path is the path to the Pushup page file.
+func routeForPage(path string) string {
 	var dirs []string
-	dir := filepath.Dir(relpath)
+	dir := filepath.Dir(path)
 	if dir != "." {
 		dirs = strings.Split(dir, string([]rune{os.PathSeparator}))
 	}
-	file := filepath.Base(relpath)
-	base := strings.TrimSuffix(file, filepath.Ext(file))
+	file := filepath.Base(path)
+	name := strings.TrimSuffix(file, filepath.Ext(file))
 	var route string
-	if base != "index" {
-		dirs = append(dirs, base)
+	if name != "index" {
+		dirs = append(dirs, name)
 	}
 	for i := range dirs {
-		if strings.HasPrefix(dirs[i], "$") {
-			dirs[i] = ":" + dirs[i][1:]
+		if strings.HasSuffix(dirs[i], "__param") {
+			dirs[i] = ":" + strings.TrimSuffix(dirs[i], "__param")
 		}
 	}
 	route = "/" + strings.Join(dirs, "/")
-	if base == "index" && route[len(route)-1] != '/' {
+	if name == "index" && route[len(route)-1] != '/' {
 		// indexes always have a trailing slash
 		route += "/"
 	}
@@ -953,10 +951,9 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 // generatedTypename returns the name of the type of the Go struct that
 // holds the generated code for the Pushup page and related methods.
 func generatedTypename(pfile projectFile, ftype upFileType) string {
-	relpath := pfile.relpath()
-	ext := filepath.Ext(relpath)
-	relpath = relpath[:len(relpath)-len(ext)]
-	typename := typenameFromPath(relpath)
+	filename := filepath.Base(pfile.path)
+	filename = strings.TrimSuffix(filename, filepath.Ext(filename))
+	typename := typenameFromFilename(filename)
 	var suffix string
 	switch ftype {
 	case upFilePage:
@@ -974,13 +971,12 @@ func generatedTypenamePartial(partial *partial, pfile projectFile) string {
 	relpath := pfile.relpath()
 	ext := filepath.Ext(relpath)
 	relpath = relpath[:len(relpath)-len(ext)]
-	typename := typenameFromPath(strings.Join([]string{relpath, partial.urlpath()}, "/"))
+	typename := typenameFromFilename(strings.Join([]string{relpath, partial.urlpath()}, "/"))
 	result := typename + "Partial"
 	return result
 }
 
-func typenameFromPath(path string) string {
-	path = strings.ReplaceAll(path, "$", "DollarSign_")
+func typenameFromFilename(path string) string {
 	buf := make([]rune, len(path))
 	i := 0
 	wordBoundary := true

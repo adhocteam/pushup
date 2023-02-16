@@ -30,7 +30,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const upFileExt = ".up"
+const (
+	upFileExt       = ".up"
+	compiledFileExt = upFileExt + ".go"
+)
 
 func main() {
 	var version bool
@@ -309,7 +312,7 @@ func (b *buildCmd) rescanProjectFiles() error {
 	} else {
 		pfiles := &projectFiles{}
 		for _, page := range b.pages {
-			pfiles.pages = append(pfiles.pages, projectFile{path: page, projectFilesSubdir: ""})
+			pfiles.pages = append(pfiles.pages, projectFile{path: page})
 		}
 		b.files = pfiles
 	}
@@ -592,17 +595,10 @@ func printBanner() {
 type projectFile struct {
 	// path from cwd to the .up file
 	path string
-	// directory structure that may be part of the path of the .up file
-	// like app/pages, app/layouts, or (empty string)
-	projectFilesSubdir string
 }
 
 func (f *projectFile) relpath() string {
-	path, err := filepath.Rel(f.projectFilesSubdir, f.path)
-	if err != nil {
-		panic("internal error: calling filepath.Rel(): " + err.Error())
-	}
-	return path
+	return f.path
 }
 
 //nolint:unused
@@ -657,7 +653,7 @@ func findProjectFiles(root string) (*projectFiles, error) {
 		for _, entry := range entries {
 			if !entry.IsDir() && strings.HasSuffix(entry.Name(), upFileExt) {
 				path := filepath.Join(layoutsDir, entry.Name())
-				pfile := projectFile{path: path, projectFilesSubdir: layoutsDir}
+				pfile := projectFile{path: path}
 				pf.layouts = append(pf.layouts, pfile)
 			}
 		}
@@ -667,7 +663,7 @@ func findProjectFiles(root string) (*projectFiles, error) {
 	{
 		if err := fs.WalkDir(os.DirFS(pagesDir), ".", func(path string, d fs.DirEntry, _ error) error {
 			if !d.IsDir() && filepath.Ext(path) == upFileExt {
-				pfile := projectFile{path: filepath.Join(pagesDir, path), projectFilesSubdir: pagesDir}
+				pfile := projectFile{path: filepath.Join(pagesDir, path)}
 				pf.pages = append(pf.pages, pfile)
 			}
 			return nil
@@ -685,7 +681,7 @@ func findProjectFiles(root string) (*projectFiles, error) {
 		if err := fs.WalkDir(os.DirFS(staticDir), ".", func(path string, d fs.DirEntry, _ error) error {
 			if !d.IsDir() {
 				path = filepath.Join(staticDir, path)
-				pf.static = append(pf.static, projectFile{path: path, projectFilesSubdir: staticDir})
+				pf.static = append(pf.static, projectFile{path: path})
 			}
 			return nil
 		}); err != nil {
