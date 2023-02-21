@@ -45,8 +45,8 @@ syn region pushupExplExpr start=/\^(/rs=s+1 end=/)/ skip=/\([^)]\|\\[)]\)/ exten
 
 " Since expression syntax is more generic than directive syntax and both are
 " regions, this needs to be defined after the expression rules.
-syn keyword pushupDirName import layout contained
-syn region pushupDirSimpl start=/\^\(import\|layout\)/ end=/$/ extend skipwhite matchgroup=NONE contains=pushupTranSym,pushupDirName,@golang nextgroup=pushupTranSym
+syn keyword pushupDirName import contained
+syn region pushupDirSimpl start=/\^\(import\)/ end=/$/ extend skipwhite matchgroup=NONE contains=pushupTranSym,pushupDirName,@golang nextgroup=pushupTranSym
 
 " htmlTop is defined by the standard vim HTML syntax file. This extends the
 " cluster of top-level identifiers, which allows them to be matched inside the

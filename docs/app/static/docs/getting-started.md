@@ -83,7 +83,7 @@ By default it listens on port 8080, but with the `-port` or `-unix-socket`
 flags you can pick your own listener.
 
 Open [http://localhost:8080/](http://localhost:8080/) in your browser to see
-the default layout and a welcome index page.
+a welcome index page.
 
 ### Listing routes
 
