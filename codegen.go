@@ -13,6 +13,7 @@ import (
 	"unicode"
 )
 
+// importDecl represents a Go import declaration.
 type importDecl struct {
 	pkgName string
 	path    string
@@ -62,9 +63,8 @@ func (p *partial) urlpath() string {
 // sequentially in the source file, but need to be reorganized for access in
 // the code generator.
 func newPageFromTree(tree *syntaxTree) (*page, error) {
-	page := &page{
-		sections: make(map[string]*nodeBlock),
-	}
+	page := new(page)
+	page.sections = make(map[string]*nodeBlock)
 
 	n := 0
 	var err error
