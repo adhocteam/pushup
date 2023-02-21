@@ -182,7 +182,7 @@ func (n *newCmd) do() error {
 	}
 
 	// create project directory structure
-	for _, name := range []string{"pages", "layouts", "pkg", "static"} {
+	for _, name := range []string{"pages", "layouts", "static"} {
 		path := filepath.Join(n.projectDir, name)
 		if err := os.MkdirAll(path, 0755); err != nil {
 			return fmt.Errorf("creating project directory %s: %w", path, err)
@@ -194,7 +194,6 @@ func (n *newCmd) do() error {
 		"pages/index.up",
 		"static/style.css",
 		"static/htmx.min.js",
-		"pkg/app.go",
 	}
 	for _, name := range scaffoldFiles {
 		dest := filepath.Join(n.projectDir, "app", name)

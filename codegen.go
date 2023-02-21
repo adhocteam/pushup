@@ -44,6 +44,7 @@ func newLayoutFromTree(tree *syntaxTree) (*layout, error) {
 type layoutCodeGen struct {
 	layout  *layout
 	pfile   projectFile
+	pkgName string
 	imports map[importDecl]bool
 
 	// source code of .up file, needed for mapping line numbers back to
@@ -62,10 +63,11 @@ type layoutCodeGen struct {
 	lineDirectivesEnabled bool
 }
 
-func newLayoutCodeGen(layout *layout, pfile projectFile, source string) *layoutCodeGen {
+func newLayoutCodeGen(layout *layout, pfile projectFile, source string, pkgName string) *layoutCodeGen {
 	l := &layoutCodeGen{
 		layout:                layout,
 		pfile:                 pfile,
+		pkgName:               pkgName,
 		source:                source,
 		imports:               make(map[importDecl]bool),
 		ioWriterVar:           "w",
@@ -198,14 +200,11 @@ func layoutName(relpath string) string {
 const methodReceiverName = "up"
 
 func genCodeLayout(g *layoutCodeGen) ([]byte, error) {
-	// FIXME(paulsmith): need way to specify this as user
-	packageName := "build"
-
 	g.outPrintf("// this file is mechanically generated, do not edit!\n")
 	g.outPrintf("// version: ")
 	printVersion(&g.outb)
 	g.outPrintf("\n")
-	g.outPrintf("package %s\n\n", packageName)
+	g.outPrintf("package %s\n\n", g.pkgName)
 
 	type field struct {
 		name string
@@ -446,6 +445,7 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 type pageCodeGen struct {
 	page    *page
 	pfile   projectFile
+	pkgName string
 	source  string
 	imports map[importDecl]bool
 
@@ -461,10 +461,11 @@ type pageCodeGen struct {
 	lineDirectivesEnabled bool
 }
 
-func newPageCodeGen(page *page, pfile projectFile, source string) *pageCodeGen {
+func newPageCodeGen(page *page, pfile projectFile, source string, pkgName string) *pageCodeGen {
 	g := &pageCodeGen{
 		page:                  page,
 		pfile:                 pfile,
+		pkgName:               pkgName,
 		source:                source,
 		imports:               make(map[importDecl]bool),
 		ioWriterVar:           "w",
@@ -718,14 +719,11 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 	}
 	var inits []initRoute
 
-	// FIXME(paulsmith): need way to specify this as user
-	packageName := "build"
-
 	g.outPrintf("// this file is mechanically generated, do not edit!\n")
 	g.outPrintf("// version: ")
 	printVersion(&g.outb)
 	g.outPrintf("\n")
-	g.outPrintf("package %s\n\n", packageName)
+	g.outPrintf("package %s\n\n", g.pkgName)
 
 	type field struct {
 		name string

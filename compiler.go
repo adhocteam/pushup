@@ -115,6 +115,14 @@ func compileProject(c *compileProjectParams) error {
 	return nil
 }
 
+func packageName(path string) string {
+	dir := filepath.Base(filepath.Dir(path))
+	if dir == "." {
+		return "main"
+	}
+	return dir
+}
+
 // compileUpFile compiles a single .up file in a Pushup project context. It
 // outputs Go code to a .up.go file in the same directory as the .up file.
 func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compileProjectParams) error {
@@ -124,6 +132,7 @@ func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compilePr
 		return fmt.Errorf("opening source file %s: %w", sourcePath, err)
 	}
 	defer sourceFile.Close()
+	pkgName := packageName(sourcePath)
 	destPath := compiledOutputPath(pfile, ftype)
 	destFile, err := os.Create(destPath)
 	if err != nil {
@@ -132,6 +141,7 @@ func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compilePr
 	defer destFile.Close()
 	params := compileParams{
 		source:             sourceFile,
+		pkgName:            pkgName,
 		dest:               destFile,
 		pfile:              pfile,
 		ftype:              ftype,
@@ -155,6 +165,7 @@ func compiledOutputPath(pfile projectFile, ftype upFileType) string {
 
 type compileParams struct {
 	source             io.Reader
+	pkgName            string
 	dest               io.Writer
 	pfile              projectFile
 	ftype              upFileType
@@ -188,7 +199,7 @@ func compile(params compileParams) error {
 		if err != nil {
 			return fmt.Errorf("getting layout from tree: %w", err)
 		}
-		codeGen := newLayoutCodeGen(layout, params.pfile, src)
+		codeGen := newLayoutCodeGen(layout, params.pfile, src, params.pkgName)
 		code, err = genCodeLayout(codeGen)
 		if err != nil {
 			return fmt.Errorf("generating code for a layout: %w", err)
@@ -198,7 +209,7 @@ func compile(params compileParams) error {
 		if err != nil {
 			return fmt.Errorf("getting page from tree: %w", err)
 		}
-		codeGen := newPageCodeGen(page, params.pfile, src)
+		codeGen := newPageCodeGen(page, params.pfile, src, params.pkgName)
 		code, err = genCodePage(codeGen)
 		if err != nil {
 			return fmt.Errorf("generating code for a page: %w", err)
