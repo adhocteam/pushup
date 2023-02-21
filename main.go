@@ -182,7 +182,7 @@ func (n *newCmd) do() error {
 	}
 
 	// create project directory structure
-	for _, name := range []string{"pages", "layouts", "static"} {
+	for _, name := range []string{"pages", "static"} {
 		path := filepath.Join(n.projectDir, name)
 		if err := os.MkdirAll(path, 0755); err != nil {
 			return fmt.Errorf("creating project directory %s: %w", path, err)
@@ -190,7 +190,6 @@ func (n *newCmd) do() error {
 	}
 
 	scaffoldFiles := []string{
-		"layouts/default.up",
 		"pages/index.up",
 		"static/style.css",
 		"static/htmx.min.js",
@@ -337,7 +336,6 @@ func (b *buildCmd) do() error {
 			parseOnly:          b.parseOnly,
 			files:              b.files,
 			applyOptimizations: b.applyOptimizations,
-			enableLayout:       len(b.pages) == 0, // FIXME
 			embedSource:        b.embedSource,
 		}
 
@@ -462,7 +460,6 @@ func (r *runCmd) do() error {
 					parseOnly:          r.parseOnly,
 					files:              r.files,
 					applyOptimizations: r.applyOptimizations,
-					enableLayout:       len(r.pages) == 0, // FIXME
 					embedSource:        r.embedSource,
 				}
 				if err := compileProject(params); err != nil {
@@ -613,8 +610,6 @@ func (f *projectFile) route() string {
 type projectFiles struct {
 	// list of .up page files
 	pages []projectFile
-	// list of .up layout files
-	layouts []projectFile
 	// paths to static files like JS, CSS, etc.
 	static []projectFile
 }
@@ -625,10 +620,6 @@ func (f *projectFiles) debug() {
 	for _, p := range f.pages {
 		fmt.Printf("\t%v\n", p)
 	}
-	fmt.Println("layouts:")
-	for _, p := range f.layouts {
-		fmt.Printf("\t%v\n", p)
-	}
 	fmt.Println("static:")
 	for _, p := range f.static {
 		fmt.Printf("\t%v\n", p)
@@ -637,26 +628,6 @@ func (f *projectFiles) debug() {
 
 func findProjectFiles(root string) (*projectFiles, error) {
 	pf := new(projectFiles)
-
-	layoutsDir := filepath.Join(root, "layouts")
-	{
-		entries, err := os.ReadDir(layoutsDir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("invalid Pushup project directory structure: couldn't find `layouts` subdir")
-			} else {
-				return nil, fmt.Errorf("reading app layouts directory: %w", err)
-			}
-		}
-
-		for _, entry := range entries {
-			if !entry.IsDir() && strings.HasSuffix(entry.Name(), upFileExt) {
-				path := filepath.Join(layoutsDir, entry.Name())
-				pfile := projectFile{path: path}
-				pf.layouts = append(pf.layouts, pfile)
-			}
-		}
-	}
 
 	pagesDir := filepath.Join(root, "pages")
 	{

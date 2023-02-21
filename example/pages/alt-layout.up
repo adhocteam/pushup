@@ -1,4 +1,4 @@
-^layout netscape
+<!-- layout netscape -->
 
 <p>Greetings.</p>
 <p>This component has a non-default layout, specified with the <tt>^^layout</tt> directive.</p>

@@ -18,276 +18,15 @@ type importDecl struct {
 	path    string
 }
 
-type layout struct {
-	imports []importDecl
-	nodes   []node
-}
-
-func newLayoutFromTree(tree *syntaxTree) (*layout, error) {
-	layout := &layout{}
-	n := 0
-	var f inspector = func(e node) bool {
-		switch e := e.(type) {
-		case *nodeImport:
-			layout.imports = append(layout.imports, e.decl)
-		default:
-			layout.nodes = append(layout.nodes, e)
-			n++
-		}
-		return false
-	}
-	inspect(nodeList(tree.nodes), f)
-	layout.nodes = layout.nodes[:n]
-	return layout, nil
-}
-
-type layoutCodeGen struct {
-	layout  *layout
-	pfile   projectFile
-	pkgName string
-	imports map[importDecl]bool
-
-	// source code of .up file, needed for mapping line numbers back to
-	// original source in stack traces.
-	source string
-
-	// buffer for the package clauses and import declarations at the top of
-	// a Go source file.
-	outb bytes.Buffer
-
-	// buffer for the main body of a Go source file, i.e., the top-level
-	// declarations.
-	bodyb bytes.Buffer
-
-	ioWriterVar           string
-	lineDirectivesEnabled bool
-}
-
-func newLayoutCodeGen(layout *layout, pfile projectFile, source string, pkgName string) *layoutCodeGen {
-	l := &layoutCodeGen{
-		layout:                layout,
-		pfile:                 pfile,
-		pkgName:               pkgName,
-		source:                source,
-		imports:               make(map[importDecl]bool),
-		ioWriterVar:           "w",
-		lineDirectivesEnabled: true,
-	}
-	for _, im := range layout.imports {
-		l.imports[im] = true
-	}
-	return l
-}
-
 func lineCount(s string) int {
 	return strings.Count(s, "\n") + 1
 }
 
-func (c *layoutCodeGen) lineNo(s span) int {
-	return lineCount(c.source[:s.start+1])
-}
-
-func (g *layoutCodeGen) outPrintf(format string, args ...any) {
-	fmt.Fprintf(&g.outb, format, args...)
-}
-
-func (g *layoutCodeGen) bodyPrintf(format string, args ...any) {
-	fmt.Fprintf(&g.bodyb, format, args...)
-}
-
-func (g *layoutCodeGen) used(path ...string) {
-	for _, p := range path {
-		g.imports[importDecl{path: strconv.Quote(p), pkgName: ""}] = true
-	}
-}
-
-func (g *layoutCodeGen) nodeLineNo(e node) {
-	if g.lineDirectivesEnabled {
-		g.emitLineDirective(g.lineNo(e.Pos()))
-	}
-}
-
-func (g *layoutCodeGen) emitLineDirective(n int) {
-	g.bodyPrintf("//line %s:%d\n", g.pfile.relpath(), n)
-}
-
-func (g *layoutCodeGen) generate() {
-	nodes := g.layout.nodes
-	g.genNode(nodeList(nodes))
-}
-
-func (g *layoutCodeGen) genNode(n node) {
-	var f inspector
-	f = func(e node) bool {
-		// TODO(paulsmith): these could be functions so they can be reused
-		switch e := e.(type) {
-		case *nodeLiteral:
-			g.used("io")
-			g.nodeLineNo(e)
-			g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.str))
-		case *nodeElement:
-			g.used("io")
-			g.nodeLineNo(e)
-			f(nodeList(e.startTagNodes))
-			f(nodeList(e.children))
-			g.bodyPrintf("io.WriteString(%s, %s)\n", g.ioWriterVar, strconv.Quote(e.tag.end()))
-			return false
-		case *nodeGoStrExpr:
-			g.nodeLineNo(e)
-			g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, e.expr)
-		case *nodeGoCode:
-			if e.context != inlineGoCode {
-				panic(fmt.Sprintf("internal error: expected inlineGoCode, got %v", e.context))
-			}
-			srcLineNo := g.lineNo(e.Pos())
-			lines := strings.Split(e.code, "\n")
-			for _, line := range lines {
-				// FIXME(paulsmith): leaky abstraction
-				if g.lineDirectivesEnabled {
-					g.emitLineDirective(srcLineNo)
-				}
-				g.bodyPrintf("%s\n", line)
-				srcLineNo++
-			}
-		case *nodeIf:
-			g.bodyPrintf("if %s {\n", e.cond.expr)
-			f(e.then)
-			if e.alt == nil {
-				g.bodyPrintf("}\n")
-			} else {
-				g.bodyPrintf("} else {\n")
-				f(e.alt)
-				g.bodyPrintf("}\n")
-			}
-			return false
-		case nodeList:
-			for _, x := range e {
-				f(x)
-			}
-			return false
-		case *nodeFor:
-			g.bodyPrintf("for %s {\n", e.clause.code)
-			f(e.block)
-			g.bodyPrintf("}\n")
-			return false
-		case *nodeBlock:
-			f(nodeList(e.nodes))
-			return false
-		case *nodeSection:
-			f(e.block)
-			return false
-		case *nodePartial:
-			// FIXME(paulsmith): prune these out in newLayoutFromTree
-			panic("partials are not allowed in layouts")
-		case *nodeLayout:
-			// nothing to do
-		case *nodeImport:
-			// nothing to do
-		}
-		return true
-	}
-	inspect(n, f)
-}
-
-func layoutName(relpath string) string {
-	ext := filepath.Ext(relpath)
-	if ext != upFileExt {
-		panic("internal error: unexpected file extension " + ext)
-	}
-	return strings.TrimSuffix(relpath, ext)
-}
-
 const methodReceiverName = "up"
-
-func genCodeLayout(g *layoutCodeGen) ([]byte, error) {
-	g.outPrintf("// this file is mechanically generated, do not edit!\n")
-	g.outPrintf("// version: ")
-	printVersion(&g.outb)
-	g.outPrintf("\n")
-	g.outPrintf("package %s\n\n", g.pkgName)
-
-	type field struct {
-		name string
-		typ  string
-	}
-
-	fields := []field{}
-
-	typename := generatedTypename(g.pfile, upFileLayout)
-
-	g.bodyPrintf("type %s struct {\n", typename)
-	for _, field := range fields {
-		g.bodyPrintf("%s %s\n", field.name, field.typ)
-	}
-	g.bodyPrintf("}\n")
-
-	g.bodyPrintf("func (%s *%s) buildCliArgs() []string {\n", methodReceiverName, typename)
-	g.bodyPrintf("  return %#v\n", os.Args)
-	g.bodyPrintf("}\n\n")
-
-	g.bodyPrintf("func init() {\n")
-	g.bodyPrintf("  layouts[\"%s\"] = new(%s)\n", layoutName(g.pfile.relpath()), typename)
-	g.bodyPrintf("}\n\n")
-
-	g.used("net/http", "html/template")
-	g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {\n", methodReceiverName, typename)
-
-	// sections support
-	g.used("html/template")
-	g.bodyPrintf(`
-sectionDefined := func(name string) bool {
-	_, ok := sections[name]
-	return ok
-}
-_ = sectionDefined
-
-outputSection := func(name string) template.HTML {
-	return <-sections[name]
-}
-`)
-
-	// Make a new scope for the user's code block and HTML. This will help (but not fully prevent)
-	// name collisions with the surrounding code.
-	g.bodyPrintf("\n// Begin user Go code and HTML\n")
-	g.bodyPrintf("{\n")
-
-	g.generate()
-
-	// Close the scope we started for the user code and HTML.
-	g.bodyPrintf("// End user Go code and HTML\n")
-	g.bodyPrintf("}\n")
-
-	g.bodyPrintf("return nil\n")
-	g.bodyPrintf("}\n")
-
-	g.outPrintf("import (\n")
-	for decl, ok := range g.imports {
-		if ok {
-			if decl.pkgName != "" {
-				g.outPrintf("%s ", decl.pkgName)
-			}
-			g.outPrintf("%s\n", decl.path)
-		}
-	}
-	g.outPrintf(")\n\n")
-
-	raw, err := io.ReadAll(io.MultiReader(&g.outb, &g.bodyb))
-	if err != nil {
-		return nil, fmt.Errorf("reading all buffers: %w", err)
-	}
-
-	formatted, err := format.Source(raw)
-	if err != nil {
-		return nil, fmt.Errorf("gofmt the generated code: %w", err)
-	}
-
-	return formatted, nil
-}
 
 // page represents a Pushup page that has been parsed and is ready for code
 // generation.
 type page struct {
-	layout   string
 	imports  []importDecl
 	handler  *nodeGoCode
 	nodes    []node
@@ -324,35 +63,21 @@ func (p *partial) urlpath() string {
 // the code generator.
 func newPageFromTree(tree *syntaxTree) (*page, error) {
 	page := &page{
-		layout:   "default",
 		sections: make(map[string]*nodeBlock),
 	}
 
-	layoutSet := false
 	n := 0
 	var err error
 
 	// this pass over the syntax tree nodes enforces invariants (only one
-	// handler may be declared per page, layout may only be set once) and
-	// aggregates imports and sections for easier access in the subsequent
-	// code generation phase. as a result, some nodes are removed from the
-	// tree.
+	// handler may be declared per page) and aggregates imports and sections
+	// for easier access in the subsequent code generation phase. as a
+	// result, some nodes are removed from the tree.
 	var f inspector
 	f = func(e node) bool {
 		switch e := e.(type) {
 		case *nodeImport:
 			page.imports = append(page.imports, e.decl)
-		case *nodeLayout:
-			if layoutSet {
-				err = fmt.Errorf("layout already set as %q", page.layout)
-				return false
-			}
-			if e.name == "!" {
-				page.layout = ""
-			} else {
-				page.layout = e.name
-			}
-			layoutSet = true
 		case *nodeGoCode:
 			if e.context == handlerGoCode {
 				if page.handler != nil {
@@ -429,8 +154,6 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 				currentPartial = prevPartial
 				page.partials = append(page.partials, p)
 				return false
-			case *nodeLayout:
-				// nothing to do
 			case *nodeImport:
 				// nothing to do
 			}
@@ -575,8 +298,6 @@ func (g *pageCodeGen) genNode(n node) {
 		case *nodePartial:
 			f(e.block)
 			return false
-		case *nodeLayout:
-			// nothing to do
 		case *nodeImport:
 			// nothing to do
 		}
@@ -774,25 +495,6 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 			g.bodyPrintf("sections[%s] = make(chan template.HTML)\n", strconv.Quote(name))
 		}
 
-		// TODO(paulsmith): this is where a flag that could conditionally toggle the rendering
-		// of the layout could go - maybe a special header in request object?
-		g.used("log", "sync", "context", "time")
-		g.bodyPrintf(
-			`
-			var wg sync.WaitGroup
-			layout := getLayout("%s")
-			ctx, cancel := context.WithTimeout(req.Context(), time.Second * 5)
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				defer cancel()
-				if err := layout.Respond(w, req.WithContext(ctx), sections); err != nil {
-					log.Printf("error responding with layout: %%v", err)
-					panic(err)
-				}
-			}()
-		`, g.page.layout)
-
 		// Make a new scope for the user's code block and HTML. This will help (but not fully prevent)
 		// name collisions with the surrounding code.
 		g.bodyPrintf("\n// Begin user Go code and HTML\n")
@@ -842,9 +544,6 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 			g.bodyPrintf("}()\n")
 			g.ioWriterVar = save
 		}
-
-		// Wait for layout to finish rendering
-		g.bodyPrintf("wg.Wait()\n")
 
 		// Check if any of the goroutines panicked
 		g.bodyPrintf("if panicked != nil {\n")
@@ -952,17 +651,10 @@ func generatedTypename(pfile projectFile, ftype upFileType) string {
 	filename := filepath.Base(pfile.path)
 	filename = strings.TrimSuffix(filename, filepath.Ext(filename))
 	typename := typenameFromFilename(filename)
-	var suffix string
-	switch ftype {
-	case upFilePage:
-		suffix = "Page"
-	case upFileLayout:
-		suffix = "Layout"
-	default:
-		panic("unhandled file type")
+	if ftype == upFilePage {
+		typename += "Page"
 	}
-	result := typename + suffix
-	return result
+	return typename
 }
 
 func generatedTypenamePartial(partial *partial, pfile projectFile) string {

@@ -103,6 +103,7 @@ func TestGeneratedTypename(t *testing.T) {
 		{projectFile{path: "foo-bar.up"}, upFilePage, "FooBarPage"},
 		{projectFile{path: "foo_bar.up"}, upFilePage, "FooBarPage"},
 		{projectFile{path: "a/b/c.up"}, upFilePage, "CPage"},
+		{projectFile{path: "a/b/d.up"}, upFileComponent, "D"},
 	}
 
 	for _, test := range tests {

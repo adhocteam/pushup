@@ -1,5 +1,3 @@
-^layout default
-
 ^import "log"
 ^import "strconv"
 ^import "strings"

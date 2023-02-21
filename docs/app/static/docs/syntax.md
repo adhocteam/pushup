@@ -40,36 +40,6 @@ Example:
 ^import . "strings"
 ```
 
-#### `^layout`
-
-Layouts are HTML templates that enclose the contents of a Pushup page.
-
-The `^layout` directive instructs Pushup what layout to apply the contents of
-the current page.
-
-The name of the layout following the directive is the filename in the
-`layouts` directory minus the `.up` extension. For example, `^layout main`
-would try to apply the layout located at `app/layouts/main.up`.
-
-`^layout` is optional - if it is not specified, pages automatically get the
-"default" layout (`app/layouts/default.up`).
-
-Example:
-
-```pushup
-^layout homepage
-```
-
-##### `^layout !` - no layout
-
-A page may choose to have no layout applied - that is, the contents of the page
-itself are sent directly to the client with no enclosing template. In this case,
-use the `!` name:
-
-```pushup
-^layout !
-```
-
 ### Go code blocks
 
 #### `^{`
@@ -236,58 +206,7 @@ Outputs:
 <p>With 4 people there are 8 hands</p>
 ```
 
-### Layout and templates
-
-#### `^section`
-
-Pushup layouts can have sections within the HTML document that Pushup pages
-can define with their own content to be rendered into those locations.
-
-For example, a layout could have a sidebar section, and each page can set
-its own sidebar content.
-
-In a Pushup page, sections are defined with the keyword like so:
-
-```pushup
-^section sidebar {
-    <article>
-        <h1>This is my sidebar content</h1>
-        <p>More to come</p>
-    </article>
-}
-```
-
-Layouts can output sections with the `outputSection` function.
-
-```pushup
-<aside>
-    ^outputSection("sidebar")
-</aside>
-```
-
-Layouts can also make sections optional, by first checking if a page has set a
-section with `sectionDefined()`, which returns a boolean.
-
-```pushup
-^if sectionDefined("sidebar") {
-    <aside>
-        ^outputSection("sidebar")
-    </aside>
-}
-```
-
-Checking for if a section was set by a page lets a layout designer provide
-default markup that can be overridden by a page.
-
-```pushup
-^if sectionDefined("title") {
-    <title>
-        ^outputSection("title")
-    </title>
-} ^else {
-    <title>Welcome to our site</title>
-}
-```
+### Inline partials
 
 #### `^partial`
 

@@ -1,4 +1,3 @@
-^layout !
 ^handler {
     http.Error(w, http.StatusText(418), 418)
     return nil

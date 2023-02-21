@@ -71,8 +71,6 @@ func walk(v visitor, n node) {
 		walk(v, n.block)
 	case *nodeImport:
 		// no children
-	case *nodeLayout:
-		// no children
 	case nodeList:
 		walkNodeList(v, n)
 	case *nodePartial:
@@ -191,15 +189,6 @@ type nodeImport struct {
 func (e nodeImport) Pos() span { return e.pos }
 
 var _ node = (*nodeImport)(nil)
-
-type nodeLayout struct {
-	name string
-	pos  span
-}
-
-func (e nodeLayout) Pos() span { return e.pos }
-
-var _ node = (*nodeLayout)(nil)
 
 type syntaxTree struct {
 	nodes []node

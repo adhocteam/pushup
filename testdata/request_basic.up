@@ -1,4 +1,3 @@
-^layout !
 ^{
     title := "Pushup: request object basic test"
     method := req.Method

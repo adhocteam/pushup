@@ -13,7 +13,7 @@ type upFileType int
 
 const (
 	upFilePage upFileType = iota
-	upFileLayout
+	upFileComponent
 )
 
 type compileProjectParams struct {
@@ -32,16 +32,13 @@ type compileProjectParams struct {
 	// flag to apply a set of code generation optimizations
 	applyOptimizations bool
 
-	// flag to enable layouts (FIXME)
-	enableLayout bool
-
 	// embed .up source files in project executable
 	embedSource bool
 }
 
 func compileProject(c *compileProjectParams) error {
 	if c.parseOnly {
-		for _, pfile := range append(c.files.pages, c.files.layouts...) {
+		for _, pfile := range c.files.pages {
 			path := pfile.path
 			b, err := os.ReadFile(path)
 			if err != nil {
@@ -57,13 +54,6 @@ func compileProject(c *compileProjectParams) error {
 			fmt.Println()
 		}
 		os.Exit(0)
-	}
-
-	// compile layouts
-	for _, pfile := range c.files.layouts {
-		if err := compileUpFile(pfile, upFileLayout, c); err != nil {
-			return err
-		}
 	}
 
 	// compile pages
@@ -92,7 +82,7 @@ func compileProject(c *compileProjectParams) error {
 	if err != nil {
 		return fmt.Errorf("creating pushup_support.go: %w", err)
 	}
-	if err := t.Execute(f, map[string]any{"EmbedStatic": c.enableLayout}); err != nil { // FIXME
+	if err := t.Execute(f, map[string]any{"EmbedStatic": true}); err != nil { // FIXME
 		return fmt.Errorf("executing pushup_support.go template: %w", err)
 	}
 	f.Close()
@@ -194,16 +184,6 @@ func compile(params compileParams) error {
 	var code []byte
 
 	switch params.ftype {
-	case upFileLayout:
-		layout, err := newLayoutFromTree(tree)
-		if err != nil {
-			return fmt.Errorf("getting layout from tree: %w", err)
-		}
-		codeGen := newLayoutCodeGen(layout, params.pfile, src, params.pkgName)
-		code, err = genCodeLayout(codeGen)
-		if err != nil {
-			return fmt.Errorf("generating code for a layout: %w", err)
-		}
 	case upFilePage:
 		page, err := newPageFromTree(tree)
 		if err != nil {
@@ -214,6 +194,8 @@ func compile(params compileParams) error {
 		if err != nil {
 			return fmt.Errorf("generating code for a page: %w", err)
 		}
+	case upFileComponent:
+		panic("UNIMPLEMENTED")
 	}
 	if err != nil {
 		return fmt.Errorf("generating code: %w", err)

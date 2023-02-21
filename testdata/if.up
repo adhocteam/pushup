@@ -1,4 +1,3 @@
-^layout !
 ^{ n := req.FormValue("number") }
 ^if n == "" {
     <p>Provide a number</p>

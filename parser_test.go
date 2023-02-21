@@ -215,14 +215,6 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			`^layout !`,
-			&syntaxTree{
-				nodes: []node{
-					&nodeLayout{name: "!", pos: span{start: 1, end: 9}},
-				},
-			},
-		},
-		{
 			`^import "time"`,
 			&syntaxTree{
 				nodes: []node{
@@ -476,7 +468,6 @@ var unexported = []any{
 	nodeGoStrExpr{},
 	nodeIf{},
 	nodeImport{},
-	nodeLayout{},
 	nodeLiteral{},
 	nodeSection{},
 	nodePartial{},
@@ -525,7 +516,6 @@ func TestParseSyntaxErrors(t *testing.T) {
 func FuzzParser(f *testing.F) {
 	seeds := []string{
 		"",
-		"^layout !\n",
 		"<h1>Hello, world!</h1>",
 		"^{ name := \"world\" }\n<h1>Hello, ^name!</h1>\n",
 		"^if true {\n<a href=\"^req.URL.Path\">this page</a>\n}\n",

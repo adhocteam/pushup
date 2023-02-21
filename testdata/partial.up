@@ -1,4 +1,3 @@
-^layout !
 <h1>Partial test</h1>
 ^partial inline {
     <p>

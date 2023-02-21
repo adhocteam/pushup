@@ -1,4 +1,3 @@
-^layout !
 ^if true {
     <text>
         <p>Foo</p>

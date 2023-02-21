@@ -24,7 +24,6 @@ Pushup is an experiment. In terms of the development life cycle, it should be co
     -   [Go modules and Pushup projects](#go-modules-and-pushup-projects)
     -   [Project directory structure](#project-directory-structure)
     -   [Pages](#pages)
-    -   [Layouts](#layouts)
     -   [Static media](#static-media)
     -   [File-based routing](#file-based-routing)
         -   [Dynamic routes](#dynamic-routes)
@@ -36,8 +35,6 @@ Pushup is an experiment. In terms of the development life cycle, it should be co
         -   [How it works](#how-it-works)
         -   [Directives](#directives)
             -   [`^import`](#import)
-            -   [`^layout`](#layout)
-                -   [`^layout !` - no layout](#layout----no-layout)
         -   [Go code blocks](#go-code-blocks)
             -   [`^{`](#)
             -   [`^handler`](#handler)
@@ -47,8 +44,7 @@ Pushup is an experiment. In terms of the development life cycle, it should be co
         -   [Expressions](#expressions)
             -   [Simple expressions](#simple-expressions)
             -   [Explicit expressions](#explicit-expressions)
-        -   [Layout and templates](#layout-and-templates)
-            -   [`^section`](#section)
+        -   [Inline partials](#inline-partials)
             -   [`^partial`](#partial)
     -   [Vim syntax file](#vim-syntax-file)
 
@@ -108,7 +104,7 @@ The syntax of the Pushup markup language looks like this:
 
 ```
 
-You would then place this code in a file somewhere in your `app/pages`
+You would then place this code in a file somewhere in your `pages`
 directory, like `hello.up`. The `.up` extension is important and tells
 the compiler that it is a Pushup page. Once you build and run your Pushup app,
 that page is automatically mapped to the URL path `/hello`.
@@ -207,7 +203,7 @@ By default it listens on port 8080, but with the `-port` or `-unix-socket`
 flags you can pick your own listener.
 
 Open [http://localhost:8080/](http://localhost:8080/) in your browser to see
-the default layout and a welcome index page.
+a welcome index page.
 
 ## Example demo app
 
@@ -233,12 +229,8 @@ Pushup projects have a particular directory structure that the compiler expects
 before building. The most minimal Pushup project would look like:
 
 ```
-app
-├── layouts
-├── pages
-│   └── index.up
-├── pkg
-└── static
+pages
+└── index.up
 go.mod
 ```
 
@@ -252,16 +244,9 @@ They are also the basis of file-based routing: the name of the Pushup file,
 minus the .up extension, is mapped to the portion of the URL path for
 routing.
 
-## Layouts
-
-Layouts are HTML templates that used in common across multiple pages. They are
-just HTML, with Pushup syntax as necessary. Each page renders its contents, and
-then the layout inserts the page contents into the template with the
-`^outputSection("contents")` Pushup expression.
-
 ## Static media
 
-Static media files like CSS, JS, and images, can be added to the `app/static`
+Static media files like CSS, JS, and images, can be added to the `static`
 project directory. These will be embedded directly in the project executable
 when it is built, and are accessed via a straightforward mapping under the
 "/static/" URL path.
@@ -303,11 +288,11 @@ slash. Conceptually, the URL route is `/users/:username`, where `:username`
 is the named parameter that is substituted for the actual value in the
 request URL.
 
-Directories can be dynamic, too. `app/pages/products/pid__param/details.up` maps
+Directories can be dynamic, too. `pages/products/pid__param/details.up` maps
 to `/products/:pid/details`.
 
 Multiple named parameters are allowed in an entire path. For
-example, `app/pages/users/uid__param/projects/pid__param.up` maps to
+example, `pages/users/uid__param/projects/pid__param.up` maps to
 `/users/:uid/projects/:pid`. Each must be uniquely named.
 
 However, only one file or directory with `__param` is allowed per directory,
@@ -332,7 +317,7 @@ requests for partial HTML responses to update portions of an already-loaded
 document. Partial responses should not have enclosing markup such as base
 templates applied by the templating engine, since that would break the of the
 document they are being inserted into. Inline partials in Pushup automatically
-disable layouts so that partial responses have just the content they define.
+have only the content they define.
 
 The ability to quickly define partials, and not have to deal with complexities
 like toggling off layouts, makes it easier to build enhanced hypertext sites.
@@ -395,36 +380,6 @@ Example:
 
 ```pushup
 ^import . "strings"
-```
-
-#### `^layout`
-
-Layouts are HTML templates that enclose the contents of a Pushup page.
-
-The `^layout` directive instructs Pushup what layout to apply the contents of
-the current page.
-
-The name of the layout following the directive is the filename in the
-`layouts` directory minus the `.up` extension. For example, `^layout main`
-would try to apply the layout located at `app/layouts/main.up`.
-
-`^layout` is optional - if it is not specified, pages automatically get the
-"default" layout (`app/layouts/default.up`).
-
-Example:
-
-```pushup
-^layout homepage
-```
-
-##### `^layout !` - no layout
-
-A page may choose to have no layout applied - that is, the contents of the page
-itself are sent directly to the client with no enclosing template. In this case,
-use the `!` name:
-
-```pushup
-^layout !
 ```
 
 ### Go code blocks
@@ -593,58 +548,7 @@ Outputs:
 <p>With 4 people there are 8 hands</p>
 ```
 
-### Layout and templates
-
-#### `^section`
-
-Pushup layouts can have sections within the HTML document that Pushup pages
-can define with their own content to be rendered into those locations.
-
-For example, a layout could have a sidebar section, and each page can set
-its own sidebar content.
-
-In a Pushup page, sections are defined with the keyword like so:
-
-```pushup
-^section sidebar {
-    <article>
-        <h1>This is my sidebar content</h1>
-        <p>More to come</p>
-    </article>
-}
-```
-
-Layouts can output sections with the `outputSection` function.
-
-```pushup
-<aside>
-    ^outputSection("sidebar")
-</aside>
-```
-
-Layouts can also make sections optional, by first checking if a page has set a
-section with `sectionDefined()`, which returns a boolean.
-
-```pushup
-^if sectionDefined("sidebar") {
-    <aside>
-        ^outputSection("sidebar")
-    </aside>
-}
-```
-
-Checking for if a section was set by a page lets a layout designer provide
-default markup that can be overridden by a page.
-
-```pushup
-^if sectionDefined("title") {
-    <title>
-        ^outputSection("title")
-    </title>
-} ^else {
-    <title>Welcome to our site</title>
-}
-```
+### Inline partials
 
 #### `^partial`
 

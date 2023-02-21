@@ -73,8 +73,6 @@ func prettyPrintTree(t *syntaxTree) {
 				fmt.Fprintf(w, "%s", n.decl.pkgName)
 			}
 			fmt.Fprintf(w, "%s\n", n.decl.path)
-		case *nodeLayout:
-			fmt.Fprintf(w, "LAYOUT %s\n", n.name)
 		case nodeList:
 			for _, x := range n {
 				f(x)
