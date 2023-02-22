@@ -25,9 +25,9 @@ func lineCount(s string) int {
 
 const methodReceiverName = "up"
 
-// page represents a Pushup page that has been parsed and is ready for code
-// generation.
-type page struct {
+// parsedPage represents a Pushup parsedPage that has been parsed and is ready
+// for code generation.
+type parsedPage struct {
 	imports  []importDecl
 	handler  *nodeGoCode
 	nodes    []node
@@ -62,8 +62,8 @@ func (p *partial) urlpath() string {
 // somewhat to make them easier to access. some node types are encountered
 // sequentially in the source file, but need to be reorganized for access in
 // the code generator.
-func newPageFromTree(tree *syntaxTree) (*page, error) {
-	page := new(page)
+func newPageFromTree(tree *syntaxTree) (*parsedPage, error) {
+	page := new(parsedPage)
 	page.sections = make(map[string]*nodeBlock)
 
 	n := 0
@@ -166,7 +166,7 @@ func newPageFromTree(tree *syntaxTree) (*page, error) {
 }
 
 type pageCodeGen struct {
-	page    *page
+	page    *parsedPage
 	pfile   projectFile
 	pkgName string
 	source  string
@@ -184,7 +184,7 @@ type pageCodeGen struct {
 	lineDirectivesEnabled bool
 }
 
-func newPageCodeGen(page *page, pfile projectFile, source string, pkgName string) *pageCodeGen {
+func newPageCodeGen(page *parsedPage, pfile projectFile, source string, pkgName string) *pageCodeGen {
 	g := &pageCodeGen{
 		page:                  page,
 		pfile:                 pfile,

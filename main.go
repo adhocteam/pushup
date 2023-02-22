@@ -331,7 +331,6 @@ func (b *buildCmd) do() error {
 	// FIXME(paulsmith): dedupe this with runCmd.do()
 	{
 		params := &compileProjectParams{
-			root:               b.projectDir,
 			outDir:             b.outDir,
 			parseOnly:          b.parseOnly,
 			files:              b.files,
@@ -453,16 +452,17 @@ func (r *runCmd) do() error {
 				return fmt.Errorf("scanning for project files: %v", err)
 			}
 
+			var output compiledOutput
 			{
 				params := &compileProjectParams{
-					root:               r.projectDir,
 					outDir:             r.outDir,
 					parseOnly:          r.parseOnly,
 					files:              r.files,
 					applyOptimizations: r.applyOptimizations,
 					embedSource:        r.embedSource,
 				}
-				if err := compileProject(params); err != nil {
+				var err error
+				if output, err = compileProject(params); err != nil {
 					return fmt.Errorf("parsing and compiling: %v", err)
 				}
 			}

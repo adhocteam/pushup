@@ -17,9 +17,6 @@ const (
 )
 
 type compileProjectParams struct {
-	// path to project root directory
-	root string
-
 	// path to output build directory
 	outDir string
 
@@ -36,18 +33,29 @@ type compileProjectParams struct {
 	embedSource bool
 }
 
-func compileProject(c *compileProjectParams) error {
+type page struct {
+	path    string
+	urlPath string
+}
+
+type compiledOutput struct {
+	pages []*page
+}
+
+func compileProject(c *compileProjectParams) (*compiledOutput, error) {
+	var output compiledOutput
+
 	if c.parseOnly {
 		for _, pfile := range c.files.pages {
 			path := pfile.path
 			b, err := os.ReadFile(path)
 			if err != nil {
-				return fmt.Errorf("reading file %s: %w", path, err)
+				return nil, fmt.Errorf("reading file %s: %w", path, err)
 			}
 
 			tree, err := parse(string(b))
 			if err != nil {
-				return fmt.Errorf("parsing file %s: %w", path, err)
+				return nil, fmt.Errorf("parsing file %s: %w", path, err)
 			}
 
 			prettyPrintTree(tree)
@@ -59,7 +67,7 @@ func compileProject(c *compileProjectParams) error {
 	// compile pages
 	for _, pfile := range c.files.pages {
 		if err := compileUpFile(pfile, upFilePage, c); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -68,41 +76,43 @@ func compileProject(c *compileProjectParams) error {
 		relpath := pfile.relpath()
 		destDir := filepath.Join(c.outDir, "static", filepath.Dir(relpath))
 		if err := os.MkdirAll(destDir, 0755); err != nil {
-			return fmt.Errorf("making intermediate directory in static dir %s: %v", destDir, err)
+			return nil, fmt.Errorf("making intermediate directory in static dir %s: %v", destDir, err)
 		}
 		destPath := filepath.Join(destDir, filepath.Base(relpath))
 		if err := copyFile(destPath, pfile.path); err != nil {
-			return fmt.Errorf("copying static file %s to %s: %w", pfile.path, destPath, err)
+			return nil, fmt.Errorf("copying static file %s to %s: %w", pfile.path, destPath, err)
 		}
 	}
 
+	// TODO(paulsmith): move this to linking step
 	// copy over Pushup runtime support Go code
 	t := template.Must(template.ParseFS(runtimeFiles, filepath.Join("_runtime", "pushup_support.go")))
 	f, err := os.Create(filepath.Join(c.outDir, "pushup_support.go"))
 	if err != nil {
-		return fmt.Errorf("creating pushup_support.go: %w", err)
+		return nil, fmt.Errorf("creating pushup_support.go: %w", err)
 	}
 	if err := t.Execute(f, map[string]any{"EmbedStatic": true}); err != nil { // FIXME
-		return fmt.Errorf("executing pushup_support.go template: %w", err)
+		return nil, fmt.Errorf("executing pushup_support.go template: %w", err)
 	}
 	f.Close()
 
+	// TODO(paulsmith): move this to linking step
 	if c.embedSource {
 		outSrcDir := filepath.Join(c.outDir, "src")
 		for _, pfile := range c.files.pages {
 			relpath := pfile.relpath()
 			dir := filepath.Join(outSrcDir, "pages", filepath.Dir(relpath))
 			if err := os.MkdirAll(dir, 0755); err != nil {
-				return err
+				return nil, err
 			}
 			dest := filepath.Join(outSrcDir, "pages", relpath)
 			if err := copyFile(dest, pfile.path); err != nil {
-				return fmt.Errorf("copying page file %s to %s: %v", pfile.path, dest, err)
+				return nil, fmt.Errorf("copying page file %s to %s: %v", pfile.path, dest, err)
 			}
 		}
 	}
 
-	return nil
+	return &output, nil
 }
 
 func packageName(path string) string {
