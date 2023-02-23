@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/format"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
@@ -112,6 +113,15 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 	}
 
 	// Run Go compiler
+	{
+		args := []string{"install", filepath.Join(modPath, "cmd", exeName)}
+		cmd := exec.Command("go", args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("building project main executable: %w", err)
+		}
+	}
 
 	return nil
 }
