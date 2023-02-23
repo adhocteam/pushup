@@ -181,34 +181,6 @@ func getParam(r *http.Request, slug string) string {
 	return params[slug]
 }
 
-type layout interface {
-	Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error
-}
-
-var layouts = make(map[string]layout)
-
-func getLayout(name string) layout {
-	if name == "" {
-		return new(nilLayout)
-	}
-	l, ok := layouts[name]
-	if !ok {
-		panic("couldn't find layout " + name)
-	}
-	return l
-}
-
-type nilLayout int
-
-func (l *nilLayout) Respond(w http.ResponseWriter, req *http.Request, sections map[string]chan template.HTML) error {
-	select {
-	case contents := <-sections["contents"]:
-		printEscaped(w, contents)
-	case <-req.Context().Done():
-	}
-	return nil
-}
-
 func Admin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, "<h1>Routes</h1>\n<ul>\n")

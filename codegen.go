@@ -14,6 +14,11 @@ import (
 	"unicode"
 )
 
+const (
+	pushupModulePath = "github.com/adhocteam/pushup"
+	pushupApi        = pushupModulePath + "/api"
+)
+
 // importDecl represents a Go import declaration.
 type importDecl struct {
 	pkgName string
@@ -267,7 +272,8 @@ func (g *pageCodeGen) genNode(n node) {
 			return false
 		case *nodeGoStrExpr:
 			g.nodeLineNo(e)
-			g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, e.expr)
+			g.used(pushupApi)
+			g.bodyPrintf("api.PrintEscaped(%s, %s)\n", g.ioWriterVar, e.expr)
 		case *nodeGoCode:
 			if e.context != inlineGoCode {
 				panic("internal error: expected inlineGoCode")
@@ -356,7 +362,8 @@ func (g *pageCodeGen) genNodePartial(n node, p *partial) {
 			case *nodeGoStrExpr:
 				if state == stateInPartialScope {
 					g.nodeLineNo(n)
-					g.bodyPrintf("printEscaped(%s, %s)\n", g.ioWriterVar, n.expr)
+					g.used(pushupApi)
+					g.bodyPrintf("api.PrintEscaped(%s, %s)\n", g.ioWriterVar, n.expr)
 				}
 			case *nodeFor:
 				if state == stateInPartialScope {

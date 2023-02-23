@@ -149,23 +149,27 @@ type doer interface {
 
 type newCmd struct {
 	projectDir string
-	moduleName string
+	modulePath string
 }
 
 func newNewCmd(arguments []string) *newCmd {
 	flags := flag.NewFlagSet("pushup new", flag.ExitOnError)
-	moduleNameFlag := newRegexString(`^\w[\w-]*$`, "example/myproject")
-	flags.Var(moduleNameFlag, "module", "name of Go module of the new Pushup app")
+	modulePathFlag := newRegexString(`^\w[\w-]*$`, "")
+	flags.Var(modulePathFlag, "module", "Go module path of the new Pushup app")
 	//nolint:errcheck
 	flags.Parse(arguments)
 	if flags.NArg() > 1 {
 		log.Fatalf("extra unprocessed argument(s)")
 	}
 	projectDir := "."
+	modPath := modulePathFlag.String()
 	if flags.NArg() == 1 {
 		projectDir = flags.Arg(0)
+		if modPath == "" {
+			modPath = filepath.Clean(flags.Arg(0))
+		}
 	}
-	return &newCmd{projectDir: projectDir, moduleName: moduleNameFlag.String()}
+	return &newCmd{projectDir: projectDir, modulePath: modPath}
 }
 
 //go:embed scaffold
@@ -195,14 +199,14 @@ func (n *newCmd) do() error {
 		"static/htmx.min.js",
 	}
 	for _, name := range scaffoldFiles {
-		dest := filepath.Join(n.projectDir, "app", name)
+		dest := filepath.Join(n.projectDir, name)
 		src := filepath.Join("scaffold", name)
 		if err := copyFileFS(scaffold, dest, src); err != nil {
 			return fmt.Errorf("copying scaffold file to project dir %w", err)
 		}
 	}
 
-	if err := createGoModFile(n.projectDir, n.moduleName); err != nil {
+	if err := createGoModFile(n.projectDir, n.modulePath); err != nil {
 		return err
 	}
 
@@ -214,10 +218,21 @@ func (n *newCmd) do() error {
 }
 
 func createGoModFile(destDir string, moduleName string) error {
-	cmd := exec.Command("go", "mod", "init", moduleName)
-	cmd.Dir = destDir
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("creating new go.mod file: %w", err)
+	// create the go.mod file
+	{
+		cmd := exec.Command("go", "mod", "init", moduleName)
+		cmd.Dir = destDir
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("creating new go.mod file: %w", err)
+		}
+	}
+	// add Pushup as an API dependency
+	{
+		cmd := exec.Command("go", "get", pushupModulePath+"@latest")
+		cmd.Dir = destDir
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("go get'ing Pushup: %w", err)
+		}
 	}
 	return nil
 }

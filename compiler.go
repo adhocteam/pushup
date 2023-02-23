@@ -78,9 +78,11 @@ func compileProject(c *compileProjectParams) (*compiledOutput, error) {
 
 	// compile pages
 	for _, pfile := range c.files.pages {
-		if err := compileUpFile(pfile, upFilePage, c); err != nil {
+		pages, err := compileUpFile(pfile, upFilePage, c)
+		if err != nil {
 			return nil, err
 		}
+		output.pages = append(output.pages, pages...)
 	}
 
 	// "compile" static files
@@ -137,18 +139,18 @@ func packageName(path string) string {
 
 // compileUpFile compiles a single .up file in a Pushup project context. It
 // outputs Go code to a .up.go file in the same directory as the .up file.
-func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compileProjectParams) error {
+func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compileProjectParams) ([]*page, error) {
 	sourcePath := pfile.path
 	sourceFile, err := os.Open(sourcePath)
 	if err != nil {
-		return fmt.Errorf("opening source file %s: %w", sourcePath, err)
+		return nil, fmt.Errorf("opening source file %s: %w", sourcePath, err)
 	}
 	defer sourceFile.Close()
 	pkgName := packageName(sourcePath)
 	destPath := compiledOutputPath(pfile, ftype)
 	destFile, err := os.Create(destPath)
 	if err != nil {
-		return fmt.Errorf("creating/truncating destination file %s: %w", destPath, err)
+		return nil, fmt.Errorf("creating/truncating destination file %s: %w", destPath, err)
 	}
 	defer destFile.Close()
 	params := &compileParams{
@@ -160,10 +162,11 @@ func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compilePr
 		ftype:              ftype,
 		applyOptimizations: projectParams.applyOptimizations,
 	}
-	if err := compile(params); err != nil {
-		return fmt.Errorf("compiling page file %s: %w", sourcePath, err)
+	pages, err := compile(params)
+	if err != nil {
+		return nil, fmt.Errorf("compiling page file %s: %w", sourcePath, err)
 	}
-	return nil
+	return pages, nil
 }
 
 // compiledOutputPath returns the filename for the .go file containing the
@@ -189,16 +192,16 @@ type compileParams struct {
 // compile compiles Pushup source code. it parses the source, applies
 // optimizations to the resulting syntax tree, and generates Go code from the
 // tree.
-func compile(params *compileParams) error {
+func compile(params *compileParams) ([]*page, error) {
 	b, err := io.ReadAll(params.source)
 	if err != nil {
-		return fmt.Errorf("reading source: %w", err)
+		return nil, fmt.Errorf("reading source: %w", err)
 	}
 	src := string(b)
 
 	tree, err := parse(src)
 	if err != nil {
-		return fmt.Errorf("parsing source: %w", err)
+		return nil, fmt.Errorf("parsing source: %w", err)
 	}
 
 	if params.applyOptimizations {
@@ -211,25 +214,25 @@ func compile(params *compileParams) error {
 	case upFilePage:
 		page, err := newPageFromTree(tree)
 		if err != nil {
-			return fmt.Errorf("getting page from tree: %w", err)
+			return nil, fmt.Errorf("getting page from tree: %w", err)
 		}
 		codeGen := newPageCodeGen(page, src, params)
 		result, err = genCodePage(codeGen)
 		if err != nil {
-			return fmt.Errorf("generating code for a page: %w", err)
+			return nil, fmt.Errorf("generating code for a page: %w", err)
 		}
 	case upFileComponent:
 		panic("UNIMPLEMENTED")
 	}
 	if err != nil {
-		return fmt.Errorf("generating code: %w", err)
+		return nil, fmt.Errorf("generating code: %w", err)
 	}
 
 	if _, err := params.dest.Write(result.code); err != nil {
-		return fmt.Errorf("writing generated page code: %w", err)
+		return nil, fmt.Errorf("writing generated page code: %w", err)
 	}
 
-	return nil
+	return result.Pages, nil
 }
 
 func copyFile(dest, src string) error {

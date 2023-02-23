@@ -16,10 +16,6 @@
     name := "world"
 }
 
-^section title {
-    <text>^pushupGreeting</text>
-}
-
 <hgroup class="greeting">
     <h1>^greeting, ^name!</h1>
     <h2>^title</h2>

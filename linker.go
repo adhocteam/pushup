@@ -21,6 +21,9 @@ type linkerParams struct {
 func linkProject(ctx context.Context, params *linkerParams) error {
 	projectDir := params.projectDir
 	exeName := params.exeName
+	modPath := params.modPath
+	pkgName := filepath.Base(modPath)
+	pages := params.output.pages
 
 	// Generate http serve mux of all routes
 	{
@@ -32,19 +35,46 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 
 		b := new(bytes.Buffer)
 
+		importPaths := map[string]bool{}
+		for _, page := range pages {
+			importPaths[page.PkgPath] = true
+		}
+
 		fmt.Fprintln(b, "// this file is mechanically generated, do not edit!")
-		fmt.Fprintln(b, "package " + )
-		fmt.Fprintf(b, "import \"%s\"\n", "TODO")
-		fmt.Fprintln(b, "func main() {")
+		fmt.Fprintln(b, "package "+pkgName)
+		fmt.Fprintln(b, "import \"net/http\"")
+		fmt.Fprintln(b, "import pushup \"github.com/adhocteam/pushup/api\"")
+		for path := range importPaths {
+			fmt.Fprintln(b, "import \""+path+"\"")
+		}
+		fmt.Fprintln(b, "var routes *pushup.Routes")
+		fmt.Fprintln(b, "func init() {")
+		fmt.Fprintln(b, "routes = new(pushup.Routes)")
+		for _, page := range pages {
+			pkgName := filepath.Base(page.PkgPath)
+			var role string
+			switch page.Role {
+			case routePage:
+				role = "pushup.RoutePage"
+			case routePartial:
+				role = "pushup.RoutePartial"
+			}
+			fmt.Fprintf(b, "routes.Add(\"%s\", &%s.%s{}, %s)\n",
+				page.Route, pkgName, page.Name, role)
+		}
 		fmt.Fprintln(b, "}")
+		fmt.Fprintln(b, "func HandleFunc(w http.ResponseWriter, req *http.Request) {")
+		fmt.Fprintln(b, "pushup.Respond(routes, w, req)")
+		fmt.Fprintln(b, "}")
+		fmt.Fprintln(b, "var Handler = http.HandleFunc(HandleFunc)")
 
 		formatted, err := format.Source(b.Bytes())
 		if err != nil {
-			return fmt.Errorf("gofmt on generated main.go: %w", err)
+			return fmt.Errorf("gofmt on generated servemux.go: %w", err)
 		}
 
 		if _, err := f.Write(formatted); err != nil {
-			return fmt.Errorf("writing formatted source to main.go: %w", err)
+			return fmt.Errorf("writing formatted source to servemux.go: %w", err)
 		}
 	}
 
@@ -65,8 +95,10 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 
 		fmt.Fprintln(b, "// this file is mechanically generated, do not edit!")
 		fmt.Fprintln(b, "package main")
-		fmt.Fprintf(b, "import \"%s\"\n", "TODO")
+		fmt.Fprintf(b, "import \"%s\"\n", modPath)
+		fmt.Fprintln(b, "import pushup \"github.com/adhocteam/pushup/api\"")
 		fmt.Fprintln(b, "func main() {")
+		fmt.Fprintf(b, "pushup.Main(%s.Handler)\n", pkgName)
 		fmt.Fprintln(b, "}")
 
 		formatted, err := format.Source(b.Bytes())
