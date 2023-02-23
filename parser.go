@@ -728,9 +728,6 @@ func (p *codeParser) parseCode() node {
 		// which a keyword block or an implicit expression could be used in the
 		// surrounding markup, and only parse for either depending on which
 		// context is current.
-	} else if tok == token.IDENT && lit == "section" {
-		p.advance()
-		e = p.parseSectionKeyword()
 	} else if tok == token.IDENT && lit == "partial" {
 		p.advance()
 		e = p.parsePartialKeyword()
@@ -897,22 +894,6 @@ loop:
 	p.advance()
 	result.code = p.sourceFrom(start)[:n]
 	result.pos.end = result.pos.start + n
-	return result
-}
-
-func (p *codeParser) parseSectionKeyword() *nodeSection {
-	// enter function one past the "section" IDENT token
-	// FIXME(paulsmith): we are currently requiring that the name of the
-	// partial be a valid Go identifier, but there is no reason that need be
-	// the case. perhaps a string is better here.
-	if p.peek().tok != token.IDENT {
-		p.errorf("expected IDENT, got %s", p.peek().tok.String())
-	}
-	result := &nodeSection{name: p.peek().lit}
-	result.pos.start = p.parser.offset
-	p.advance()
-	result.pos.end = p.parser.offset
-	result.block = p.parseStmtBlock()
 	return result
 }
 

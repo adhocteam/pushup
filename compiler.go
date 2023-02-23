@@ -17,6 +17,9 @@ const (
 )
 
 type compileProjectParams struct {
+	// modPath is the Go module path specified in the project's go.mod file
+	modPath string
+
 	// path to output build directory
 	outDir string
 
@@ -33,9 +36,18 @@ type compileProjectParams struct {
 	embedSource bool
 }
 
+type routeRole int
+
+const (
+	routePage routeRole = iota
+	routePartial
+)
+
 type page struct {
-	path    string
-	urlPath string
+	PkgPath string
+	Name    string
+	Route   string
+	Role    routeRole
 }
 
 type compiledOutput struct {
@@ -139,8 +151,9 @@ func compileUpFile(pfile projectFile, ftype upFileType, projectParams *compilePr
 		return fmt.Errorf("creating/truncating destination file %s: %w", destPath, err)
 	}
 	defer destFile.Close()
-	params := compileParams{
+	params := &compileParams{
 		source:             sourceFile,
+		modPath:            projectParams.modPath,
 		pkgName:            pkgName,
 		dest:               destFile,
 		pfile:              pfile,
@@ -165,6 +178,7 @@ func compiledOutputPath(pfile projectFile, ftype upFileType) string {
 
 type compileParams struct {
 	source             io.Reader
+	modPath            string
 	pkgName            string
 	dest               io.Writer
 	pfile              projectFile
@@ -175,7 +189,7 @@ type compileParams struct {
 // compile compiles Pushup source code. it parses the source, applies
 // optimizations to the resulting syntax tree, and generates Go code from the
 // tree.
-func compile(params compileParams) error {
+func compile(params *compileParams) error {
 	b, err := io.ReadAll(params.source)
 	if err != nil {
 		return fmt.Errorf("reading source: %w", err)
@@ -191,7 +205,7 @@ func compile(params compileParams) error {
 		tree = optimize(tree)
 	}
 
-	var code []byte
+	var result *codeGenResult
 
 	switch params.ftype {
 	case upFilePage:
@@ -199,8 +213,8 @@ func compile(params compileParams) error {
 		if err != nil {
 			return fmt.Errorf("getting page from tree: %w", err)
 		}
-		codeGen := newPageCodeGen(page, params.pfile, src, params.pkgName)
-		code, err = genCodePage(codeGen)
+		codeGen := newPageCodeGen(page, src, params)
+		result, err = genCodePage(codeGen)
 		if err != nil {
 			return fmt.Errorf("generating code for a page: %w", err)
 		}
@@ -211,7 +225,7 @@ func compile(params compileParams) error {
 		return fmt.Errorf("generating code: %w", err)
 	}
 
-	if _, err := params.dest.Write(code); err != nil {
+	if _, err := params.dest.Write(result.code); err != nil {
 		return fmt.Errorf("writing generated page code: %w", err)
 	}
 

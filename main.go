@@ -328,36 +328,32 @@ func (b *buildCmd) do() error {
 		return err
 	}
 
-	// FIXME(paulsmith): dedupe this with runCmd.do()
-	{
-		params := &compileProjectParams{
-			outDir:             b.outDir,
-			parseOnly:          b.parseOnly,
-			files:              b.files,
-			applyOptimizations: b.applyOptimizations,
-			embedSource:        b.embedSource,
-		}
+	modPath, err := projectModulePath()
+	if err != nil {
+		return fmt.Errorf("getting module path: %w", err)
+	}
 
-		if err := compileProject(params); err != nil {
-			return fmt.Errorf("parsing and compiling: %w", err)
-		}
+	// FIXME(paulsmith): dedupe this with runCmd.do()
+	cparams := &compileProjectParams{
+		modPath:            modPath,
+		outDir:             b.outDir,
+		parseOnly:          b.parseOnly,
+		files:              b.files,
+		applyOptimizations: b.applyOptimizations,
+		embedSource:        b.embedSource,
+	}
+
+	output, err := compileProject(cparams)
+	if err != nil {
+		return fmt.Errorf("parsing and compiling: %w", err)
 	}
 
 	if b.parseOnly || b.codeGenOnly {
 		return nil
 	}
 
-	{
-		params := buildParams{
-			projectName:       b.projectName.String(),
-			compiledOutputDir: b.outDir,
-			buildDir:          b.outDir,
-			outFile:           b.outFile,
-			verbose:           b.verbose,
-		}
-		if err := buildProject(context.Background(), params); err != nil {
-			return fmt.Errorf("building project: %w", err)
-		}
+	if err := linkProject(context.TODO(), output); err != nil {
+		return fmt.Errorf("linking project: %w", err)
 	}
 
 	return nil
@@ -415,7 +411,7 @@ func (r *runCmd) do() error {
 
 	if r.devReload {
 		var mu sync.Mutex
-		buildComplete := sync.NewCond(&mu)
+		linkComplete := sync.NewCond(&mu)
 
 		tmpdir, err := os.MkdirTemp("", "pushupdev")
 		if err != nil {
@@ -423,7 +419,7 @@ func (r *runCmd) do() error {
 		}
 		defer os.RemoveAll(tmpdir)
 		socketPath := filepath.Join(tmpdir, "pushup-"+strconv.Itoa(os.Getpid())+".sock")
-		if err = startReloadRevProxy(socketPath, buildComplete, r.port); err != nil {
+		if err = startReloadRevProxy(socketPath, linkComplete, r.port); err != nil {
 			return fmt.Errorf("starting reverse proxy: %v", err)
 		}
 
@@ -452,32 +448,28 @@ func (r *runCmd) do() error {
 				return fmt.Errorf("scanning for project files: %v", err)
 			}
 
-			var output compiledOutput
-			{
-				params := &compileProjectParams{
-					outDir:             r.outDir,
-					parseOnly:          r.parseOnly,
-					files:              r.files,
-					applyOptimizations: r.applyOptimizations,
-					embedSource:        r.embedSource,
-				}
-				var err error
-				if output, err = compileProject(params); err != nil {
-					return fmt.Errorf("parsing and compiling: %v", err)
-				}
+			modPath, err := projectModulePath()
+			if err != nil {
+				return fmt.Errorf("getting module path: %w", err)
 			}
 
-			{
-				params := buildParams{
-					projectName:       r.projectName.String(),
-					compiledOutputDir: r.outDir,
-					buildDir:          r.outDir,
-				}
-				if err := buildProject(ctx, params); err != nil {
-					return fmt.Errorf("building Pushup project: %v", err)
-				}
-				buildComplete.Broadcast()
+			cparams := &compileProjectParams{
+				modPath:            modPath,
+				outDir:             r.outDir,
+				parseOnly:          r.parseOnly,
+				files:              r.files,
+				applyOptimizations: r.applyOptimizations,
+				embedSource:        r.embedSource,
 			}
+			output, err := compileProject(cparams)
+			if err != nil {
+				return fmt.Errorf("parsing and compiling: %v", err)
+			}
+
+			if err := linkProject(ctx, output); err != nil {
+				return fmt.Errorf("building Pushup project: %v", err)
+			}
+			linkComplete.Broadcast()
 
 			watchForReload(ctx, r.projectDir, reload)
 			if err := runProject(ctx, binExePath, ln); err != nil {
@@ -700,20 +692,24 @@ type buildParams struct {
 	verbose           bool
 }
 
+func projectModulePath() (string, error) {
+	goModContents, err := os.ReadFile("go.mod")
+	if err != nil {
+		return "", fmt.Errorf("could not read go.mod: %w", err)
+	}
+	f, err := modfile.Parse("go.mod", goModContents, nil)
+	if err != nil {
+		return "", fmt.Errorf("parsing go.mod file: %w", err)
+	}
+	return f.Module.Mod.Path, nil
+}
+
 // buildProject builds the Go program made up of the user's compiled .up
 // files and .go code, as well as Pushup's library APIs.
 func buildProject(_ context.Context, b buildParams) error {
-	var pkgName string
-	{
-		goModContents, err := os.ReadFile("go.mod")
-		if err != nil {
-			return fmt.Errorf("could not read go.mod: %w", err)
-		}
-		f, err := modfile.Parse("go.mod", goModContents, nil)
-		if err != nil {
-			return fmt.Errorf("parsing go.mod file: %w", err)
-		}
-		pkgName = f.Module.Mod.Path + "/build"
+	modPath, err := projectModulePath()
+	if err != nil {
+		return fmt.Errorf("getting project Go module name: %w", err)
 	}
 
 	mainExeDir := filepath.Join(b.compiledOutputDir, "cmd", b.projectName)
@@ -726,7 +722,7 @@ func buildProject(_ context.Context, b buildParams) error {
 	if err != nil {
 		return fmt.Errorf("creating main.go: %w", err)
 	}
-	if err := t.Execute(f, map[string]any{"ProjectPkg": pkgName}); err != nil {
+	if err := t.Execute(f, map[string]any{"ProjectPkg": modPath}); err != nil {
 		return fmt.Errorf("executing main.go template: %w", err)
 	}
 	f.Close()
@@ -736,7 +732,7 @@ func buildProject(_ context.Context, b buildParams) error {
 		b.outFile = filepath.Join(b.buildDir, "bin", b.projectName)
 	}
 
-	args := []string{"build", "-o", b.outFile, filepath.Join(pkgName, "cmd", b.projectName)}
+	args := []string{"build", "-o", b.outFile, filepath.Join(modPath, "cmd", b.projectName)}
 	if b.verbose {
 		fmt.Printf("build command: go %s\n", strings.Join(args, " "))
 	}

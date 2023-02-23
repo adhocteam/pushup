@@ -56,10 +56,6 @@ func prettyPrintTree(t *syntaxTree) {
 			f(nodeList(n.children))
 			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.tag.end())
 			return false
-		case *nodeSection:
-			fmt.Fprintf(w, "SECTION %s\n", n.name)
-			f(n.block)
-			return false
 		case *nodePartial:
 			fmt.Fprintf(w, "PARTIAL %s\n", n.name)
 			f(n.block)

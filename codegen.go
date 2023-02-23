@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"go/format"
 	"io"
@@ -28,10 +29,9 @@ const methodReceiverName = "up"
 // parsedPage represents a Pushup parsedPage that has been parsed and is ready
 // for code generation.
 type parsedPage struct {
-	imports  []importDecl
-	handler  *nodeGoCode
-	nodes    []node
-	sections map[string]*nodeBlock
+	imports []importDecl
+	handler *nodeGoCode
+	nodes   []node
 
 	// partials is a list of all top-level inline partials in this page.
 	partials []*partial
@@ -64,13 +64,12 @@ func (p *partial) urlpath() string {
 // the code generator.
 func newPageFromTree(tree *syntaxTree) (*parsedPage, error) {
 	page := new(parsedPage)
-	page.sections = make(map[string]*nodeBlock)
 
 	n := 0
 	var err error
 
 	// this pass over the syntax tree nodes enforces invariants (only one
-	// handler may be declared per page) and aggregates imports and sections
+	// handler may be declared per page) and aggregates imports
 	// for easier access in the subsequent code generation phase. as a
 	// result, some nodes are removed from the tree.
 	var f inspector
@@ -93,8 +92,6 @@ func newPageFromTree(tree *syntaxTree) (*parsedPage, error) {
 			for _, x := range e {
 				f(x)
 			}
-		case *nodeSection:
-			page.sections[e.name] = e.block
 		default:
 			tree.nodes[n] = e
 			n++
@@ -140,9 +137,6 @@ func newPageFromTree(tree *syntaxTree) (*parsedPage, error) {
 			case *nodeBlock:
 				f(nodeList(e.nodes))
 				return false
-			case *nodeSection:
-				f(e.block)
-				return false
 			case *nodePartial:
 				p := &partial{node: e, name: e.name, parent: currentPartial}
 				if currentPartial != nil {
@@ -168,27 +162,31 @@ func newPageFromTree(tree *syntaxTree) (*parsedPage, error) {
 type pageCodeGen struct {
 	page    *parsedPage
 	pfile   projectFile
+	modPath string
 	pkgName string
 	source  string
 	imports map[importDecl]bool
 
-	// buffer for the package clauses and import declarations at the top of
-	// a Go source file.
-	outb bytes.Buffer
+	// buffer for the comments at the very top of a Go source file.
+	comments bytes.Buffer
+
+	// buffer for the import declarations at the top of a Go source file.
+	importDecls bytes.Buffer
 
 	// buffer for the main body of a Go source file, i.e., the top-level
 	// declarations.
-	bodyb bytes.Buffer
+	body bytes.Buffer
 
 	ioWriterVar           string
 	lineDirectivesEnabled bool
 }
 
-func newPageCodeGen(page *parsedPage, pfile projectFile, source string, pkgName string) *pageCodeGen {
+func newPageCodeGen(page *parsedPage, source string, cparams *compileParams) *pageCodeGen {
 	g := &pageCodeGen{
 		page:                  page,
-		pfile:                 pfile,
-		pkgName:               pkgName,
+		pfile:                 cparams.pfile,
+		modPath:               cparams.modPath,
+		pkgName:               cparams.pkgName,
 		source:                source,
 		imports:               make(map[importDecl]bool),
 		ioWriterVar:           "w",
@@ -220,12 +218,27 @@ func (g *pageCodeGen) emitLineDirective(n int) {
 	g.bodyPrintf("//line %s:%d\n", g.pfile.relpath(), n)
 }
 
-func (g *pageCodeGen) outPrintf(format string, args ...any) {
-	fmt.Fprintf(&g.outb, format, args...)
+func (g *pageCodeGen) commentPrintf(format string, args ...any) {
+	fmt.Fprintf(&g.comments, format, args...)
+}
+
+func (g *pageCodeGen) importDeclPrintf(format string, args ...any) {
+	fmt.Fprintf(&g.importDecls, format, args...)
 }
 
 func (g *pageCodeGen) bodyPrintf(format string, args ...any) {
-	fmt.Fprintf(&g.bodyb, format, args...)
+	fmt.Fprintf(&g.body, format, args...)
+}
+
+func (g *pageCodeGen) readAll() ([]byte, error) {
+	bufs := []io.Reader{
+		&g.comments,
+		strings.NewReader("package " + g.pkgName + "\n"),
+		&g.importDecls,
+		&g.body,
+	}
+	raw, err := io.ReadAll(io.MultiReader(bufs...))
+	return raw, err
 }
 
 func (g *pageCodeGen) generate() {
@@ -291,9 +304,6 @@ func (g *pageCodeGen) genNode(n node) {
 			return false
 		case *nodeBlock:
 			f(nodeList(e.nodes))
-			return false
-		case *nodeSection:
-			f(e.block)
 			return false
 		case *nodePartial:
 			f(e.block)
@@ -396,9 +406,23 @@ func (g *pageCodeGen) genNodePartial(n node, p *partial) {
 	inspect(n, f)
 }
 
+// pkgPathForPage produces the Go package path from the filesystem path of the
+// Pushup page.
+func pkgPathForPage(modPath string, path string) string {
+	return filepath.Join(modPath, filepath.Dir(path))
+}
+
+// TODO(paulsmith): allow "pages" to be a configurable path prefix
+const pagesPathPrefix = "pages"
+
 // routeForPage produces the URL path route from the name of the Pushup page.
 // path is the path to the Pushup page file.
 func routeForPage(path string) string {
+	path, err := filepath.Rel(pagesPathPrefix, path)
+	if err != nil {
+		panic(fmt.Sprintf("path to page is not relative to '%s' directory", pagesPathPrefix))
+	}
+
 	var dirs []string
 	dir := filepath.Dir(path)
 	if dir != "." {
@@ -432,19 +456,18 @@ func routeForPartial(relpath string, partialUrlpath string) string {
 	return route
 }
 
-func genCodePage(g *pageCodeGen) ([]byte, error) {
-	type initRoute struct {
-		typename string
-		route    string
-		role     string
-	}
-	var inits []initRoute
+type codeGenResult struct {
+	Pages []*page
+	code  []byte
+}
 
-	g.outPrintf("// this file is mechanically generated, do not edit!\n")
-	g.outPrintf("// version: ")
-	printVersion(&g.outb)
-	g.outPrintf("\n")
-	g.outPrintf("package %s\n\n", g.pkgName)
+func genCodePage(g *pageCodeGen) (*codeGenResult, error) {
+	var result codeGenResult
+
+	g.commentPrintf("// this file is mechanically generated, do not edit!\n")
+	g.commentPrintf("// version: ")
+	printVersion(&g.comments)
+	g.commentPrintf("\n")
 
 	type field struct {
 		name string
@@ -455,8 +478,13 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 	{
 		typename := generatedTypename(g.pfile, upFilePage)
 		route := routeForPage(g.pfile.relpath())
-		inits = append(inits, initRoute{typename: typename, route: route, role: "routePage"})
-
+		page := page{
+			PkgPath: pkgPathForPage(g.modPath, g.pfile.relpath()),
+			Name:    typename,
+			Route:   route,
+			Role:    routePage,
+		}
+		result.Pages = append(result.Pages, &page)
 		g.bodyPrintf("type %s struct {\n", typename)
 		fields := []field{}
 		for _, field := range fields {
@@ -487,73 +515,18 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 			}
 		}
 
-		g.used("html/template")
-		g.bodyPrintf("// sections\n")
-		g.bodyPrintf("sections := make(map[string]chan template.HTML)\n")
-		g.bodyPrintf("sections[\"contents\"] = make(chan template.HTML)\n")
-		for name := range g.page.sections {
-			g.bodyPrintf("sections[%s] = make(chan template.HTML)\n", strconv.Quote(name))
-		}
-
 		// Make a new scope for the user's code block and HTML. This will help (but not fully prevent)
 		// name collisions with the surrounding code.
 		g.bodyPrintf("\n// Begin user Go code and HTML\n")
 		g.bodyPrintf("{\n")
 
-		g.bodyPrintf("var panicked any\n")
 		// render the main body contents
-		// TODO(paulsmith) could do these as a incremental stream
-		// so the receiving end is just pulling individual chunks off
-		g.bodyPrintf("wg.Add(1)\n")
-		g.bodyPrintf("go func() {\n")
-		g.bodyPrintf("  defer wg.Done()\n")
-		g.bodyPrintf("  defer func() {\n")
-		g.bodyPrintf("    if r := recover(); r != nil {\n")
-		g.bodyPrintf("      if panicked == nil {\n")
-		g.bodyPrintf("	      cancel()\n")
-		g.bodyPrintf("	      panicked = r\n")
-		g.bodyPrintf("	    }\n")
-		g.bodyPrintf("    }\n")
-		g.bodyPrintf("  }()\n")
-		g.used("bytes", "html/template")
+		g.used("bytes")
 		save := g.ioWriterVar
 		g.ioWriterVar = "__pushup_b"
 		g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
 		g.generate()
-		g.bodyPrintf("  sections[\"contents\"] <- template.HTML(%s.String())\n", g.ioWriterVar)
-		g.bodyPrintf("}()\n\n")
 		g.ioWriterVar = save
-
-		for name, block := range g.page.sections {
-			save := g.ioWriterVar
-			g.ioWriterVar = "__pushup_b"
-			g.bodyPrintf("wg.Add(1)\n")
-			g.bodyPrintf("go func() {\n")
-			g.bodyPrintf("  defer wg.Done()\n")
-			g.bodyPrintf("  defer func() {\n")
-			g.bodyPrintf("    if r := recover(); r != nil {\n")
-			g.bodyPrintf("      if panicked != nil {\n")
-			g.bodyPrintf("	      cancel()\n")
-			g.bodyPrintf("	      panicked = r\n")
-			g.bodyPrintf("	    }\n")
-			g.bodyPrintf("    }\n")
-			g.bodyPrintf("  }()\n")
-			g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
-			g.genNode(block)
-			g.bodyPrintf("  sections[%s] <- template.HTML(%s.String())\n", strconv.Quote(name), g.ioWriterVar)
-			g.bodyPrintf("}()\n")
-			g.ioWriterVar = save
-		}
-
-		// Check if any of the goroutines panicked
-		g.bodyPrintf("if panicked != nil {\n")
-		g.bodyPrintf("  close(sections[\"contents\"])\n")
-		for name := range g.page.sections {
-			g.bodyPrintf("  close(sections[%s])\n", strconv.Quote(name))
-		}
-		g.used("fmt")
-		g.bodyPrintf("  return fmt.Errorf(\"goroutine panicked: %%v\", panicked)\n")
-		g.bodyPrintf("}\n")
 
 		// Close the scope we started for the user code and HTML.
 		g.bodyPrintf("// End user Go code and HTML\n")
@@ -567,8 +540,13 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 	for _, partial := range g.page.partials {
 		typename := generatedTypenamePartial(partial, g.pfile)
 		route := routeForPartial(g.pfile.relpath(), partial.urlpath())
-		inits = append(inits, initRoute{typename: typename, route: route, role: "routePartial"})
-
+		page := page{
+			PkgPath: pkgPathForPage(g.modPath, g.pfile.relpath()),
+			Name:    typename,
+			Route:   route,
+			Role:    routePartial,
+		}
+		result.Pages = append(result.Pages, &page)
 		g.bodyPrintf("type %s struct {\n", typename)
 		fields := []field{}
 		for _, field := range fields {
@@ -612,37 +590,37 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 		g.bodyPrintf("}\n")
 	}
 
-	g.bodyPrintf("\nfunc init() {\n")
-	for _, initRoute := range inits {
-		g.bodyPrintf("  routes.add(%s, new(%s), %s)\n", strconv.Quote(initRoute.route), initRoute.typename, initRoute.role)
-	}
-	g.bodyPrintf("}\n\n")
-
 	// we write out imports at the end because we need to know what was
 	// actually used by the body code
-	g.outPrintf("import (\n")
+	g.importDeclPrintf("import (\n")
 	for decl, ok := range g.imports {
 		if ok {
 			if decl.pkgName != "" {
-				g.outPrintf("%s ", decl.pkgName)
+				g.importDeclPrintf("%s ", decl.pkgName)
 			}
-			g.outPrintf("%s\n", decl.path)
+			g.importDeclPrintf("%s\n", decl.path)
 		}
 	}
-	g.outPrintf(")\n\n")
+	g.importDeclPrintf(")\n\n")
 
-	raw, err := io.ReadAll(io.MultiReader(&g.outb, &g.bodyb))
+	g.commentPrintf("/*\n")
+	if err := json.NewEncoder(&g.comments).Encode(result.Pages); err != nil {
+		return nil, fmt.Errorf("encoding link metadata: %w", err)
+	}
+	g.commentPrintf("*/\n")
+
+	raw, err := g.readAll()
 	if err != nil {
 		return nil, fmt.Errorf("reading all buffers: %w", err)
 	}
 
-	formatted, err := format.Source(raw)
+	result.code, err = format.Source(raw)
 	if err != nil {
 		log.Printf("ERROR: %v", err)
 		return nil, fmt.Errorf("gofmt the generated code: %w", err)
 	}
 
-	return formatted, nil
+	return &result, nil
 }
 
 // generatedTypename returns the name of the type of the Go struct that

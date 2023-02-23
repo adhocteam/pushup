@@ -67,8 +67,6 @@ func walk(v visitor, n node) {
 		walk(v, n.block)
 	case *nodeBlock:
 		walkNodeList(v, n.nodes)
-	case *nodeSection:
-		walk(v, n.block)
 	case *nodeImport:
 		// no children
 	case nodeList:
@@ -132,16 +130,6 @@ type nodeFor struct {
 }
 
 func (e nodeFor) Pos() span { return e.clause.pos }
-
-type nodeSection struct {
-	name  string
-	pos   span
-	block *nodeBlock
-}
-
-func (e nodeSection) Pos() span { return e.pos }
-
-var _ node = (*nodeSection)(nil)
 
 // nodePartial is a syntax tree node representing an inline partial in a Pushup
 // page.

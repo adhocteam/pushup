@@ -38,10 +38,10 @@ io.WriteString(w, "</div>")
 			if err != nil {
 				t.Fatalf("new page from tree: %v", err)
 			}
-			g := newPageCodeGen(page, projectFile{}, "")
+			g := newPageCodeGen(page, projectFile{}, "", "")
 			g.lineDirectivesEnabled = false
 			g.genNode(test.node)
-			got := g.bodyb.String()
+			got := g.body.String()
 			if diff := cmp.Diff(test.want, got); diff != "" {
 				t.Errorf("expected code gen diff (-want +got):\n%s", diff)
 			}
