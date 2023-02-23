@@ -352,7 +352,13 @@ func (b *buildCmd) do() error {
 		return nil
 	}
 
-	if err := linkProject(context.TODO(), output); err != nil {
+	lparams := &linkerParams{
+		output:     output,
+		modPath:    modPath,
+		projectDir: b.projectDir,
+		exeName:    b.projectName.String(),
+	}
+	if err := linkProject(context.TODO(), lparams); err != nil {
 		return fmt.Errorf("linking project: %w", err)
 	}
 
@@ -466,7 +472,13 @@ func (r *runCmd) do() error {
 				return fmt.Errorf("parsing and compiling: %v", err)
 			}
 
-			if err := linkProject(ctx, output); err != nil {
+			lparams := &linkerParams{
+				output:     output,
+				modPath:    modPath,
+				projectDir: r.projectDir,
+				exeName:    r.projectName.String(),
+			}
+			if err := linkProject(context.TODO(), lparams); err != nil {
 				return fmt.Errorf("building Pushup project: %v", err)
 			}
 			linkComplete.Broadcast()
