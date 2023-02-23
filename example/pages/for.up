@@ -1,6 +1,5 @@
+<!-- TODO title -->
 ^import "fmt"
-
-^section title { <text>for range example</text> }
 
 ^{
     type product struct {

@@ -533,6 +533,7 @@ func genCodePage(g *pageCodeGen) (*codeGenResult, error) {
 		g.ioWriterVar = "__pushup_b"
 		g.bodyPrintf("  %s := new(bytes.Buffer)\n", g.ioWriterVar)
 		g.generate()
+		g.bodyPrintf("  io.Copy(w, %s)\n", g.ioWriterVar)
 		g.ioWriterVar = save
 
 		// Close the scope we started for the user code and HTML.

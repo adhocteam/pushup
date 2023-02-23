@@ -1,3 +1,5 @@
+<!-- TODO title -->
+
 ^{
     title := "About Pushup"
     var remoteAddr string
@@ -8,10 +10,6 @@
     } else {
         remoteAddr = req.RemoteAddr
     }
-}
-
-^section title {
-    <text>About Pushup</text>
 }
 
 <h1>^title</h1>

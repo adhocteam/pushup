@@ -1,2 +1,3 @@
-<p>Project ^getParam(req, "pid")</p>
-<p>User ^getParam(req, "uid")</p>
+^import "github.com/adhocteam/pushup/pushup"
+<p>Project ^pushup.Param(req, "pid")</p>
+<p>User ^pushup.Param(req, "uid")</p>

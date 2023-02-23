@@ -1,6 +1,8 @@
-^import "strings"
+<h1>THIS IS CURRENTLY BROKEN</h1>
 
-^handler {
+^^import "strings"
+
+^^handler {
     route := req.FormValue("route")
     routeMatch := getRouteFromPath(route)
     if routeMatch.response == routeNotFound {
@@ -22,7 +24,7 @@
     source := string(GetPageSource(fpath))
 }
 
-<p>Source code for Pushup page <tt>^fpath</tt> for the route <a href="^path"><b>^path</b></a>:</p>
+<p>Source code for Pushup page <tt>^^fpath</tt> for the route <a href="^^path"><b>^^path</b></a>:</p>
 
 <style>
 pre {
@@ -32,4 +34,4 @@ pre {
 }
 </style>
 
-<pre><code>^source</code></pre>
+<pre><code>^^source</code></pre>

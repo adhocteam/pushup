@@ -1,14 +1,16 @@
+^import "github.com/adhocteam/pushup/pushup"
+
 <h2>Dynamic path segments</h2>
 
 <p>This page lives at <tt>dyn/$name.up</tt> in the project directory.</p>
 
 <p>The <tt>$name</tt> part matches that part of the path, and is made available
-    to Pushup pages with <tt>getParam(req, "name")</tt>.
+    to Pushup pages with <tt>pushup.Param(req, "name")</tt>.
 </p>
 
 <p><tt>$name</tt> can be pretty much anything, treat it like a URL slug.
     Whatever the characters after the <tt>$</tt> is the name to pass to
-    <tt>getParam()</tt>.
+    <tt>pushup.Param()</tt>.
 </p>
 
 <p>This also works with directories named starting with a '$'. For example,
@@ -26,9 +28,12 @@
 
 <h3>Live example</h3>
 
-<p><code>Hello, ^^getParam(req, "name")</code>: <b>Hello, ^getParam(req, "name")!</b></p>
+<pre><code>
+^^import "github.com/adhocteam/pushup/pushup"
+</code></pre>
+<p><code>Hello, ^^pushup.Param(req, "name")</code>: <b>Hello, ^pushup.Param(req, "name")!</b></p>
 <p>URL: <tt>^req.URL.Path</tt></p>
-^if getParam(req, "name") == "world" {
+^if pushup.Param(req, "name") == "world" {
     <p><a href="/dyn/Pushup">/dyn/Pushup</a></p>
 } ^else {
     <p><a href="/dyn/world">/dyn/world</a></p>

@@ -76,6 +76,8 @@ var ErrNotFound = errors.New("page not found")
 
 type ctxKey struct{}
 
+var paramKey ctxKey
+
 func (routes *Routes) Respond(w http.ResponseWriter, r *http.Request) error {
 	routeMatch := getRouteFromPath(routes, r.URL.Path)
 	switch routeMatch.response {
@@ -94,7 +96,7 @@ func (routes *Routes) Respond(w http.ResponseWriter, r *http.Request) error {
 		// NOTE(paulsmith): since we totally control the Respond() method on
 		// the component interface, we probably should pass the params to
 		// Respond instead of wrapping the request object with context values.
-		ctx := context.WithValue(r.Context(), ctxKey{}, params)
+		ctx := context.WithValue(r.Context(), paramKey, params)
 		if err := route.responder.Respond(w, r.WithContext(ctx)); err != nil {
 			return err
 		}
@@ -102,6 +104,10 @@ func (routes *Routes) Respond(w http.ResponseWriter, r *http.Request) error {
 	default:
 		panic("unhandled route match response")
 	}
+}
+
+func ParamsFromContext(ctx context.Context) map[string]string {
+	return ctx.Value(paramKey).(map[string]string)
 }
 
 func zipMap[K comparable, V any](ks []K, vs []V) map[K]V {

@@ -11,7 +11,7 @@
 }
 
 ^{
-    title := pushupGreeting // pushupGreeting declared in app/pkg/app.go
+    title := pushupGreeting // pushupGreeting declared in index.go
     greeting := "Hello"
     name := "world"
 }

@@ -1,8 +1,10 @@
 ^import "strconv"
+^import "github.com/adhocteam/pushup/pushup"
+
 ^import "github.com/adhocteam/pushup/example/crud"
 
 ^handler {
-    id, err := strconv.Atoi(getParam(req, "id"))
+    id, err := strconv.Atoi(pushup.Param(req, "id"))
     if err != nil {
         return err
     }

@@ -195,6 +195,7 @@ func (n *newCmd) do() error {
 
 	scaffoldFiles := []string{
 		"pages/index.up",
+		"pages/index.go",
 		"static/style.css",
 		"static/htmx.min.js",
 	}
