@@ -43,6 +43,7 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 
 		fmt.Fprintln(b, "// this file is mechanically generated, do not edit!")
 		fmt.Fprintln(b, "package "+pkgName)
+		fmt.Fprintln(b, "import \"embed\"")
 		fmt.Fprintln(b, "import \"net/http\"")
 		fmt.Fprintln(b, "import \"github.com/adhocteam/pushup/api\"")
 		for path := range importPaths {
@@ -68,6 +69,8 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 		fmt.Fprintln(b, "api.Respond(routes, w, req)")
 		fmt.Fprintln(b, "}")
 		fmt.Fprintln(b, "var Handler = http.HandlerFunc(HandleFunc)")
+		fmt.Fprintln(b, "//go:embed static")
+		fmt.Fprintln(b, "var static embed.FS")
 
 		formatted, err := format.Source(b.Bytes())
 		if err != nil {

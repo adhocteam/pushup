@@ -23,7 +23,6 @@ import (
 	"sync"
 	"syscall"
 	"text/tabwriter"
-	"text/template"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/net/html/atom"
@@ -686,9 +685,6 @@ func findProjectFiles(root string) (*projectFiles, error) {
 	return pf, nil
 }
 
-//go:embed _runtime/pushup_support.go _runtime/cmd/main.go
-var runtimeFiles embed.FS
-
 // copyFileFS copies a file from an fs.FS and writes it to a file location on
 // the local filesystem. src is the name of the file object in the FS. it
 // assumes the directory for dest already exists.
@@ -730,48 +726,6 @@ func projectModulePath() (string, error) {
 		return "", fmt.Errorf("parsing go.mod file: %w", err)
 	}
 	return f.Module.Mod.Path, nil
-}
-
-// buildProject builds the Go program made up of the user's compiled .up
-// files and .go code, as well as Pushup's library APIs.
-func buildProject(_ context.Context, b buildParams) error {
-	modPath, err := projectModulePath()
-	if err != nil {
-		return fmt.Errorf("getting project Go module name: %w", err)
-	}
-
-	mainExeDir := filepath.Join(b.compiledOutputDir, "cmd", b.projectName)
-	if err := os.MkdirAll(mainExeDir, 0755); err != nil {
-		return fmt.Errorf("making directory for command: %w", err)
-	}
-
-	t := template.Must(template.ParseFS(runtimeFiles, filepath.Join("_runtime", "cmd", "main.go")))
-	f, err := os.Create(filepath.Join(mainExeDir, "main.go"))
-	if err != nil {
-		return fmt.Errorf("creating main.go: %w", err)
-	}
-	if err := t.Execute(f, map[string]any{"ProjectPkg": modPath}); err != nil {
-		return fmt.Errorf("executing main.go template: %w", err)
-	}
-	f.Close()
-
-	// The default output file is buildDir/bin/projectName
-	if b.outFile == "" {
-		b.outFile = filepath.Join(b.buildDir, "bin", b.projectName)
-	}
-
-	args := []string{"build", "-o", b.outFile, filepath.Join(modPath, "cmd", b.projectName)}
-	if b.verbose {
-		fmt.Printf("build command: go %s\n", strings.Join(args, " "))
-	}
-	cmd := exec.Command("go", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("building project main executable: %w", err)
-	}
-
-	return nil
 }
 
 // runProject runs the generated Pushup project executable, taking a listener
