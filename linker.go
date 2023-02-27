@@ -44,13 +44,11 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 		fmt.Fprintln(b, "// this file is mechanically generated, do not edit!")
 		fmt.Fprintln(b, "package "+pkgName)
 		fmt.Fprintln(b, "import \"embed\"")
-		fmt.Fprintln(b, "import \"io/fs\"")
-		fmt.Fprintln(b, "import \"net/http\"")
 		fmt.Fprintln(b, "import \"github.com/adhocteam/pushup/api\"")
 		for path := range importPaths {
 			fmt.Fprintln(b, "import \""+path+"\"")
 		}
-		fmt.Fprintln(b, "var Mux *http.ServeMux")
+		fmt.Fprintln(b, "var Router *api.Router")
 		fmt.Fprintln(b, "func init() {")
 		fmt.Fprintln(b, "routes := new(api.Routes)")
 		for _, page := range pages {
@@ -65,13 +63,8 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 			fmt.Fprintf(b, "routes.Add(\"%s\", &%s.%s{}, %s)\n",
 				page.Route, pkgName, page.Name, role)
 		}
-		fmt.Fprintln(b, "Mux = http.NewServeMux()")
-		fmt.Fprintln(b, "Mux.Handle(\"/\", routes)")
-		fmt.Fprintln(b, "fsys, err := fs.Sub(static, \"static\")")
-		fmt.Fprintln(b, "if err != nil {")
-		fmt.Fprintln(b, "panic(err)")
-		fmt.Fprintln(b, "}")
-		fmt.Fprintln(b, "Mux.Handle(\"/static/\", http.StripPrefix(\"/static/\", http.FileServer(http.FS(fsys))))")
+		fmt.Fprintln(b, "Router = api.NewRouter(routes)")
+		fmt.Fprintln(b, "Router.AddStatic(static)")
 		fmt.Fprintln(b, "}")
 		fmt.Fprintln(b, "")
 		fmt.Fprintln(b, "//go:embed static")
@@ -107,7 +100,7 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 		fmt.Fprintf(b, "import \"%s\"\n", modPath)
 		fmt.Fprintln(b, "import \"github.com/adhocteam/pushup/api\"")
 		fmt.Fprintln(b, "func main() {")
-		fmt.Fprintf(b, "api.Main(%s.Mux)\n", pkgName)
+		fmt.Fprintf(b, "api.Main(%s.Router)\n", pkgName)
 		fmt.Fprintln(b, "}")
 
 		formatted, err := format.Source(b.Bytes())

@@ -3,11 +3,30 @@ package api
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"log"
 	"net/http"
 	"regexp"
 	"strings"
 )
+
+type Router struct {
+	*http.ServeMux
+}
+
+func NewRouter(routes *Routes) *Router {
+	r := new(Router)
+	r.Handle("/", routes)
+	return r
+}
+
+func (r *Router) AddStatic(files fs.FS) {
+	fsys, err := fs.Sub(files, "static")
+	if err != nil {
+		panic(err)
+	}
+	r.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(fsys))))
+}
 
 type Responder interface {
 	Respond(http.ResponseWriter, *http.Request) error
