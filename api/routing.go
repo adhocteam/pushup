@@ -16,6 +16,7 @@ type Router struct {
 
 func NewRouter(routes *Routes) *Router {
 	r := new(Router)
+	r.ServeMux = http.NewServeMux()
 	r.Handle("/", routes)
 	return r
 }
