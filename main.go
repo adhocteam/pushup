@@ -666,8 +666,11 @@ func findProjectFiles(root string) (*projectFiles, error) {
 	}
 
 	staticDir := filepath.Join(root, "static")
-	{
-		if err := fs.WalkDir(os.DirFS(staticDir), ".", func(path string, d fs.DirEntry, _ error) error {
+	if dirExists(staticDir) {
+		if err := fs.WalkDir(os.DirFS(staticDir), ".", func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
 			if !d.IsDir() {
 				path = filepath.Join(staticDir, path)
 				pf.static = append(pf.static, projectFile{path: path})

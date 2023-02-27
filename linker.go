@@ -17,6 +17,8 @@ type linkerParams struct {
 	exeName    string
 }
 
+const filename = "pushup_linker.go"
+
 // linkProject puts a Pushup project together by linking together all the
 // generated Go source code and a main() function.
 func linkProject(ctx context.Context, params *linkerParams) error {
@@ -28,7 +30,7 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 
 	// Generate http serve mux of all routes
 	{
-		f, err := os.Create(filepath.Join(params.projectDir, "servemux.go"))
+		f, err := os.Create(filepath.Join(params.projectDir, filename))
 		if err != nil {
 			return fmt.Errorf("creating servemux.go: %w", err)
 		}
@@ -40,15 +42,21 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 		for _, page := range pages {
 			importPaths[page.PkgPath] = true
 		}
+		importPaths["github.com/adhocteam/pushup/api"] = true
+		if dirExists("static") {
+			importPaths["embed"] = true
+		}
 
 		fmt.Fprintln(b, "// this file is mechanically generated, do not edit!")
 		fmt.Fprintln(b, "package "+pkgName)
-		fmt.Fprintln(b, "import \"embed\"")
-		fmt.Fprintln(b, "import \"github.com/adhocteam/pushup/api\"")
 		for path := range importPaths {
 			fmt.Fprintln(b, "import \""+path+"\"")
 		}
 		fmt.Fprintln(b, "var Router *api.Router")
+		if dirExists("static") {
+			fmt.Fprintln(b, "//go:embed static")
+			fmt.Fprintln(b, "var static embed.FS")
+		}
 		fmt.Fprintln(b, "func init() {")
 		fmt.Fprintln(b, "routes := new(api.Routes)")
 		for _, page := range pages {
@@ -64,11 +72,11 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 				page.Route, pkgName, page.Name, role)
 		}
 		fmt.Fprintln(b, "Router = api.NewRouter(routes)")
-		fmt.Fprintln(b, "Router.AddStatic(static)")
+		if dirExists("static") {
+			fmt.Fprintln(b, "Router.AddStatic(static)")
+		}
 		fmt.Fprintln(b, "}")
 		fmt.Fprintln(b, "")
-		fmt.Fprintln(b, "//go:embed static")
-		fmt.Fprintln(b, "var static embed.FS")
 
 		formatted, err := format.Source(b.Bytes())
 		if err != nil {
