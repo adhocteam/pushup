@@ -248,7 +248,7 @@ func initVcs(projectDir string, vcs vcs) error {
 	case vcsGit:
 		path, err := exec.LookPath("git")
 		if err != nil {
-			log.Printf("WARN: git not found in $PATH")
+			log.Printf("[WARN] git not found in $PATH")
 			return nil
 		}
 
@@ -257,13 +257,6 @@ func initVcs(projectDir string, vcs vcs) error {
 		if err = cmd.Run(); err != nil {
 			return fmt.Errorf("git init: %w", err)
 		}
-
-		f, err := os.Create(filepath.Join(projectDir, ".gitignore"))
-		if err != nil {
-			return fmt.Errorf("creating .gitignore: %w", err)
-		}
-		defer f.Close()
-		fmt.Fprintln(f, "/build")
 	default:
 		panic("internal error: unimplemented VCS")
 	}
@@ -272,29 +265,25 @@ func initVcs(projectDir string, vcs vcs) error {
 }
 
 type buildCmd struct {
-	projectName        *regexString
 	projectDir         string
 	applyOptimizations bool
 	parseOnly          bool
 	codeGenOnly        bool
 	compileOnly        bool
-	outFile            string
+	output             string
 	embedSource        bool
 	pages              stringSlice
 	verbose            bool
 
-	files   *projectFiles
-	exePath string
+	files *projectFiles
 }
 
 func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
-	b.projectName = newRegexString(`^\w+`, "myproject")
-	flags.Var(b.projectName, "project", "name of Pushup project")
 	flags.BoolVar(&b.applyOptimizations, "O", false, "apply simple optimizations to the parse tree")
 	flags.BoolVar(&b.parseOnly, "parse-only", false, "exit after dumping parse result")
 	flags.BoolVar(&b.codeGenOnly, "codegen-only", false, "codegen only, don't compile")
 	flags.BoolVar(&b.compileOnly, "compile-only", false, "compile only, don't start web server after")
-	flags.StringVar(&b.outFile, "out-file", "", "path to output application binary. Defaults to ./build/bin/projectName")
+	flags.StringVar(&b.output, "o", "", "path to output executable")
 	flags.BoolVar(&b.embedSource, "embed-source", true, "embed the source .up files in executable")
 	flags.Var(&b.pages, "page", "path to a Pushup page. mulitple can be given")
 	flags.BoolVar(&b.verbose, "verbose", false, "output verbose information")
@@ -310,6 +299,17 @@ func newBuildCmd(arguments []string) *buildCmd {
 		b.projectDir = flags.Arg(0)
 	} else {
 		b.projectDir = "."
+	}
+	if b.output == "" {
+		modPath, err := projectModulePath(b.projectDir)
+		if err != nil {
+			panic(fmt.Sprintf("getting module path: %v", err))
+		}
+		path, err := filepath.Abs(filepath.Base(modPath))
+		if err != nil {
+			panic(fmt.Sprintf("getting absolute path: %v", err))
+		}
+		b.output = path
 	}
 	return b
 }
@@ -338,7 +338,7 @@ func (b *buildCmd) do() error {
 		return err
 	}
 
-	modPath, err := projectModulePath()
+	modPath, err := projectModulePath(b.projectDir)
 	if err != nil {
 		return fmt.Errorf("getting module path: %w", err)
 	}
@@ -365,10 +365,9 @@ func (b *buildCmd) do() error {
 		compiledOutput: output,
 		modPath:        modPath,
 		projectDir:     b.projectDir,
-		exeName:        b.projectName.String(),
+		exePath:        b.output,
 	}
-	b.exePath, err = linkProject(context.TODO(), lparams)
-	if err != nil {
+	if err := linkProject(context.TODO(), lparams); err != nil {
 		return fmt.Errorf("linking project: %w", err)
 	}
 
@@ -399,6 +398,17 @@ func newRunCmd(arguments []string) *runCmd {
 		b.projectDir = flags.Arg(0)
 	} else {
 		b.projectDir = "."
+	}
+	if b.output == "" {
+		modPath, err := projectModulePath(b.projectDir)
+		if err != nil {
+			panic(fmt.Sprintf("getting module path: %v", err))
+		}
+		path, err := filepath.Abs(filepath.Base(modPath))
+		if err != nil {
+			panic(fmt.Sprintf("getting absolute path: %v", err))
+		}
+		b.output = path
 	}
 	return &runCmd{
 		buildCmd:   b,
@@ -462,7 +472,7 @@ func (r *runCmd) do() error {
 				return fmt.Errorf("scanning for project files: %v", err)
 			}
 
-			modPath, err := projectModulePath()
+			modPath, err := projectModulePath(r.projectDir)
 			if err != nil {
 				return fmt.Errorf("getting module path: %w", err)
 			}
@@ -474,25 +484,24 @@ func (r *runCmd) do() error {
 				applyOptimizations: r.applyOptimizations,
 				embedSource:        r.embedSource,
 			}
-			output, err := compileProject(cparams)
+			compiledOutput, err := compileProject(cparams)
 			if err != nil {
 				return fmt.Errorf("parsing and compiling: %v", err)
 			}
 
 			lparams := &linkerParams{
-				compiledOutput: output,
+				compiledOutput: compiledOutput,
 				modPath:        modPath,
 				projectDir:     r.projectDir,
-				exeName:        r.projectName.String(),
+				exePath:        r.output,
 			}
-			exePath, err := linkProject(context.TODO(), lparams)
-			if err != nil {
+			if err := linkProject(context.TODO(), lparams); err != nil {
 				return fmt.Errorf("building Pushup project: %v", err)
 			}
 			linkComplete.Broadcast()
 
 			watchForReload(ctx, r.projectDir, reload)
-			if err := runProject(ctx, exePath, ln); err != nil {
+			if err := runProject(ctx, lparams.exePath, ln); err != nil {
 				return fmt.Errorf("building and running generated Go code: %v", err)
 			}
 
@@ -517,7 +526,7 @@ func (r *runCmd) do() error {
 				return fmt.Errorf("listening on TCP socket: %v", err)
 			}
 		}
-		if err := runProject(context.Background(), r.buildCmd.exePath, ln); err != nil {
+		if err := runProject(context.TODO(), r.buildCmd.output, ln); err != nil {
 			return fmt.Errorf("building and running generated Go code: %v", err)
 		}
 	}
@@ -704,16 +713,15 @@ func copyFileFS(fsys fs.FS, dest string, src string) error {
 }
 
 type buildParams struct {
-	projectName string
 	// path to directory with the compiled Pushup project code
 	compiledOutputDir string
 	buildDir          string
-	outFile           string
+	output            string
 	verbose           bool
 }
 
-func projectModulePath() (string, error) {
-	goModContents, err := os.ReadFile("go.mod")
+func projectModulePath(projectDir string) (string, error) {
+	goModContents, err := os.ReadFile(filepath.Join(projectDir, "go.mod"))
 	if err != nil {
 		return "", fmt.Errorf("could not read go.mod: %w", err)
 	}
@@ -749,6 +757,8 @@ func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 	cmd.ExtraFiles = []*os.File{file}
 	cmd.Env = append(os.Environ(), "PUSHUP_LISTENER_FD=3")
 
+	ctx, cancel := context.WithCancel(ctx)
+
 	g := new(errgroup.Group)
 
 	g.Go(func() error {
@@ -765,7 +775,10 @@ func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 		// NOTE(paulsmith): intentionally ignoring *ExitError because the child
 		// process will be signal killed here as a matter of course
 		//nolint:errcheck
-		cmd.Run()
+		if err := cmd.Run(); err != nil {
+			log.Printf("[WARN] error running command: %v", err)
+		}
+		cancel()
 		return nil
 	})
 
