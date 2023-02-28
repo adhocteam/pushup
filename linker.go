@@ -23,7 +23,7 @@ const filename = "pushup_linker.go"
 // generated Go source code and a main() function.
 func linkProject(ctx context.Context, params *linkerParams) error {
 	projectDir := params.projectDir
-	exeName := params.exePath
+	exeName := filepath.Base(params.exePath)
 	modPath := params.modPath
 	pkgName := filepath.Base(modPath)
 	pages := params.compiledOutput.pages
@@ -89,8 +89,8 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 	}
 
 	// Generate main.go
+	mainPkgPath := projectDir + string([]byte{os.PathSeparator}) + filepath.Join("cmd", exeName)
 	{
-		mainPkgPath := filepath.Join(projectDir, "cmd", exeName)
 		if err := os.MkdirAll(mainPkgPath, 0755); err != nil {
 			return fmt.Errorf("making main package dir: %w", err)
 		}
@@ -123,7 +123,7 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 
 	// Run Go compiler
 	{
-		args := []string{"build", "-o", params.exePath, filepath.Join(modPath, "cmd", exeName)}
+		args := []string{"build", "-o", params.exePath, mainPkgPath}
 		cmd := exec.Command("go", args...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

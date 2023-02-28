@@ -305,12 +305,9 @@ func newBuildCmd(arguments []string) *buildCmd {
 		if err != nil {
 			panic(fmt.Sprintf("getting module path: %v", err))
 		}
-		path, err := filepath.Abs(filepath.Base(modPath))
-		if err != nil {
-			panic(fmt.Sprintf("getting absolute path: %v", err))
-		}
-		b.output = path
+		b.output = b.projectDir + string([]byte{os.PathSeparator}) + filepath.Base(modPath)
 	}
+	log.Printf("OUTPUT: %v", b.output)
 	return b
 }
 
@@ -404,11 +401,7 @@ func newRunCmd(arguments []string) *runCmd {
 		if err != nil {
 			panic(fmt.Sprintf("getting module path: %v", err))
 		}
-		path, err := filepath.Abs(filepath.Base(modPath))
-		if err != nil {
-			panic(fmt.Sprintf("getting absolute path: %v", err))
-		}
-		b.output = path
+		b.output = b.projectDir + string([]byte{os.PathSeparator}) + filepath.Base(modPath)
 	}
 	return &runCmd{
 		buildCmd:   b,
