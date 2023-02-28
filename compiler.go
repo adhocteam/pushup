@@ -19,9 +19,6 @@ type compileProjectParams struct {
 	// modPath is the Go module path specified in the project's go.mod file
 	modPath string
 
-	// path to output build directory
-	outDir string
-
 	// flag to skip code generation
 	parseOnly bool
 

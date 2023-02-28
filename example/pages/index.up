@@ -3,7 +3,7 @@
 ^{
     title := "Examples of Pushup"
     greeting := "Hello"
-    name := "world"
+    name := "Paul"
 }
 
 <h2>^title</h2>

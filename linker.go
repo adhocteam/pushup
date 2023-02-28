@@ -11,28 +11,29 @@ import (
 )
 
 type linkerParams struct {
-	output     *compiledOutput
-	modPath    string
-	projectDir string
-	exeName    string
+	compiledOutput *compiledOutput
+	modPath        string
+	projectDir     string
+	exeName        string
+	destDir        string
 }
 
 const filename = "pushup_linker.go"
 
 // linkProject puts a Pushup project together by linking together all the
 // generated Go source code and a main() function.
-func linkProject(ctx context.Context, params *linkerParams) error {
+func linkProject(ctx context.Context, params *linkerParams) (string, error) {
 	projectDir := params.projectDir
 	exeName := params.exeName
 	modPath := params.modPath
 	pkgName := filepath.Base(modPath)
-	pages := params.output.pages
+	pages := params.compiledOutput.pages
 
 	// Generate http serve mux of all routes
 	{
 		f, err := os.Create(filepath.Join(params.projectDir, filename))
 		if err != nil {
-			return fmt.Errorf("creating servemux.go: %w", err)
+			return "", fmt.Errorf("creating servemux.go: %w", err)
 		}
 		defer f.Close()
 
@@ -80,11 +81,11 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 
 		formatted, err := format.Source(b.Bytes())
 		if err != nil {
-			return fmt.Errorf("gofmt on generated servemux.go: %w", err)
+			return "", fmt.Errorf("gofmt on generated servemux.go: %w", err)
 		}
 
 		if _, err := f.Write(formatted); err != nil {
-			return fmt.Errorf("writing formatted source to servemux.go: %w", err)
+			return "", fmt.Errorf("writing formatted source to servemux.go: %w", err)
 		}
 	}
 
@@ -92,12 +93,12 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 	{
 		mainPkgPath := filepath.Join(projectDir, "cmd", exeName)
 		if err := os.MkdirAll(mainPkgPath, 0755); err != nil {
-			return fmt.Errorf("making main package dir: %w", err)
+			return "", fmt.Errorf("making main package dir: %w", err)
 		}
 
 		f, err := os.Create(filepath.Join(mainPkgPath, "main.go"))
 		if err != nil {
-			return fmt.Errorf("creating main.go: %w", err)
+			return "", fmt.Errorf("creating main.go: %w", err)
 		}
 		defer f.Close()
 
@@ -113,24 +114,25 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 
 		formatted, err := format.Source(b.Bytes())
 		if err != nil {
-			return fmt.Errorf("gofmt on generated main.go: %w", err)
+			return "", fmt.Errorf("gofmt on generated main.go: %w", err)
 		}
 
 		if _, err := f.Write(formatted); err != nil {
-			return fmt.Errorf("writing formatted source to main.go: %w", err)
+			return "", fmt.Errorf("writing formatted source to main.go: %w", err)
 		}
 	}
 
 	// Run Go compiler
+	exePath := filepath.Join(params.destDir, params.exeName)
 	{
-		args := []string{"install", filepath.Join(modPath, "cmd", exeName)}
+		args := []string{"build", "-o", exePath, filepath.Join(modPath, "cmd", exeName)}
 		cmd := exec.Command("go", args...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("building project main executable: %w", err)
+			return "", fmt.Errorf("building project main executable: %w", err)
 		}
 	}
 
-	return nil
+	return exePath, nil
 }

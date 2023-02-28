@@ -278,13 +278,13 @@ type buildCmd struct {
 	parseOnly          bool
 	codeGenOnly        bool
 	compileOnly        bool
-	outDir             string
 	outFile            string
 	embedSource        bool
 	pages              stringSlice
 	verbose            bool
 
-	files *projectFiles
+	files   *projectFiles
+	exePath string
 }
 
 func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
@@ -294,7 +294,6 @@ func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
 	flags.BoolVar(&b.parseOnly, "parse-only", false, "exit after dumping parse result")
 	flags.BoolVar(&b.codeGenOnly, "codegen-only", false, "codegen only, don't compile")
 	flags.BoolVar(&b.compileOnly, "compile-only", false, "compile only, don't start web server after")
-	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory. Defaults to ./build")
 	flags.StringVar(&b.outFile, "out-file", "", "path to output application binary. Defaults to ./build/bin/projectName")
 	flags.BoolVar(&b.embedSource, "embed-source", true, "embed the source .up files in executable")
 	flags.Var(&b.pages, "page", "path to a Pushup page. mulitple can be given")
@@ -333,10 +332,6 @@ func (b *buildCmd) rescanProjectFiles() error {
 }
 
 func (b *buildCmd) do() error {
-	if err := os.RemoveAll(b.outDir); err != nil {
-		return fmt.Errorf("removing build dir: %w", err)
-	}
-
 	// FIXME(paulsmith): remove singleFile (and -single flag) and replace with
 	// configurable project root, leading path strip, and optional file paths.
 	if err := b.rescanProjectFiles(); err != nil {
@@ -351,7 +346,6 @@ func (b *buildCmd) do() error {
 	// FIXME(paulsmith): dedupe this with runCmd.do()
 	cparams := &compileProjectParams{
 		modPath:            modPath,
-		outDir:             b.outDir,
 		parseOnly:          b.parseOnly,
 		files:              b.files,
 		applyOptimizations: b.applyOptimizations,
@@ -368,12 +362,13 @@ func (b *buildCmd) do() error {
 	}
 
 	lparams := &linkerParams{
-		output:     output,
-		modPath:    modPath,
-		projectDir: b.projectDir,
-		exeName:    b.projectName.String(),
+		compiledOutput: output,
+		modPath:        modPath,
+		projectDir:     b.projectDir,
+		exeName:        b.projectName.String(),
 	}
-	if err := linkProject(context.TODO(), lparams); err != nil {
+	b.exePath, err = linkProject(context.TODO(), lparams)
+	if err != nil {
 		return fmt.Errorf("linking project: %w", err)
 	}
 
@@ -421,8 +416,6 @@ func (r *runCmd) do() error {
 	if err := r.buildCmd.do(); err != nil {
 		return fmt.Errorf("build command: %w", err)
 	}
-
-	binExePath := filepath.Join(r.outDir, "bin", r.projectName.String())
 
 	if r.compileOnly {
 		return nil
@@ -476,7 +469,6 @@ func (r *runCmd) do() error {
 
 			cparams := &compileProjectParams{
 				modPath:            modPath,
-				outDir:             r.outDir,
 				parseOnly:          r.parseOnly,
 				files:              r.files,
 				applyOptimizations: r.applyOptimizations,
@@ -488,18 +480,19 @@ func (r *runCmd) do() error {
 			}
 
 			lparams := &linkerParams{
-				output:     output,
-				modPath:    modPath,
-				projectDir: r.projectDir,
-				exeName:    r.projectName.String(),
+				compiledOutput: output,
+				modPath:        modPath,
+				projectDir:     r.projectDir,
+				exeName:        r.projectName.String(),
 			}
-			if err := linkProject(context.TODO(), lparams); err != nil {
+			exePath, err := linkProject(context.TODO(), lparams)
+			if err != nil {
 				return fmt.Errorf("building Pushup project: %v", err)
 			}
 			linkComplete.Broadcast()
 
 			watchForReload(ctx, r.projectDir, reload)
-			if err := runProject(ctx, binExePath, ln); err != nil {
+			if err := runProject(ctx, exePath, ln); err != nil {
 				return fmt.Errorf("building and running generated Go code: %v", err)
 			}
 
@@ -524,7 +517,7 @@ func (r *runCmd) do() error {
 				return fmt.Errorf("listening on TCP socket: %v", err)
 			}
 		}
-		if err := runProject(context.Background(), binExePath, ln); err != nil {
+		if err := runProject(context.Background(), r.buildCmd.exePath, ln); err != nil {
 			return fmt.Errorf("building and running generated Go code: %v", err)
 		}
 	}
