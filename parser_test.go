@@ -314,22 +314,6 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			`^section foo {<text>bar</text>}`,
-			&syntaxTree{
-				nodes: []node{
-					&nodeSection{
-						name: "foo",
-						pos:  span{start: 8, end: 12},
-						block: &nodeBlock{
-							nodes: []node{
-								&nodeBlock{nodes: []node{&nodeLiteral{str: "bar", pos: span{start: 20, end: 23}}}},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
 			// example of expanded implicit/simple expression
 			`^foo.bar("asd").baz.biz()`,
 			&syntaxTree{
@@ -469,7 +453,6 @@ var unexported = []any{
 	nodeIf{},
 	nodeImport{},
 	nodeLiteral{},
-	nodeSection{},
 	nodePartial{},
 	span{},
 	stringPos{},

@@ -38,7 +38,8 @@ io.WriteString(w, "</div>")
 			if err != nil {
 				t.Fatalf("new page from tree: %v", err)
 			}
-			g := newPageCodeGen(page, projectFile{}, "", "")
+			cparams := &compileParams{}
+			g := newPageCodeGen(page, "", cparams)
 			g.lineDirectivesEnabled = false
 			g.genNode(test.node)
 			got := g.body.String()
@@ -55,31 +56,27 @@ func TestRouteForPage(t *testing.T) {
 		want string
 	}{
 		{
-			"index.up",
+			"pages/index.up",
 			"/",
 		},
 		{
-			"about.up",
+			"pages/about.up",
 			"/about",
 		},
 		{
-			"x/sub.up",
+			"pages/x/sub.up",
 			"/x/sub",
 		},
 		{
-			"testdata/foo.up",
-			"/testdata/foo",
-		},
-		{
-			"x/name__param.up",
+			"pages/x/name__param.up",
 			"/x/:name",
 		},
 		{
-			"projectId__param/productId__param",
+			"pages/projectId__param/productId__param",
 			"/:projectId/:productId",
 		},
 		{
-			"blah/index.up",
+			"pages/blah/index.up",
 			"/blah/",
 		},
 	}

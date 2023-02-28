@@ -64,8 +64,7 @@ func TestPushup(t *testing.T) {
 	for _, entry := range entries {
 		if strings.HasSuffix(entry.Name(), upFileExt) {
 			t.Run(entry.Name(), func(t *testing.T) {
-				// FIXME(paulsmith): remove this once we have been panic
-				// handling in layouts
+				// FIXME(paulsmith): remove this once we have panic handling
 				if entry.Name() == "panicking.up" {
 					t.Skip()
 				}
@@ -318,7 +317,6 @@ func TestTypenameFromPath(t *testing.T) {
 	}{
 		{"", ""},
 		{"index", "Index"},
-		{"$name", "DollarSignName"},
 		{"default", "Default"},
 	}
 

@@ -29,8 +29,8 @@ func TestCompiledOutputPath(t *testing.T) {
 			upFilePage,
 		},
 		{
-			projectFile{path: "pages/$foo.up"},
-			"pages/0x24foo.up.go",
+			projectFile{path: "pages/foo__param.up"},
+			"pages/foo__param.up.go",
 			upFilePage,
 		},
 	}
