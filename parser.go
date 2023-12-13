@@ -168,6 +168,8 @@ func isAllWhitespace(s string) bool {
 
 func (p *htmlParser) skipWhitespace() []*nodeLiteral {
 	var result []*nodeLiteral
+	// note that we must test p.raw for whitespace each time through the loop
+	// because p.advance() changes p.raw
 	for p.toktyp == html.TextToken && isAllWhitespace(p.raw) {
 		n := nodeLiteral{str: p.raw, pos: span{start: p.start, end: p.parser.offset}}
 		result = append(result, &n)
