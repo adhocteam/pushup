@@ -26,7 +26,9 @@
           nativeBuildInputs = with pkgs; [ makeWrapper ];
           allowGoReference = true;
           postInstall = ''
-            wrapProgram $out/bin/${pname} --prefix PATH : ${pkgs.lib.makeBinPath (with pkgs; [go])}
+            wrapProgram $out/bin/${pname} --prefix PATH : ${
+              pkgs.lib.makeBinPath (with pkgs; [ go ])
+            }
           '';
           meta = with nixpkgs.lib; {
             description = "Pushup web framework for Go";
