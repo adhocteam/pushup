@@ -5,7 +5,7 @@
 
   outputs = { self, nixpkgs }:
     let
-      version = "0.0.1"; # TODO(paulsmith): source from version.go
+      name = "pushup";
       forEachSystem = fn:
         nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-darwin" "aarch64-linux" ]
         (system:
@@ -14,29 +14,36 @@
             inherit system;
           });
     in {
-      packages = forEachSystem ({ pkgs, system }: {
-        default = pkgs.buildGoModule rec {
-          pname = "pushup";
-          inherit version;
+      packages = forEachSystem ({ pkgs, system }:
+        let
+          pname = name;
+          version = "0.0.1"; # TODO(paulsmith): source from version.go
           src = ./.;
           vendorHash = null;
           subPackages = ".";
           CGO_ENABLED = 0;
-          doCheck = false;
-          nativeBuildInputs = with pkgs; [ makeWrapper ];
-          allowGoReference = true;
-          postInstall = ''
-            wrapProgram $out/bin/${pname} --prefix PATH : ${
-              pkgs.lib.makeBinPath (with pkgs; [ go ])
-            }
-          '';
           meta = with nixpkgs.lib; {
             description = "Pushup web framework for Go";
             homepage = "https://pushup.adhoc.dev/";
             license = licenses.mit;
           };
-        };
-      });
+
+        in {
+          default = pkgs.buildGoModule rec {
+            inherit pname version src vendorHash subPackages CGO_ENABLED meta;
+          };
+
+          withGo = pkgs.buildGoModule rec {
+            inherit pname version src vendorHash subPackages CGO_ENABLED meta;
+            nativeBuildInputs = with pkgs; [ makeWrapper ];
+            allowGoReference = true;
+            postInstall = ''
+              wrapProgram $out/bin/${pname} --prefix PATH : ${
+                pkgs.lib.makeBinPath (with pkgs; [ go ])
+              }
+            '';
+          };
+        });
 
       devShells = forEachSystem ({ pkgs, ... }: {
         default =
