@@ -1,7 +1,7 @@
 # Pushup - a page-oriented web framework for Go
 
 ![workflow status](https://github.com/adhocteam/pushup/actions/workflows/go.yml/badge.svg)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](code_of_conduct.md)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
 ## Project status
 
