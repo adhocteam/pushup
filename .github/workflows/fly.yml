@@ -18,12 +18,10 @@ jobs:
       - name: Download Pushup executable
         uses: dawidd6/action-download-artifact@v2
         with:
-          name: pushup-exe
+          name: pushup
           workflow: go.yml
-      - name: Set Pushup exe perms
-        run: chmod +x pushup
-      - name: Set up Go
-        uses: actions/setup-go@v3
+      - run: chmod +x pushup
+      - uses: actions/setup-go@v3
         with:
           go-version: 1.18
       - name: Build the Pushup site
