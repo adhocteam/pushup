@@ -17,7 +17,8 @@ type linkerParams struct {
 	exePath        string
 }
 
-const filename = "pushup_linker.go"
+const linkerDir = "pushup"
+const linkerFilename = "link.go"
 
 // linkProject puts a Pushup project together by linking together all the
 // generated Go source code and a main() function.
@@ -25,14 +26,18 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 	projectDir := params.projectDir
 	exeName := filepath.Base(params.exePath)
 	modPath := params.modPath
-	pkgName := filepath.Base(modPath)
 	pages := params.compiledOutput.pages
 
 	// Generate http serve mux of all routes
 	{
-		f, err := os.Create(filepath.Join(params.projectDir, filename))
+		linkerDirPath := filepath.Join(params.projectDir, "internal", linkerDir)
+		if err := os.MkdirAll(linkerDirPath, 0755); err != nil {
+			return fmt.Errorf("creating directory %s: %w", linkerDirPath, err)
+		}
+		linkerPath := filepath.Join(linkerDirPath, linkerFilename)
+		f, err := os.Create(linkerPath)
 		if err != nil {
-			return fmt.Errorf("creating %s: %w", filename, err)
+			return fmt.Errorf("creating %s: %w", linkerPath, err)
 		}
 		defer f.Close()
 
@@ -48,7 +53,7 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 		}
 
 		fmt.Fprintln(b, "// this file is mechanically generated, do not edit!")
-		fmt.Fprintln(b, "package "+pkgName)
+		fmt.Fprintln(b, "package "+linkerDir)
 		for path := range importPaths {
 			fmt.Fprintln(b, "import \""+path+"\"")
 		}
@@ -80,11 +85,11 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 
 		formatted, err := format.Source(b.Bytes())
 		if err != nil {
-			return fmt.Errorf("gofmt on generated %s: %w", filename, err)
+			return fmt.Errorf("gofmt on generated %s: %w", linkerPath, err)
 		}
 
 		if _, err := f.Write(formatted); err != nil {
-			return fmt.Errorf("writing formatted source to %s: %w", filename, err)
+			return fmt.Errorf("writing formatted source to %s: %w", linkerPath, err)
 		}
 	}
 
@@ -105,10 +110,11 @@ func linkProject(ctx context.Context, params *linkerParams) error {
 
 		fmt.Fprintln(b, "// this file is mechanically generated, do not edit!")
 		fmt.Fprintln(b, "package main")
-		fmt.Fprintf(b, "import \"%s\"\n", modPath)
+		linkerPkgPath := filepath.Join(modPath, "internal", "pushup")
+		fmt.Fprintf(b, "import \"%s\"\n", linkerPkgPath)
 		fmt.Fprintln(b, "import \"github.com/adhocteam/pushup/api\"")
 		fmt.Fprintln(b, "func main() {")
-		fmt.Fprintf(b, "api.Main(%s.Router)\n", pkgName)
+		fmt.Fprintf(b, "api.Main(%s.Router)\n", filepath.Base(linkerPkgPath))
 		fmt.Fprintln(b, "}")
 
 		formatted, err := format.Source(b.Bytes())
