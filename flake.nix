@@ -13,12 +13,29 @@
             pkgs = nixpkgs.legacyPackages.${system};
             inherit system;
           });
+      fs = nixpkgs.lib.fileset;
     in {
       packages = forEachSystem ({ pkgs, system }:
         let
           pname = name;
           version = "0.0.1"; # TODO(paulsmith): source from version.go
-          src = ./.;
+          sourceFiles = fs.difference
+            # include anything that matches these files inc. recursive directories
+            (fs.unions [
+              (fs.fileFilter (file: file.hasExt "go") ./.)
+              ./_runtime
+              ./banner.txt
+              ./go.mod
+              ./scaffold
+              ./testdata
+              ./vendor
+            ])
+            # exclude these files
+            (fs.unions [ ./example ./docs ./tools ]);
+          src = fs.toSource {
+            root = ./.;
+            fileset = sourceFiles;
+          };
           vendorHash = null;
           subPackages = ".";
           CGO_ENABLED = 0;
