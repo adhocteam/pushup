@@ -21,6 +21,7 @@ jobs:
       run: go test -v . ./_runtime
     - name: Upload Pushup executable
       uses: actions/upload-artifact@v3
+      if: github.ref == 'refs/heads/main'
       with:
         name: pushup-exe
         path: pushup
