@@ -1,7 +1,7 @@
 # Pushup - a page-oriented web framework for Go
 
 ![workflow status](https://github.com/adhocteam/pushup/actions/workflows/go.yml/badge.svg)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](code_of_conduct.md)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
 ## Project status
 
@@ -17,6 +17,7 @@ Pushup is an experiment. In terms of the development life cycle, it should be co
         -   [Installing Pushup](#installing-pushup)
             -   [Prerequisites](#prerequisites)
             -   [Install an official release](#install-an-official-release)
+            -   [Install via Nix](#install-via-nix)
             -   [Install via git](#install-via-git)
             -   [Install via `go install`](#install-via-go-install)
         -   [Creating a new Pushup project](#creating-a-new-pushup-project)
@@ -151,6 +152,35 @@ echo $PATH | grep $(go env GOPATH)/bin > /dev/null && echo yes || echo no
 #### Install an official release
 
 Download Pushup for your platform from [the releases page](https://github.com/adhocteam/pushup/releases).
+
+#### Install via Nix
+
+Pushup is available via the [Nix](https://nixos.org/) package manager. It is
+currently in the [`unstable` channel](https://search.nixos.org/packages?channel=unstable&query=pushup).
+
+* **Add to your local profile**
+
+```shell
+$ nix-env -iA nixpkgs.pushup
+```
+
+* **Create a temporary shell**
+
+```shell
+$ nix-shell -p pushup
+```
+
+* **Create a temporary shell (flakes)**
+
+```shell
+$ nix shell nixpkgs#pushup
+```
+
+* **Run Pushup without installing (flakes)**
+
+```shell
+$ nix run nixpkgs#pushup
+````
 
 #### Install via git
 

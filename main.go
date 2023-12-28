@@ -399,23 +399,26 @@ func newRunCmd(arguments []string) *runCmd {
 	return &runCmd{buildCmd: b, host: *host, port: *port, unixSocket: *unixSocket, devReload: *devReload}
 }
 
+var errFileChanged = fmt.Errorf("file change detected")
+var errSignalCaught = fmt.Errorf("signal caught")
+
 func (r *runCmd) do() error {
 	if err := r.buildCmd.do(); err != nil {
 		return fmt.Errorf("build command: %w", err)
 	}
 
+	binExePath := filepath.Join(r.outDir, "bin", r.projectName.String())
+
 	if r.compileOnly {
 		return nil
 	}
 
-	// TODO(paulsmith): add a linkOnly flag (or a releaseMode flag,
-	// alternatively?)
-	ctx := newPushupContext(context.Background())
+	// TODO(paulsmith): add a linkOnly flag (or a releaseMode flag, alternatively?)
 
 	if r.devReload {
 		var mu sync.Mutex
 		buildComplete := sync.NewCond(&mu)
-		reload := make(chan struct{})
+
 		tmpdir, err := os.MkdirTemp("", "pushupdev")
 		if err != nil {
 			return fmt.Errorf("creating temp dir: %v", err)
@@ -425,28 +428,27 @@ func (r *runCmd) do() error {
 		if err = startReloadRevProxy(socketPath, buildComplete, r.port); err != nil {
 			return fmt.Errorf("starting reverse proxy: %v", err)
 		}
+
 		ln, err := net.Listen("unix", socketPath)
 		if err != nil {
 			return fmt.Errorf("listening on Unix socket: %v", err)
 		}
-		go func() {
-			for {
+
+		for {
+			ctx, cancel := context.WithCancelCause(context.Background())
+			signals := make(chan os.Signal, 1)
+			signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+			reload := make(chan struct{})
+
+			go func() {
 				select {
 				case <-reload:
-					ctx.fileChangeCancel()
-				case <-ctx.sigNotifyCtx.Done():
-					ctx.sigStop()
-					return
+					cancel(errFileChanged)
+				case <-signals:
+					cancel(errSignalCaught)
+				case <-ctx.Done():
 				}
-			}
-		}()
-		for {
-			select {
-			case <-ctx.sigNotifyCtx.Done():
-				ctx.sigStop()
-				return nil
-			default:
-			}
+			}()
 
 			if err := r.rescanProjectFiles(); err != nil {
 				return fmt.Errorf("scanning for project files: %v", err)
@@ -468,8 +470,6 @@ func (r *runCmd) do() error {
 				}
 			}
 
-			ctx = newPushupContext(context.Background())
-
 			{
 				params := buildParams{
 					projectName:       r.projectName.String(),
@@ -479,14 +479,18 @@ func (r *runCmd) do() error {
 				if err := buildProject(ctx, params); err != nil {
 					return fmt.Errorf("building Pushup project: %v", err)
 				}
+				buildComplete.Broadcast()
 			}
 
-			buildComplete.Broadcast()
-			go func() {
-				watchForReload(ctx, ctx.fileChangeCancel, r.appDir, reload)
-			}()
-			if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()), ln); err != nil {
+			watchForReload(ctx, r.appDir, reload)
+			if err := runProject(ctx, binExePath, ln); err != nil {
 				return fmt.Errorf("building and running generated Go code: %v", err)
+			}
+
+			signal.Stop(signals)
+
+			if err := context.Cause(ctx); errors.Is(err, errSignalCaught) {
+				return nil
 			}
 		}
 	} else {
@@ -504,7 +508,7 @@ func (r *runCmd) do() error {
 				return fmt.Errorf("listening on TCP socket: %v", err)
 			}
 		}
-		if err := runProject(ctx, filepath.Join(r.outDir, "bin", r.projectName.String()), ln); err != nil {
+		if err := runProject(context.Background(), binExePath, ln); err != nil {
 			return fmt.Errorf("building and running generated Go code: %v", err)
 		}
 	}
@@ -585,25 +589,6 @@ var banner, _ = bannerFile.ReadFile("banner.txt")
 
 func printBanner() {
 	fmt.Fprintf(os.Stdout, "\n%s\n", banner)
-}
-
-type pushupContext struct {
-	*cancellationSource
-	fileChangeCtx    context.Context
-	fileChangeCancel context.CancelFunc
-	sigNotifyCtx     context.Context
-	sigStop          context.CancelFunc
-}
-
-func newPushupContext(parent context.Context) *pushupContext {
-	c := new(pushupContext)
-	c.fileChangeCtx, c.fileChangeCancel = context.WithCancel(parent)
-	c.sigNotifyCtx, c.sigStop = signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
-	c.cancellationSource = newCancellationSource(
-		contextSource{c.fileChangeCtx, cancelSourceFileChange},
-		contextSource{c.sigNotifyCtx, cancelSourceSignal},
-	)
-	return c
 }
 
 // project file represents an .up file in a Pushup project context.
@@ -846,66 +831,36 @@ func runProject(ctx context.Context, exePath string, ln net.Listener) error {
 		return fmt.Errorf("getting file from Unix socket listener: %w", err)
 	}
 
-	cmd := exec.Command(exePath)
+	cmd := exec.CommandContext(ctx, exePath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	sysProcAttr(cmd)
 	cmd.ExtraFiles = []*os.File{file}
 	cmd.Env = append(os.Environ(), "PUSHUP_LISTENER_FD=3")
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("starting project main executable: %w", err)
-	}
 
 	g := new(errgroup.Group)
-	done := make(chan struct{})
 
 	g.Go(func() error {
-		select {
-		case <-ctx.Done():
-		case <-done:
-			return nil
-		}
-		// FIXME(paulsmith): don't like this interface
-		if ctx, ok := ctx.(*pushupContext); ok {
-			if ctx.final.source == cancelSourceFileChange {
-				log.Printf("\x1b[35mFILE CHANGED\x1b[0m")
-			} else if ctx.final.source == cancelSourceSignal {
-				log.Printf("\x1b[34mSIGNAL TRAPPED\x1b[0m")
-			} else {
-				panic("unknown source of cancellation")
-			}
-		}
-		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
-			return fmt.Errorf("syscall kill: %w", err)
-		}
-		if !errors.Is(ctx.Err(), context.Canceled) {
-			return ctx.Err()
+		<-ctx.Done()
+		if errors.Is(context.Cause(ctx), errFileChanged) {
+			log.Printf("[PUSHUP RELOADER] file changed, reloading")
+		} else if errors.Is(context.Cause(ctx), errSignalCaught) {
+			log.Printf("[PUSHUP] got signal, shutting down")
 		}
 		return nil
 	})
 
 	g.Go(func() error {
-		defer close(done)
-		// NOTE(paulsmith): we have to wait() the child process(es) in any case,
-		// regardless of how they were exited. this is also why there is a
-		// `done' channel in this function, to signal to the other goroutine
-		// waiting for context cancellation.
-		if err := cmd.Wait(); err != nil {
-			if ee, ok := err.(*exec.ExitError); ok {
-				// FIXME(paulsmith): don't like this interface
-				if _, ok := ctx.(*pushupContext); !ok {
-					return fmt.Errorf("wait: %w", ee)
-				}
-			} else {
-				return fmt.Errorf("wait: %w", ee)
-			}
-		}
+		// NOTE(paulsmith): intentionally ignoring *ExitError because the child
+		// process will be signal killed here as a matter of course
+		//nolint:errcheck
+		cmd.Run()
 		return nil
 	})
 
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("errgroup: %w", err)
-	}
+	// NOTE(paulsmith): intentionally ignoring *ExitError for same reason as
+	// above
+	//nolint:errcheck
+	g.Wait()
 
 	return nil
 }

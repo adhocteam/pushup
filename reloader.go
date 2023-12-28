@@ -26,7 +26,7 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-func watchForReload(ctx context.Context, cancel context.CancelFunc, root string, reload chan struct{}) {
+func watchForReload(ctx context.Context, root string, reload chan struct{}) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		panic(fmt.Errorf("creating new fsnotify watcher: %v", err))
@@ -42,24 +42,12 @@ func watchForReload(ctx context.Context, cancel context.CancelFunc, root string,
 			}
 			return
 		}
-		log.Printf("change detected in project directory, reloading")
-		cancel()
-		stopWatching(watcher)
 		reload <- struct{}{}
+		watcher.Close()
 	})
 
 	if err := watchDirRecursively(watcher, root); err != nil {
 		panic(fmt.Errorf("adding dir to watch: %w", err))
-	}
-}
-
-// stopWatching removes all watches from the WatchList and panics if any of
-// them cannot be removed
-func stopWatching(watcher *fsnotify.Watcher) {
-	for _, name := range watcher.WatchList() {
-		if err := watcher.Remove(name); err != nil {
-			panic(fmt.Errorf("error removing watch: %w", err))
-		}
 	}
 }
 
