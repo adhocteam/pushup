@@ -1,6 +1,0 @@
-^handler {
-    doc := getParam(req, "doc")
-    rawMarkdown := GetStaticContents("docs/" + doc + ".md")
-}
-
-^convertMarkdown(rawMarkdown)
