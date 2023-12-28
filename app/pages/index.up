@@ -1,0 +1,103 @@
+<header>
+    <h1>
+        <img
+            width="91" height="49"
+            src="/static/logo.png"
+            alt="Pushup logo, a caret surrounded by left and right angle brackets ala HTML element">
+        Pushup web framework
+    </h1>
+</header>
+
+<section>
+    <p>A server-side, page-oriented web framework for the Go programming language.</p>
+
+    <p>Pushup’s goal is to make it faster to develop and easier to maintain server-side web applications using Go.</p>
+
+    <p>Pushup is <b>preview</b>, pre-release software in early-stage development. It is not yet suitable for production use. Expect breaking changes.</p>
+</section>
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/nkyiATkZ4Js" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+
+<section id="code-example">
+    <h2>Pushup example</h2>
+    <pre><code><span class="keyword">^^import</span> <span class="go">"time"</span>
+
+<span class="keyword">^^</span>{
+   <span class="go">title := "Hello, from Pushup!"</span>
+}
+
+<span class="html">&lt;h1&gt;</span><span class="simple-expr">^^title</span><span class="html">&lt;/h1&gt;</span>
+
+<span class="html">&lt;p&gt;</span>The time is now <span class="simple-expr">^^time.Now().String()</span>.<span class="html">&lt;/p&gt;</span>
+
+<span class="keyword">^^if</span> <span class="go">time.Now().Weekday() == time.Friday</span> {
+    <span class="html">&lt;p&gt;</span>It's Friday! Enjoy the start to your weekend.<span class="html">&lt;/p&gt;</span>
+} <span class="keyword">^^else</span> {
+    <span class="html">&lt;p&gt;</span>Have a great day, we're glad you're here.<span class="html">&lt;/p&gt;</span>
+}
+</code></pre>
+    <p>File <kbd>app/pages/hello.up</kbd> → <kbd>/hello</kbd> URL path</p>
+</section>
+
+<section>
+    <h2>Features</h2>
+
+    <ul id="feature-list">
+        <li>
+            <strong>Page-oriented</strong>
+            <p>Pushup’s .up files are self-contained units of web app development, gluing HTML &amp; Go together with routing logic</p>
+        </li>
+        <li>
+            <strong>File-based routing</strong>
+            <p>Filesystem path names of Pushup pages map to URL paths, with dynamic escape hatches</p>
+        </li>
+        <li>
+            <strong>World’s first ‟<a href="https://htmx.org/">htmx</a>-first” framework</strong>
+            <p>Enhanced hypertext support via inline partials for better client-side interactivity with fewer JavaScript sit-ups</p>
+        </li>
+        <li>
+            <strong>Compiled</strong>
+            <p>Pushup apps compile to pure Go, built on the standard <code>net/http</code> package. Fast static binary executables for easy deployment. Easy to integrate into larger Go apps</p>
+        </li>
+        <li>
+            <strong>Hot reload dev mode</strong>
+            <p>App is recompiled and reloaded in the browser while files change during development. This is fast thanks to the Go compiler</p>
+        </li>
+    </ul>
+</section>
+
+<section>
+    <h2>Getting started</h2>
+
+    <ul>
+        <li><strong>Download Pushup</strong> preview release v0.1
+            <ul>
+                <li>Linux
+                    <ul>
+                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-linux-arm64.zip">Linux AArch64</a></li>
+                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-linux-amd64.zip">Linux x86-64</a></li>
+                    </ul>
+                </li>
+                <li>macOS
+                    <ul>
+                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-darwin-arm64.zip">macOS Apple silicon</a></li>
+                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-darwin-amd64.zip">macOS x86-64</a></li>
+                    </ul>
+                </li>
+                <li>OpenBSD
+                    <ul>
+                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-openbsd-arm64.zip">OpenBSD AArch64</a></li>
+                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-openbsd-amd64.zip">OpenBSD x86-64</a></li>
+                    </ul>
+                </li>
+            </ul>
+            <p>Download Pushup for more platforms on the <a href="https://github.com/adhocteam/pushup/releases">official releases page</a>.
+        </li>
+        <li><strong>Read the documentation</strong>
+            <p><a hx-boost="true" href="/docs/">Pushup docs</a></p>
+        </li>
+        <li><strong>Read the source &amp; join the community</strong>
+            <p><a href="https://github.com/adhocteam/pushup">GitHub repo</a></p>
+        </li>
+    </ul>
+</section>
