@@ -70,28 +70,21 @@
     <h2>Getting started</h2>
 
     <ul>
-        <li><strong>Download Pushup</strong> preview release v0.1
+        <li>
+            <p>
+                <strong>Download Pushup</strong> -
+                    latest release <a href="https://github.com/adhocteam/pushup/releases/tag/v0.2">v0.2</a> (Dec 2023)
+            </p>
             <ul>
-                <li>Linux
+                <li><p>From <a href="https://github.com/adhocteam/pushup/releases">official releases page</a></p></li>
+                <li><p>Via Nix package manager:</p>
                     <ul>
-                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-linux-arm64.zip">Linux AArch64</a></li>
-                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-linux-amd64.zip">Linux x86-64</a></li>
+                        <li><code>nix-env -iA nixpkgs.pushup</code></li>
+                        <li>or as a flake <kbd>github:adhocteam/pushup</kbd></li>
                     </ul>
                 </li>
-                <li>macOS
-                    <ul>
-                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-darwin-arm64.zip">macOS Apple silicon</a></li>
-                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-darwin-amd64.zip">macOS x86-64</a></li>
-                    </ul>
-                </li>
-                <li>OpenBSD
-                    <ul>
-                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-openbsd-arm64.zip">OpenBSD AArch64</a></li>
-                        <li><a href="https://github.com/adhocteam/pushup/releases/download/v0.1/pushup-openbsd-amd64.zip">OpenBSD x86-64</a></li>
-                    </ul>
-                </li>
+                <li><p>Via Go: <code>go install github.com/adhocteam/pushup@latest</code></p></li>
             </ul>
-            <p>Download Pushup for more platforms on the <a href="https://github.com/adhocteam/pushup/releases">official releases page</a>.
         </li>
         <li><strong>Read the documentation</strong>
             <p><a hx-boost="true" href="/docs/">Pushup docs</a></p>

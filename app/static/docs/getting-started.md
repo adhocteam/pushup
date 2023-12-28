@@ -36,11 +36,36 @@ Make sure you have Go installed (at least version 1.18), and type:
 go install github.com/adhocteam/pushup@latest
 ```
 
+#### Install via Nix
+
+Pushup is available via the [Nix](https://nixos.org/) package manager. It is
+currently in the [`unstable` channel](https://search.nixos.org/packages?channel=unstable&query=pushup).
+
+* **Add to your local profile**
+
+```shell
+$ nix-env -iA nixpkgs.pushup
+```
+
+* **Create a temporary shell**
+
+```shell
+$ nix-shell -p pushup
+```
+
+* **Create a temporary shell (flakes)**
+
+```shell
+$ nix shell nixpkgs#pushup
+```
+
+* **Run Pushup without installing (flakes)**
+
+```shell
+$ nix run nixpkgs#pushup
+````
+
 #### Install via `homebrew`
-
-Coming soon.
-
-#### Install via Linux package managers
 
 Coming soon.
 
