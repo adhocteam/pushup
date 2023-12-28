@@ -31,7 +31,7 @@
               ./vendor
             ])
             # exclude these files
-            (fs.unions [ ./example ./docs ./tools ]);
+            (fs.unions [ ./example ./tools ]);
           src = fs.toSource {
             root = ./.;
             fileset = sourceFiles;
