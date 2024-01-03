@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build darwin
 
 package main
 
@@ -9,6 +9,6 @@ import (
 
 func sysProcAttr(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+		Setpgid: true,
 	}
 }

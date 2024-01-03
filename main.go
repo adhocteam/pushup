@@ -195,7 +195,7 @@ func (n *newCmd) do() error {
 	}
 	for _, name := range scaffoldFiles {
 		dest := filepath.Join(n.projectDir, "app", name)
-		src := filepath.Join("scaffold", name)
+		src := fmt.Sprintf("scaffold/%s", name)
 		if err := copyFileFS(scaffold, dest, src); err != nil {
 			return fmt.Errorf("copying scaffold file to project dir %w", err)
 		}
