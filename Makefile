@@ -16,7 +16,11 @@ build-docker:
 .PHONY: build-docker
 
 test tests:
-	go test -v . ./_runtime
+	if [ -n "$$VERBOSE" ]; then \
+		go test -v . ./_runtime; \
+	else \
+		go test . ./_runtime; \
+	fi
 
 .PHONY: test tests
 
