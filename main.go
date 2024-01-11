@@ -282,7 +282,7 @@ func setBuildFlags(flags *flag.FlagSet, b *buildCmd) {
 	flags.StringVar(&b.outDir, "out-dir", "./build", "path to output build directory. Defaults to ./build")
 	flags.StringVar(&b.outFile, "out-file", "", "path to output application binary. Defaults to ./build/bin/projectName")
 	flags.BoolVar(&b.embedSource, "embed-source", true, "embed the source .up files in executable")
-	flags.Var(&b.pages, "page", "path to a Pushup page. mulitple can be given")
+	flags.Var(&b.pages, "page", "path to a Pushup page. multiple can be given")
 	flags.BoolVar(&b.verbose, "verbose", false, "output verbose information")
 }
 
