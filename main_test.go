@@ -1,11 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sync/errgroup"
@@ -81,45 +83,22 @@ func TestPushup(t *testing.T) {
 					}
 					for _, entry := range entries {
 						if strings.HasSuffix(entry.Name(), ".conf") {
-							config := testRequest{name: entry.Name()}
 							req, _ := splitExt(entry.Name())
 							outFile := filepath.Join(extendedDir, req+".out")
 							if !fileExists(outFile) {
 								t.Fatalf("request file %v needs a matching output file", entry.Name())
 							}
 							reqFile := filepath.Join(extendedDir, entry.Name())
-							{
-								b, err := os.ReadFile(reqFile)
-								if err != nil {
-									t.Fatalf("reading request file %v: %v", reqFile, err)
-								}
-								s := string(b)
-								lines := strings.Split(s, "\n")
-								for _, line := range lines {
-									line := strings.TrimSpace(line)
-									if line != "" {
-										pair := strings.SplitN(line, "=", 2)
-										if len(pair) != 2 {
-											t.Fatalf("illegal request key-value pair: %q", line)
-										}
-										switch pair[0] {
-										case "requestPath":
-											config.path = pair[1]
-										case "queryParam":
-											config.queryParams = append(config.queryParams, pair[1])
-										default:
-											log.Printf("unhandled request config key: %q", pair[0])
-										}
-									}
-								}
+							config, err := readConfigFile(reqFile)
+							if err != nil {
+								t.Fatalf("reading config file for test request: %v", err)
 							}
-							{
-								b, err := os.ReadFile(outFile)
-								if err != nil {
-									t.Fatalf("reading output file %v: %v", outFile, err)
-								}
-								config.expectedOutput = string(b)
+							config.name = entry.Name()
+							b, err := os.ReadFile(outFile)
+							if err != nil {
+								t.Fatalf("reading output file %v: %v", outFile, err)
 							}
+							config.expectedOutput = string(b)
 							requests = append(requests, config)
 						}
 					}
@@ -128,12 +107,8 @@ func TestPushup(t *testing.T) {
 				pushupFile := filepath.Join(testdataDir, entry.Name())
 
 				outFile := filepath.Join(testdataDir, basename+".out")
-				if _, err := os.Stat(outFile); err != nil {
-					if errors.Is(err, fs.ErrNotExist) {
-						t.Fatalf("no matching output file %s", outFile)
-					} else {
-						t.Fatalf("stat'ing output file: %v", err)
-					}
+				if !fileExists(outFile) {
+					t.Fatalf("no matching output file %s", outFile)
 				}
 				output, err := os.ReadFile(outFile)
 				if err != nil {
@@ -328,4 +303,35 @@ func TestTypenameFromPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+func readConfigFile(name string) (config testRequest, err error) {
+	f, err := os.Open(name)
+	if err != nil {
+		err = fmt.Errorf("opening file %q: %w", name, err)
+		return
+	}
+	defer f.Close()
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		line := s.Text()
+		fields := strings.FieldsFunc(line, func(c rune) bool {
+			return unicode.IsSpace(c) || c == '='
+		})
+		if len(fields) != 2 {
+			err = fmt.Errorf("illegal config key-value pair: %q", line)
+			return
+		}
+		switch fields[0] {
+		case "requestPath":
+			config.path = fields[1]
+		case "queryParam":
+			config.queryParams = append(config.queryParams, fields[1])
+		default:
+			log.Printf("unhandled request config key: %q", fields[0])
+		}
+	}
+
+	return
 }
