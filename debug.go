@@ -9,67 +9,67 @@ import (
 
 const padding = " "
 
-func prettyPrintTree(t *syntaxTree) {
+func prettyPrintTree(t *SyntaxTree) {
 	depth := -1
 	var w io.Writer = os.Stdout
 	//nolint:errcheck
 	pad := func() { w.Write([]byte(strings.Repeat(padding, depth))) }
 	var f inspector
-	f = func(n node) bool {
+	f = func(n Node) bool {
 		depth++
 		defer func() {
 			depth--
 		}()
 		pad()
 		switch n := n.(type) {
-		case *nodeLiteral:
-			if !isAllWhitespace(n.str) {
-				str := n.str
+		case *NodeLiteral:
+			if !isAllWhitespace(n.Text) {
+				str := n.Text
 				if len(str) > 20 {
 					str = str[:20] + "..."
 				}
 				fmt.Fprintf(w, "\x1b[32m%q\x1b[0m\n", str)
 			}
-		case *nodeGoStrExpr:
-			fmt.Fprintf(w, "\x1b[33m%s\x1b[0m\n", n.expr)
-		case *nodeGoCode:
-			fmt.Fprintf(w, "\x1b[34m%s\x1b[0m\n", n.code)
-		case *nodeIf:
+		case *NodeGoStrExpr:
+			fmt.Fprintf(w, "\x1b[33m%s\x1b[0m\n", n.Expr)
+		case *NodeGoCode:
+			fmt.Fprintf(w, "\x1b[34m%s\x1b[0m\n", n.Code)
+		case *NodeIf:
 			fmt.Fprintf(w, "\x1b[35mIF\x1b[0m")
-			f(n.cond)
+			f(n.Cond)
 			pad()
 			fmt.Fprintf(w, "\x1b[35mTHEN\x1b[0m\n")
-			f(n.then)
-			if n.alt != nil {
+			f(n.Then)
+			if n.Alt != nil {
 				pad()
 				fmt.Fprintf(w, "\x1b[1;35mELSE\x1b[0m\n")
-				f(n.alt)
+				f(n.Alt)
 			}
 			return false
-		case *nodeFor:
+		case *NodeFor:
 			fmt.Fprintf(w, "\x1b[36mFOR\x1b[0m")
-			f(n.clause)
-			f(n.block)
+			f(n.Clause)
+			f(n.Block)
 			return false
-		case *nodeElement:
-			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.tag.start())
-			f(nodeList(n.children))
-			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.tag.end())
+		case *NodeElement:
+			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.Tag.start())
+			f(NodeList(n.Children))
+			fmt.Fprintf(w, "\x1b[31m%s\x1b[0m\n", n.Tag.end())
 			return false
-		case *nodePartial:
-			fmt.Fprintf(w, "PARTIAL %s\n", n.name)
-			f(n.block)
+		case *NodePartial:
+			fmt.Fprintf(w, "PARTIAL %s\n", n.Name)
+			f(n.Block)
 			return false
-		case *nodeBlock:
-			f(nodeList(n.nodes))
+		case *NodeBlock:
+			f(NodeList(n.Nodes))
 			return false
-		case *nodeImport:
+		case *NodeImport:
 			fmt.Fprintf(w, "IMPORT ")
-			if n.decl.pkgName != "" {
-				fmt.Fprintf(w, "%s", n.decl.pkgName)
+			if n.Decl.PkgName != "" {
+				fmt.Fprintf(w, "%s", n.Decl.PkgName)
 			}
-			fmt.Fprintf(w, "%s\n", n.decl.path)
-		case nodeList:
+			fmt.Fprintf(w, "%s\n", n.Decl.Path)
+		case NodeList:
 			for _, x := range n {
 				f(x)
 			}
@@ -77,5 +77,5 @@ func prettyPrintTree(t *syntaxTree) {
 		}
 		return true
 	}
-	inspect(nodeList(t.nodes), f)
+	inspect(NodeList(t.Nodes), f)
 }

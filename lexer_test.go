@@ -9,39 +9,39 @@ import (
 func TestOpenTagLexer(t *testing.T) {
 	tests := []struct {
 		input string
-		want  []*attr
+		want  []*Attr
 	}{
 		{
 			"<div>",
-			[]*attr{},
+			[]*Attr{},
 		},
 		{
 			"<div disabled>",
-			[]*attr{{name: stringPos{"disabled", pos(5)}}},
+			[]*Attr{{Name: StringPos{"disabled", pos(5)}}},
 		},
 		{
 			`<div class="foo">`,
-			[]*attr{{name: stringPos{"class", pos(5)}, value: stringPos{"foo", pos(12)}}},
+			[]*Attr{{Name: StringPos{"class", pos(5)}, Value: StringPos{"foo", pos(12)}}},
 		},
 		{
 			`<p   data-^name="/foo/bar/^value"   thing="^asd"  >`,
-			[]*attr{
+			[]*Attr{
 				{
-					name: stringPos{
+					Name: StringPos{
 						"data-^name",
 						pos(5),
 					},
-					value: stringPos{
+					Value: StringPos{
 						"/foo/bar/^value",
 						pos(17),
 					},
 				},
 				{
-					name: stringPos{
+					Name: StringPos{
 						"thing",
 						pos(36),
 					},
-					value: stringPos{
+					Value: StringPos{
 						"^asd",
 						pos(43),
 					},
@@ -49,7 +49,7 @@ func TestOpenTagLexer(t *testing.T) {
 			},
 		},
 	}
-	opts := cmp.AllowUnexported(attr{}, stringPos{})
+	opts := cmp.AllowUnexported(Attr{}, StringPos{})
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
 			got, err := scanAttrs(tt.input)

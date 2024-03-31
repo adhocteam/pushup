@@ -8,19 +8,19 @@ import (
 
 func TestCodeGenFromNode(t *testing.T) {
 	tests := []struct {
-		node node
+		node Node
 		want string
 	}{
 		{
-			node: &nodeElement{
-				tag: tag{name: "div", attrs: []*attr{{name: stringPos{string: "id"}, value: stringPos{string: "foo"}}}},
-				startTagNodes: []node{
-					&nodeLiteral{str: "<div "},
-					&nodeLiteral{str: "id=\""},
-					&nodeLiteral{str: "foo"},
-					&nodeLiteral{str: "\">"},
+			node: &NodeElement{
+				Tag: Tag{Name: "div", Attrs: []*Attr{{Name: StringPos{Text: "id"}, Value: StringPos{Text: "foo"}}}},
+				StartTagNodes: []Node{
+					&NodeLiteral{Text: "<div "},
+					&NodeLiteral{Text: "id=\""},
+					&NodeLiteral{Text: "foo"},
+					&NodeLiteral{Text: "\">"},
 				},
-				children: []node{&nodeLiteral{str: "bar"}},
+				Children: []Node{&NodeLiteral{Text: "bar"}},
 			},
 			want: `io.WriteString(w, "<div ")
 io.WriteString(w, "id=\"")
@@ -34,7 +34,7 @@ io.WriteString(w, "</div>")
 
 	for _, test := range tests {
 		t.Run("", func(t *testing.T) {
-			page, err := newPageFromTree(&syntaxTree{nodes: []node{test.node}})
+			page, err := newPageFromTree(&SyntaxTree{Nodes: []Node{test.node}})
 			if err != nil {
 				t.Fatalf("new page from tree: %v", err)
 			}

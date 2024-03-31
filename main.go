@@ -109,6 +109,8 @@ func main() {
 	}
 }
 
+// regexString is for setting a command-line option flag that matches a given
+// regular expression.
 type regexString struct {
 	re  *regexp.Regexp
 	val string
@@ -293,8 +295,8 @@ func newBuildCmd(arguments []string) *buildCmd {
 	flags := flag.NewFlagSet("pushup build", flag.ExitOnError)
 	b := new(buildCmd)
 	setBuildFlags(flags, b)
-	//nolint:errcheck
-	flags.Parse(arguments)
+	// ok to ignore Parse()'s return here
+	_ = flags.Parse(arguments)
 	if flags.NArg() == 1 {
 		b.projectDir = flags.Arg(0)
 	} else {

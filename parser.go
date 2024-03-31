@@ -14,7 +14,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-func parse(source string) (tree *syntaxTree, err error) {
+func parse(source string) (tree *SyntaxTree, err error) {
 	p := newParser(source)
 	defer func() {
 		if e := recover(); e != nil {
@@ -120,7 +120,7 @@ type htmlParser struct {
 	tagname []byte
 	err     error
 	raw     string
-	attrs   []*attr
+	attrs   []*Attr
 
 	// the global parser offset at the beginning of a new token
 	start int
@@ -166,12 +166,12 @@ func isAllWhitespace(s string) bool {
 	return true
 }
 
-func (p *htmlParser) skipWhitespace() []*nodeLiteral {
-	var result []*nodeLiteral
+func (p *htmlParser) skipWhitespace() []*NodeLiteral {
+	var result []*NodeLiteral
 	// note that we must test p.raw for whitespace each time through the loop
 	// because p.advance() changes p.raw
 	for p.toktyp == html.TextToken && isAllWhitespace(p.raw) {
-		n := nodeLiteral{str: p.raw, pos: span{start: p.start, end: p.parser.offset}}
+		n := NodeLiteral{Text: p.raw, Span: Span{Start: p.start, End: p.parser.offset}}
 		result = append(result, &n)
 		p.advance()
 	}
@@ -185,8 +185,8 @@ const (
 	transSymEsc = transSymStr + transSymStr
 )
 
-func (p *htmlParser) parseAttributeNameOrValue(nameOrValue string, nameOrValueStartPos, nameOrValueEndPos int, pos int) ([]node, int) {
-	var nodes []node
+func (p *htmlParser) parseAttributeNameOrValue(nameOrValue string, nameOrValueStartPos, nameOrValueEndPos int, pos int) ([]Node, int) {
+	var nodes []Node
 	if strings.ContainsRune(nameOrValue, transSym) {
 		for pos < nameOrValueEndPos && strings.ContainsRune(nameOrValue, transSym) {
 			if idx := strings.IndexRune(nameOrValue, transSym); idx > 0 {
@@ -216,30 +216,30 @@ func (p *htmlParser) parseAttributeNameOrValue(nameOrValue string, nameOrValueSt
 	return nodes, pos
 }
 
-func (p *htmlParser) emitLiteralFromRange(start, end int) node {
-	e := new(nodeLiteral)
-	e.str = p.raw[start:end]
-	e.pos.start = p.start + start
-	e.pos.end = p.start + end
+func (p *htmlParser) emitLiteralFromRange(start, end int) Node {
+	e := new(NodeLiteral)
+	e.Text = p.raw[start:end]
+	e.Span.Start = p.start + start
+	e.Span.End = p.start + end
 	return e
 }
 
-func (p *htmlParser) parseStartTag() []node {
+func (p *htmlParser) parseStartTag() []Node {
 	// if there are no attributes, there's no more processing to do
 	if len(p.attrs) == 0 {
-		return []node{p.emitLiteralFromRange(0, len(p.raw))}
+		return []Node{p.emitLiteralFromRange(0, len(p.raw))}
 	}
 
-	nodes := []node{}
+	nodes := []Node{}
 
 	// bytesRead keeps track of how far we've parsed into this p.raw string
 	bytesRead := 0
 
 	for _, attr := range p.attrs {
-		name := attr.name.string
-		value := attr.value.string
-		nameStartPos := int(attr.name.start)
-		valStartPos := int(attr.value.start)
+		name := attr.Name.Text
+		value := attr.Value.Text
+		nameStartPos := int(attr.Name.Start)
+		valStartPos := int(attr.Value.Start)
 		nameEndPos := nameStartPos + len(name)
 		valEndPos := valStartPos + len(value)
 
@@ -274,49 +274,49 @@ func (p *htmlParser) parseStartTag() []node {
 	return nodes
 }
 
-func (p *htmlParser) emitLiteral() node {
-	e := new(nodeLiteral)
-	e.pos.start = p.start
-	e.pos.end = p.parser.offset
-	e.str = p.raw
+func (p *htmlParser) emitLiteral() Node {
+	e := new(NodeLiteral)
+	e.Span.Start = p.start
+	e.Span.End = p.parser.offset
+	e.Text = p.raw
 	return e
 }
 
-func (p *htmlParser) parseTextToken() []node {
+func (p *htmlParser) parseTextToken() []Node {
 	if !strings.ContainsRune(p.raw, transSym) {
-		return []node{p.emitLiteral()}
+		return []Node{p.emitLiteral()}
 	}
 
 	if escaped := strings.Index(p.raw, transSymEsc); escaped >= 0 {
 		// it's an escaped transition symbol
-		nodes := []node{}
+		nodes := []Node{}
 		if escaped > 0 {
 			// emit the leading text before the doubled escape
-			e := new(nodeLiteral)
-			e.pos.start = p.start
-			e.pos.end = p.start + escaped
-			e.str = p.raw[:escaped]
+			e := new(NodeLiteral)
+			e.Span.Start = p.start
+			e.Span.End = p.start + escaped
+			e.Text = p.raw[:escaped]
 			nodes = append(nodes, e)
 		}
-		e := new(nodeLiteral)
-		e.pos.start = p.start + escaped
-		e.pos.end = p.start + escaped + 2
-		e.str = transSymStr
+		e := new(NodeLiteral)
+		e.Span.Start = p.start + escaped
+		e.Span.End = p.start + escaped + 2
+		e.Text = transSymStr
 		nodes = append(nodes, e)
 		p.parser.offset = p.start + escaped + 2
 		return nodes
 	}
 
-	var nodes []node
+	var nodes []Node
 	idx := strings.IndexRune(p.raw, transSym)
 	newOffset := p.start + idx + 1
 	p.parser.offset = newOffset
 	leading := p.raw[:idx]
 	if idx > 0 {
-		e := new(nodeLiteral)
-		e.pos.start = p.start
-		e.pos.end = p.start + len(leading)
-		e.str = leading
+		e := new(NodeLiteral)
+		e.Span.Start = p.start
+		e.Span.End = p.start + len(leading)
+		e.Text = leading
 		nodes = append(nodes, e)
 	}
 	// NOTE(paulsmith): this bubbles up nil due to parseImportKeyword,
@@ -345,8 +345,8 @@ var voidElements = []string{
 	"wbr",
 }
 
-func (p *htmlParser) parseDocument() *syntaxTree {
-	tree := new(syntaxTree)
+func (p *htmlParser) parseDocument() *SyntaxTree {
+	tree := new(SyntaxTree)
 
 tokenLoop:
 	for {
@@ -361,15 +361,15 @@ tokenLoop:
 		switch p.toktyp {
 		// TODO(paulsmith): check for void element self-closing tags
 		case html.StartTagToken:
-			tree.nodes = append(tree.nodes, p.parseElement())
+			tree.Nodes = append(tree.Nodes, p.parseElement())
 		case html.SelfClosingTagToken:
-			tree.nodes = append(tree.nodes, p.parseStartTag()...)
+			tree.Nodes = append(tree.Nodes, p.parseStartTag()...)
 		case html.EndTagToken:
 			panic("UNREACHABLE")
 		case html.DoctypeToken, html.CommentToken:
-			tree.nodes = append(tree.nodes, p.emitLiteral())
+			tree.Nodes = append(tree.Nodes, p.emitLiteral())
 		case html.TextToken:
-			tree.nodes = append(tree.nodes, p.parseTextToken()...)
+			tree.Nodes = append(tree.Nodes, p.parseTextToken()...)
 		default:
 			panic("")
 		}
@@ -378,85 +378,85 @@ tokenLoop:
 	return tree
 }
 
-func (p *htmlParser) transition() node {
+func (p *htmlParser) transition() Node {
 	codeParser := p.parser.codeParser
 	codeParser.reset()
 	e := codeParser.parseCode()
 	return e
 }
 
-type tag struct {
-	name  string
-	attrs []*attr
+type Tag struct {
+	Name  string
+	Attrs []*Attr
 }
 
-func (t tag) String() string {
-	if len(t.attrs) == 0 {
-		return t.name
+func (t Tag) String() string {
+	if len(t.Attrs) == 0 {
+		return t.Name
 	}
-	buf := bytes.NewBufferString(t.name)
-	for _, a := range t.attrs {
+	buf := bytes.NewBufferString(t.Name)
+	for _, a := range t.Attrs {
 		buf.WriteByte(' ')
-		buf.WriteString(a.name.string)
+		buf.WriteString(a.Name.Text)
 		buf.WriteString(`="`)
-		buf.WriteString(html.EscapeString(a.value.string))
+		buf.WriteString(html.EscapeString(a.Value.Text))
 		buf.WriteByte('"')
 	}
 	return buf.String()
 }
 
-func (t tag) start() string {
+func (t Tag) start() string {
 	return "<" + t.String() + ">"
 }
 
-func (t tag) end() string {
-	return "</" + t.name + ">"
+func (t Tag) end() string {
+	return "</" + t.Name + ">"
 }
 
-func newTag(tagname []byte, attrs []*attr) tag {
-	return tag{name: string(tagname), attrs: attrs}
+func newTag(tagname []byte, attrs []*Attr) Tag {
+	return Tag{Name: string(tagname), Attrs: attrs}
 }
 
 func (p *htmlParser) match(typ html.TokenType) bool {
 	return p.toktyp == typ
 }
 
-func (p *htmlParser) parseElement() node {
-	var result *nodeElement
+func (p *htmlParser) parseElement() Node {
+	var result *NodeElement
 
 	// FIXME(paulsmith): handle self-closing elements
 	if !p.match(html.StartTagToken) {
 		p.errorf("expected an HTML element start tag, got %s", p.toktyp)
 	}
 
-	result = new(nodeElement)
-	result.tag = newTag(p.tagname, p.attrs)
-	result.pos.start = p.parser.offset - len(p.raw)
-	result.pos.end = p.parser.offset
-	result.startTagNodes = p.parseStartTag()
+	result = new(NodeElement)
+	result.Tag = newTag(p.tagname, p.attrs)
+	result.Span.Start = p.parser.offset - len(p.raw)
+	result.Span.End = p.parser.offset
+	result.StartTagNodes = p.parseStartTag()
 	p.advance()
 
-	result.children = p.parseChildren()
+	result.Children = p.parseChildren()
 
 	if !p.match(html.EndTagToken) {
 		p.errorf("expected an HTML element end tag, got %q", p.toktyp)
 	}
 
-	if result.tag.name != string(p.tagname) {
-		p.errorf("expected </%s> end tag, got </%s>", result.tag.name, p.tagname)
+	if result.Tag.Name != string(p.tagname) {
+		p.errorf("expected </%s> end tag, got </%s>", result.Tag.Name, p.tagname)
 	}
 
 	// <text></text> elements are just for parsing
 	if string(p.tagname) == "text" {
-		return &nodeBlock{nodes: result.children}
+		return &NodeBlock{Nodes: result.Children}
 	}
 
 	return result
 }
 
-func (p *htmlParser) parseChildren() []node {
-	var result []node // either *nodeElement or *nodeLiteral
-	var elemStack []*nodeElement
+func (p *htmlParser) parseChildren() []Node {
+	var result []Node // either *nodeElement or *nodeLiteral
+	var elemStack []*NodeElement
 loop:
 	for {
 		switch p.toktyp {
@@ -467,21 +467,21 @@ loop:
 				p.errorf("HTML tokenizer: %w", p.err)
 			}
 		case html.SelfClosingTagToken:
-			elem := new(nodeElement)
-			elem.tag = newTag(p.tagname, p.attrs)
-			elem.pos.start = p.parser.offset - len(p.raw)
-			elem.pos.end = p.parser.offset
-			elem.startTagNodes = p.parseStartTag()
+			elem := new(NodeElement)
+			elem.Tag = newTag(p.tagname, p.attrs)
+			elem.Span.Start = p.parser.offset - len(p.raw)
+			elem.Span.End = p.parser.offset
+			elem.StartTagNodes = p.parseStartTag()
 			p.advance()
 			result = append(result, elem)
 		case html.StartTagToken:
-			elem := new(nodeElement)
-			elem.tag = newTag(p.tagname, p.attrs)
-			elem.pos.start = p.parser.offset - len(p.raw)
-			elem.pos.end = p.parser.offset
-			elem.startTagNodes = p.parseStartTag()
+			elem := new(NodeElement)
+			elem.Tag = newTag(p.tagname, p.attrs)
+			elem.Span.Start = p.parser.offset - len(p.raw)
+			elem.Span.End = p.parser.offset
+			elem.StartTagNodes = p.parseStartTag()
 			p.advance()
-			elem.children = p.parseChildren()
+			elem.Children = p.parseChildren()
 			result = append(result, elem)
 			elemStack = append(elemStack, elem)
 		case html.EndTagToken:
@@ -489,13 +489,13 @@ loop:
 				return result
 			}
 			elem := elemStack[len(elemStack)-1]
-			if elem.tag.name == string(p.tagname) {
+			if elem.Tag.Name == string(p.tagname) {
 				elemStack = elemStack[:len(elemStack)-1]
 				// NOTE(paulsmith): we don't put the end tag on the result AST,
 				// because the thinking is that it's implied by the start tag.
 				p.advance()
 			} else {
-				p.errorf("mismatch end tag, expected </%s>, got </%s>", elem.tag.name, p.tagname)
+				p.errorf("mismatch end tag, expected </%s>, got </%s>", elem.Tag.Name, p.tagname)
 			}
 		case html.TextToken:
 			// TODO(paulsmith): de-dupe this logic
@@ -508,10 +508,10 @@ loop:
 					p.parser.offset = newOffset
 					leading := p.raw[:idx]
 					if idx > 0 {
-						var htmlNode nodeLiteral
-						htmlNode.pos.start = p.start
-						htmlNode.pos.end = p.start + len(leading)
-						htmlNode.str = leading
+						var htmlNode NodeLiteral
+						htmlNode.Span.Start = p.start
+						htmlNode.Span.End = p.start + len(leading)
+						htmlNode.Text = leading
 						result = append(result, &htmlNode)
 					}
 					e := p.transition()
@@ -692,24 +692,24 @@ func (p *codeParser) backup() {
 	p.lookaheadToken = p.acceptedToken
 }
 
-func (p *codeParser) transition() *nodeBlock {
+func (p *codeParser) transition() *NodeBlock {
 	htmlParser := p.parser.htmlParser
 	htmlParser.advance()
-	var stmtBlock nodeBlock
+	var stmtBlock NodeBlock
 	ws := htmlParser.skipWhitespace()
 	for _, n := range ws {
-		stmtBlock.nodes = append(stmtBlock.nodes, n)
+		stmtBlock.Nodes = append(stmtBlock.Nodes, n)
 	}
 	elem := htmlParser.parseElement()
-	stmtBlock.nodes = append(stmtBlock.nodes, elem)
+	stmtBlock.Nodes = append(stmtBlock.Nodes, elem)
 	p.reset()
 	return &stmtBlock
 }
 
-func (p *codeParser) parseCode() node {
+func (p *codeParser) parseCode() Node {
 	// starting at the token just past the transSym indicating a transition from HTML
 	// parsing to Go code parsing
-	var e node
+	var e Node
 	tok := p.peek().tok
 	lit := p.peek().lit
 	if tok == token.IF {
@@ -758,8 +758,8 @@ func (p *codeParser) parseCode() node {
 	return e
 }
 
-func (p *codeParser) parseIfStmt() *nodeIf {
-	var stmt nodeIf
+func (p *codeParser) parseIfStmt() *NodeIf {
+	var stmt NodeIf
 	start := p.peek().pos
 	maxread := start
 	lastlit := p.peek().String()
@@ -779,14 +779,14 @@ loop:
 	}
 	n := (p.file.Offset(maxread) - p.file.Offset(start)) + len(lastlit)
 	offset := p.baseOffset + p.file.Offset(start)
-	stmt.cond = new(nodeGoStrExpr)
-	stmt.cond.pos.start = offset
-	stmt.cond.pos.end = offset + n
-	stmt.cond.expr = p.sourceFrom(start)[:n]
-	if _, err := goparser.ParseExpr(stmt.cond.expr); err != nil {
+	stmt.Cond = new(NodeGoStrExpr)
+	stmt.Cond.Span.Start = offset
+	stmt.Cond.Span.End = offset + n
+	stmt.Cond.Expr = p.sourceFrom(start)[:n]
+	if _, err := goparser.ParseExpr(stmt.Cond.Expr); err != nil {
 		p.errorf("parsing Go expression in IF conditional: %w", err)
 	}
-	stmt.then = p.parseStmtBlock()
+	stmt.Then = p.parseStmtBlock()
 	// parse ^else clause
 	if p.peek().tok == token.XOR {
 		p.advance()
@@ -796,20 +796,20 @@ loop:
 				p.advance()
 				if p.peek().tok == token.IF {
 					p.advance()
-					stmt.alt = p.parseIfStmt()
+					stmt.Alt = p.parseIfStmt()
 				} else {
 					p.errorf("expected `if' after transition character, got %v", p.peek().String())
 				}
 			} else {
-				stmt.alt = p.parseStmtBlock()
+				stmt.Alt = p.parseStmtBlock()
 			}
 		}
 	}
 	return &stmt
 }
 
-func (p *codeParser) parseForStmt() *nodeFor {
-	var stmt nodeFor
+func (p *codeParser) parseForStmt() *NodeFor {
+	var stmt NodeFor
 	start := p.peek().pos
 loop:
 	for {
@@ -824,21 +824,21 @@ loop:
 	}
 	n := (p.file.Offset(p.prev().pos) - p.file.Offset(start)) + len(p.prev().String())
 	offset := p.baseOffset + p.file.Offset(start)
-	stmt.clause = new(nodeGoCode)
-	stmt.clause.pos.start = offset
-	stmt.clause.pos.end = offset + n
-	stmt.clause.code = p.sourceFrom(start)[:n]
-	stmt.block = p.parseStmtBlock()
+	stmt.Clause = new(NodeGoCode)
+	stmt.Clause.Span.Start = offset
+	stmt.Clause.Span.End = offset + n
+	stmt.Clause.Code = p.sourceFrom(start)[:n]
+	stmt.Block = p.parseStmtBlock()
 	return &stmt
 }
 
-func (p *codeParser) parseStmtBlock() *nodeBlock {
+func (p *codeParser) parseStmtBlock() *NodeBlock {
 	// we are sitting on the opening '{' token here
 	if p.peek().tok != token.LBRACE {
 		p.errorf("expected '{', got '%s'", p.peek().String())
 	}
 	p.advance()
-	var block *nodeBlock
+	var block *NodeBlock
 	switch p.peek().tok {
 	// check for a transition, i.e., stay in code parser
 	case token.XOR:
@@ -847,7 +847,7 @@ func (p *codeParser) parseStmtBlock() *nodeBlock {
 		if p.peek().tok == token.SEMICOLON {
 			p.advance()
 		}
-		block = &nodeBlock{nodes: []node{code}}
+		block = &NodeBlock{Nodes: []Node{code}}
 	case token.EOF:
 		p.errorf("premature end of block in IF statement")
 	default:
@@ -866,15 +866,15 @@ func (p *codeParser) parseStmtBlock() *nodeBlock {
 }
 
 // TODO(paulsmith): extract a common function with parseCodeKeyword
-func (p *codeParser) parseHandlerKeyword() *nodeGoCode {
-	result := &nodeGoCode{context: handlerGoCode}
+func (p *codeParser) parseHandlerKeyword() *NodeGoCode {
+	result := &NodeGoCode{Context: HandlerGoCode}
 	// we are one token past the 'handler' keyword
 	if p.peek().tok != token.LBRACE {
 		p.errorf("expected '{', got '%s'", p.peek().tok)
 	}
 	depth := 1
 	p.advance()
-	result.pos.start = p.parser.offset
+	result.Span.Start = p.parser.offset
 	start := p.peek().pos
 loop:
 	for {
@@ -894,12 +894,12 @@ loop:
 		panic("")
 	}
 	p.advance()
-	result.code = p.sourceFrom(start)[:n]
-	result.pos.end = result.pos.start + n
+	result.Code = p.sourceFrom(start)[:n]
+	result.Span.End = result.Span.Start + n
 	return result
 }
 
-func (p *codeParser) parsePartialKeyword() *nodePartial {
+func (p *codeParser) parsePartialKeyword() *NodePartial {
 	// enter function one past the "partial" IDENT token
 	// FIXME(paulsmith): we are currently requiring that the name of the
 	// partial be a valid Go identifier, but there is no reason that need be
@@ -909,22 +909,22 @@ func (p *codeParser) parsePartialKeyword() *nodePartial {
 	if p.peek().tok != token.IDENT {
 		p.errorf("expected IDENT, got %s", p.peek().tok.String())
 	}
-	result := &nodePartial{name: p.peek().lit}
-	result.pos.start = p.parser.offset
+	result := &NodePartial{Name: p.peek().lit}
+	result.Span.Start = p.parser.offset
 	p.advance()
-	result.pos.end = p.parser.offset
-	result.block = p.parseStmtBlock()
+	result.Span.End = p.parser.offset
+	result.Block = p.parseStmtBlock()
 	return result
 }
 
-func (p *codeParser) parseCodeBlock() *nodeGoCode {
-	result := &nodeGoCode{context: inlineGoCode}
+func (p *codeParser) parseCodeBlock() *NodeGoCode {
+	result := &NodeGoCode{Context: InlineGoCode}
 	if p.peek().tok != token.LBRACE {
 		p.errorf("expected '{', got '%s'", p.peek().tok)
 	}
 	depth := 1
 	p.advance()
-	result.pos.start = p.parser.offset
+	result.Span.Start = p.parser.offset
 	start := p.peek().pos
 	maxread := start
 	lastlit := p.peek().String()
@@ -950,48 +950,48 @@ loop:
 		panic("")
 	}
 	p.advance()
-	result.code = p.sourceFrom(start)[:n]
-	result.pos.end = result.pos.start + n
+	result.Code = p.sourceFrom(start)[:n]
+	result.Span.End = result.Span.Start + n
 	return result
 }
 
-func (p *codeParser) parseImportKeyword() *nodeImport {
+func (p *codeParser) parseImportKeyword() *NodeImport {
 	/*
 		examples:
 		TRANS_SYMimport   "lib/math"         math.Sin
 		TRANS_SYMimport m "lib/math"         m.Sin
 		TRANS_SYMimport . "lib/math"         Sin
 	*/
-	e := new(nodeImport)
+	e := new(NodeImport)
 	// we are one token past the 'import' keyword
 	switch p.peek().tok {
 	case token.STRING:
-		e.decl.path = p.peek().lit
+		e.Decl.Path = p.peek().lit
 		p.advance()
 	case token.IDENT:
-		e.decl.pkgName = p.peek().lit
+		e.Decl.PkgName = p.peek().lit
 		p.advance()
 		if p.peek().tok != token.STRING {
 			p.errorf("expected string, got %s", p.peek().tok)
 		}
-		e.decl.path = p.peek().lit
+		e.Decl.Path = p.peek().lit
 	case token.PERIOD:
-		e.decl.pkgName = "."
+		e.Decl.PkgName = "."
 		p.advance()
 		if p.peek().tok != token.STRING {
 			p.errorf("expected string, got %s", p.peek().tok)
 		}
-		e.decl.path = p.peek().lit
+		e.Decl.Path = p.peek().lit
 	default:
 		p.errorf("unexpected token type after "+transSymStr+"import: %s", p.peek().tok)
 	}
 	return e
 }
 
-func (p *codeParser) parseExplicitExpression() *nodeGoStrExpr {
+func (p *codeParser) parseExplicitExpression() *NodeGoStrExpr {
 	// one token past the opening '('
-	result := new(nodeGoStrExpr)
-	result.pos.start = p.parser.offset
+	result := new(NodeGoStrExpr)
+	result.Span.Start = p.parser.offset
 	start := p.peek().pos
 	maxread := start
 	lastlit := p.peek().String()
@@ -1020,9 +1020,9 @@ loop:
 		panic(fmt.Sprintf("internal error: expected ')', got '%s'", p.peek().String()))
 	}
 	_ = p.sync()
-	result.expr = p.sourceFrom(start)[:n]
-	result.pos.end = result.pos.start + n
-	if _, err := goparser.ParseExpr(result.expr); err != nil {
+	result.Expr = p.sourceFrom(start)[:n]
+	result.Span.End = result.Span.Start + n
+	if _, err := goparser.ParseExpr(result.Expr); err != nil {
 		p.errorf("illegal Go expression: %w", err)
 	}
 	return result
@@ -1040,17 +1040,17 @@ func (p *codeParser) tokenOffset(tok goToken) int {
 	return p.baseOffset + p.file.Offset(tok.pos)
 }
 
-func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
+func (p *codeParser) parseImplicitExpression() *NodeGoStrExpr {
 	if p.peek().tok != token.IDENT {
 		panic("internal error: expected Go identifier start implicit expression")
 	}
-	result := new(nodeGoStrExpr)
+	result := new(NodeGoStrExpr)
 	end := p.tokenOffset(p.peek())
-	result.pos.start = end
+	result.Span.Start = end
 	identLen := len(p.peek().String())
 	end += identLen
 	p.advance()
-	if !unicode.IsSpace(rune(p.charAt(result.pos.start + identLen))) {
+	if !unicode.IsSpace(rune(p.charAt(result.Span.Start + identLen))) {
 	Loop:
 		for {
 			if p.peek().tok == token.LPAREN {
@@ -1118,10 +1118,10 @@ func (p *codeParser) parseImplicitExpression() *nodeGoStrExpr {
 			}
 		}
 	}
-	result.expr = p.sourceRange(result.pos.start, end)
-	result.pos.end = end
-	if _, err := goparser.ParseExpr(result.expr); err != nil {
-		p.errorf("illegal Go expression %q: %w", result.expr, err)
+	result.Expr = p.sourceRange(result.Span.Start, end)
+	result.Span.End = end
+	if _, err := goparser.ParseExpr(result.Expr); err != nil {
+		p.errorf("illegal Go expression %q: %w", result.Expr, err)
 	}
 	return result
 }

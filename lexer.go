@@ -23,11 +23,11 @@ import (
 //
 // https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
 
-func scanAttrs(openTag string) (attrs []*attr, err error) {
+func scanAttrs(openTag string) (attrs []*Attr, err error) {
 	// maintain some invariants, we are not a general-purpose HTML
 	// tokenizer/parser, we are just parsing open tags.
 	if len(openTag) == 0 {
-		return []*attr{}, nil
+		return []*Attr{}, nil
 	}
 	if ch := openTag[0]; ch != '<' {
 		return nil, openTagScanError(fmt.Sprintf("expected '<', got '%c'", ch))
@@ -108,14 +108,14 @@ type bufPos struct {
 	start pos
 }
 
-type attr struct {
-	name  stringPos
-	value stringPos
+type Attr struct {
+	Name  StringPos
+	Value StringPos
 }
 
-type stringPos struct {
-	string
-	start pos
+type StringPos struct {
+	Text  string
+	Start pos
 }
 
 type pos int
@@ -187,7 +187,7 @@ func (s openTagLexState) String() string {
 
 const eof = -1
 
-func (l *openTagLexer) scan() []*attr {
+func (l *openTagLexer) scan() []*Attr {
 loop:
 	for {
 		switch l.state {
@@ -455,15 +455,15 @@ loop:
 		}
 	}
 
-	result := make([]*attr, len(l.attrs))
+	result := make([]*Attr, len(l.attrs))
 	for i := range l.attrs {
 		builder := l.attrs[i]
-		attr := &attr{
-			name: stringPos{
+		attr := &Attr{
+			Name: StringPos{
 				builder.name.String(),
 				builder.name.start,
 			},
-			value: stringPos{
+			Value: StringPos{
 				builder.value.String(),
 				builder.value.start,
 			},
