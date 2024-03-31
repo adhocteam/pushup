@@ -1,0 +1,92 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodeElement",
+            "Node": {
+                "Tag": {
+                    "Name": "p",
+                    "Attrs": null
+                },
+                "StartTagNodes": [
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "\u003cp\u003e",
+                            "Span": {
+                                "Start": 0,
+                                "End": 3
+                            }
+                        }
+                    }
+                ],
+                "Children": [
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "Hello, ",
+                            "Span": {
+                                "Start": 3,
+                                "End": 10
+                            }
+                        }
+                    },
+                    {
+                        "Type": "NodeGoStrExpr",
+                        "Node": {
+                            "Expr": "name",
+                            "Span": {
+                                "Start": 11,
+                                "End": 15
+                            }
+                        }
+                    },
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "!",
+                            "Span": {
+                                "Start": 15,
+                                "End": 16
+                            }
+                        }
+                    }
+                ],
+                "Span": {
+                    "Start": 0,
+                    "End": 3
+                }
+            }
+        },
+        {
+            "Type": "NodeLiteral",
+            "Node": {
+                "Text": "\n",
+                "Span": {
+                    "Start": 20,
+                    "End": 21
+                }
+            }
+        },
+        {
+            "Type": "NodeGoCode",
+            "Node": {
+                "Context": 0,
+                "Code": "name := \"world\"\n",
+                "Span": {
+                    "Start": 23,
+                    "End": 39
+                }
+            }
+        },
+        {
+            "Type": "NodeLiteral",
+            "Node": {
+                "Text": "\n",
+                "Span": {
+                    "Start": 42,
+                    "End": 43
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,4 @@
+<p>Hello, ^name!</p>
+^{
+	name := "world"
+}

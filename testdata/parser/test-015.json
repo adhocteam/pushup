@@ -1,0 +1,34 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodeLiteral",
+            "Node": {
+                "Text": "My name is ",
+                "Span": {
+                    "Start": 0,
+                    "End": 11
+                }
+            }
+        },
+        {
+            "Type": "NodeGoStrExpr",
+            "Node": {
+                "Expr": "name",
+                "Span": {
+                    "Start": 12,
+                    "End": 16
+                }
+            }
+        },
+        {
+            "Type": "NodeLiteral",
+            "Node": {
+                "Text": ". What's yours?",
+                "Span": {
+                    "Start": 16,
+                    "End": 31
+                }
+            }
+        }
+    ]
+}

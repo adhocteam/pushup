@@ -1,0 +1,147 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodeIf",
+            "Node": {
+                "Cond": {
+                    "Type": "NodeGoStrExpr",
+                    "Node": {
+                        "Expr": "name != \"\"",
+                        "Span": {
+                            "Start": 4,
+                            "End": 14
+                        }
+                    }
+                },
+                "Then": {
+                    "Type": "NodeBlock",
+                    "Node": {
+                        "Nodes": [
+                            {
+                                "Type": "NodeLiteral",
+                                "Node": {
+                                    "Text": "\n\t",
+                                    "Span": {
+                                        "Start": 16,
+                                        "End": 18
+                                    }
+                                }
+                            },
+                            {
+                                "Type": "NodeElement",
+                                "Node": {
+                                    "Tag": {
+                                        "Name": "h1",
+                                        "Attrs": null
+                                    },
+                                    "StartTagNodes": [
+                                        {
+                                            "Type": "NodeLiteral",
+                                            "Node": {
+                                                "Text": "\u003ch1\u003e",
+                                                "Span": {
+                                                    "Start": 18,
+                                                    "End": 22
+                                                }
+                                            }
+                                        }
+                                    ],
+                                    "Children": [
+                                        {
+                                            "Type": "NodeLiteral",
+                                            "Node": {
+                                                "Text": "Hello, ",
+                                                "Span": {
+                                                    "Start": 22,
+                                                    "End": 29
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "Type": "NodeGoStrExpr",
+                                            "Node": {
+                                                "Expr": "name",
+                                                "Span": {
+                                                    "Start": 30,
+                                                    "End": 34
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "Type": "NodeLiteral",
+                                            "Node": {
+                                                "Text": "!",
+                                                "Span": {
+                                                    "Start": 34,
+                                                    "End": 35
+                                                }
+                                            }
+                                        }
+                                    ],
+                                    "Span": {
+                                        "Start": 18,
+                                        "End": 22
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                "Alt": {
+                    "Type": "NodeBlock",
+                    "Node": {
+                        "Nodes": [
+                            {
+                                "Type": "NodeLiteral",
+                                "Node": {
+                                    "Text": "\n\t",
+                                    "Span": {
+                                        "Start": 50,
+                                        "End": 52
+                                    }
+                                }
+                            },
+                            {
+                                "Type": "NodeElement",
+                                "Node": {
+                                    "Tag": {
+                                        "Name": "h1",
+                                        "Attrs": null
+                                    },
+                                    "StartTagNodes": [
+                                        {
+                                            "Type": "NodeLiteral",
+                                            "Node": {
+                                                "Text": "\u003ch1\u003e",
+                                                "Span": {
+                                                    "Start": 52,
+                                                    "End": 56
+                                                }
+                                            }
+                                        }
+                                    ],
+                                    "Children": [
+                                        {
+                                            "Type": "NodeLiteral",
+                                            "Node": {
+                                                "Text": "Hello, world!",
+                                                "Span": {
+                                                    "Start": 56,
+                                                    "End": 69
+                                                }
+                                            }
+                                        }
+                                    ],
+                                    "Span": {
+                                        "Start": 52,
+                                        "End": 56
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    ]
+}

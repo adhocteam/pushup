@@ -1,0 +1,14 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodeGoStrExpr",
+            "Node": {
+                "Expr": "quux[42]",
+                "Span": {
+                    "Start": 1,
+                    "End": 9
+                }
+            }
+        }
+    ]
+}

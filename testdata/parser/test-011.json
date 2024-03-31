@@ -1,0 +1,24 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodeGoStrExpr",
+            "Node": {
+                "Expr": "p.name",
+                "Span": {
+                    "Start": 1,
+                    "End": 7
+                }
+            }
+        },
+        {
+            "Type": "NodeLiteral",
+            "Node": {
+                "Text": " ($blah ...",
+                "Span": {
+                    "Start": 7,
+                    "End": 18
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,38 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodePartial",
+            "Node": {
+                "Name": "foo",
+                "Span": {
+                    "Start": 8,
+                    "End": 12
+                },
+                "Block": {
+                    "Type": "NodeBlock",
+                    "Node": {
+                        "Nodes": [
+                            {
+                                "Type": "NodeBlock",
+                                "Node": {
+                                    "Nodes": [
+                                        {
+                                            "Type": "NodeLiteral",
+                                            "Node": {
+                                                "Text": "bar",
+                                                "Span": {
+                                                    "Start": 20,
+                                                    "End": 23
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    ]
+}

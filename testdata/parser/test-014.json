@@ -1,0 +1,80 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodePartial",
+            "Node": {
+                "Name": "foo",
+                "Span": {
+                    "Start": 8,
+                    "End": 12
+                },
+                "Block": {
+                    "Type": "NodeBlock",
+                    "Node": {
+                        "Nodes": [
+                            {
+                                "Type": "NodeIf",
+                                "Node": {
+                                    "Cond": {
+                                        "Type": "NodeGoStrExpr",
+                                        "Node": {
+                                            "Expr": "true",
+                                            "Span": {
+                                                "Start": 23,
+                                                "End": 27
+                                            }
+                                        }
+                                    },
+                                    "Then": {
+                                        "Type": "NodeBlock",
+                                        "Node": {
+                                            "Nodes": [
+                                                {
+                                                    "Type": "NodeLiteral",
+                                                    "Node": {
+                                                        "Text": "\n\t\t\t\t\t",
+                                                        "Span": {
+                                                            "Start": 29,
+                                                            "End": 35
+                                                        }
+                                                    }
+                                                },
+                                                {
+                                                    "Type": "NodeElement",
+                                                    "Node": {
+                                                        "Tag": {
+                                                            "Name": "p",
+                                                            "Attrs": null
+                                                        },
+                                                        "StartTagNodes": [
+                                                            {
+                                                                "Type": "NodeLiteral",
+                                                                "Node": {
+                                                                    "Text": "\u003cp\u003e",
+                                                                    "Span": {
+                                                                        "Start": 35,
+                                                                        "End": 38
+                                                                    }
+                                                                }
+                                                            }
+                                                        ],
+                                                        "Children": null,
+                                                        "Span": {
+                                                            "Start": 35,
+                                                            "End": 38
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "Alt": null
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    ]
+}

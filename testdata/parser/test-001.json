@@ -1,0 +1,81 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodeElement",
+            "Node": {
+                "Tag": {
+                    "Name": "a",
+                    "Attrs": [
+                        {
+                            "Name": {
+                                "Text": "href",
+                                "Start": 3
+                            },
+                            "Value": {
+                                "Text": "^^foo",
+                                "Start": 9
+                            }
+                        }
+                    ]
+                },
+                "StartTagNodes": [
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "\u003ca ",
+                            "Span": {
+                                "Start": 0,
+                                "End": 3
+                            }
+                        }
+                    },
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "href",
+                            "Span": {
+                                "Start": 3,
+                                "End": 7
+                            }
+                        }
+                    },
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "=\"",
+                            "Span": {
+                                "Start": 7,
+                                "End": 9
+                            }
+                        }
+                    },
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "^",
+                            "Span": {
+                                "Start": 9,
+                                "End": 10
+                            }
+                        }
+                    },
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "foo\"\u003e",
+                            "Span": {
+                                "Start": 11,
+                                "End": 16
+                            }
+                        }
+                    }
+                ],
+                "Children": null,
+                "Span": {
+                    "Start": 0,
+                    "End": 16
+                }
+            }
+        }
+    ]
+}
