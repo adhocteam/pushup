@@ -420,23 +420,35 @@ func newTag(tagname []byte, attrs []*attr) tag {
 	return tag{name: string(tagname), attrs: attrs}
 }
 
-func (p *htmlParser) match(typ html.TokenType) bool {
-	return p.toktyp == typ
+func (p *htmlParser) match(types ...html.TokenType) bool {
+	for _, typ := range types {
+		if p.toktyp == typ {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *htmlParser) parseElement() node {
 	var result *nodeElement
 
-	// FIXME(paulsmith): handle self-closing elements
-	if !p.match(html.StartTagToken) {
-		p.errorf("expected an HTML element start tag, got %s", p.toktyp)
+	if !p.match(html.StartTagToken, html.SelfClosingTagToken) {
+		p.errorf("expected an HTML element start or self-closing tag, got %s", p.toktyp)
 	}
 
 	result = new(nodeElement)
 	result.tag = newTag(p.tagname, p.attrs)
 	result.pos.start = p.parser.offset - len(p.raw)
 	result.pos.end = p.parser.offset
+	if p.match(html.SelfClosingTagToken) {
+		result.selfClosing = true
+	}
 	result.startTagNodes = p.parseStartTag()
+
+	if isVoidElement(result.tag.name) {
+		return result
+	}
+
 	p.advance()
 
 	result.children = p.parseChildren()
@@ -462,31 +474,28 @@ func (p *htmlParser) parseChildren() []node {
 	var elemStack []*nodeElement
 loop:
 	for {
-		switch p.toktyp {
+		switch tt := p.toktyp; tt {
 		case html.ErrorToken:
 			if p.err == io.EOF {
 				break loop
 			} else {
 				p.errorf("HTML tokenizer: %w", p.err)
 			}
-		case html.SelfClosingTagToken:
+		case html.StartTagToken, html.SelfClosingTagToken:
 			elem := new(nodeElement)
 			elem.tag = newTag(p.tagname, p.attrs)
 			elem.pos.start = p.parser.offset - len(p.raw)
 			elem.pos.end = p.parser.offset
 			elem.startTagNodes = p.parseStartTag()
+			if tt == html.SelfClosingTagToken {
+				elem.selfClosing = true
+			}
 			p.advance()
+			if !isVoidElement(elem.tag.name) {
+				elem.children = p.parseChildren()
+				elemStack = append(elemStack, elem)
+			}
 			result = append(result, elem)
-		case html.StartTagToken:
-			elem := new(nodeElement)
-			elem.tag = newTag(p.tagname, p.attrs)
-			elem.pos.start = p.parser.offset - len(p.raw)
-			elem.pos.end = p.parser.offset
-			elem.startTagNodes = p.parseStartTag()
-			p.advance()
-			elem.children = p.parseChildren()
-			result = append(result, elem)
-			elemStack = append(elemStack, elem)
 		case html.EndTagToken:
 			if len(elemStack) == 0 {
 				return result
@@ -532,6 +541,25 @@ loop:
 	}
 
 	return result
+}
+
+func isVoidElement(tagname string) bool {
+	// Per spec: https://html.spec.whatwg.org/multipage/syntax.html#void-elements
+	voidElements := map[string]bool{"area": true,
+		"base":   true,
+		"br":     true,
+		"col":    true,
+		"embed":  true,
+		"hr":     true,
+		"img":    true,
+		"input":  true,
+		"link":   true,
+		"meta":   true,
+		"source": true,
+		"track":  true,
+		"wbr":    true,
+	}
+	return voidElements[tagname]
 }
 
 type Optional[T any] struct {
