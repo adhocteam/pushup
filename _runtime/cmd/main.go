@@ -65,7 +65,7 @@ func main() {
 		if *unixSocket != "" {
 			ln, err = net.Listen("unix", *unixSocket)
 		} else {
-			host := "0.0.0.0"
+			host := "localhost"
 			addr := host + ":" + *port
 			ln, err = net.Listen("tcp4", addr) // TODO(paulsmith): may want to support IPv6
 		}
