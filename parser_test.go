@@ -405,6 +405,27 @@ func TestParse(t *testing.T) {
 				},
 			},
 		},
+		{
+			`^if true { <br/> }`,
+			&syntaxTree{
+				nodes: []node{
+					&nodeIf{
+						cond: &nodeGoStrExpr{expr: "true", pos: span{start: 4, end: 8}},
+						then: &nodeBlock{
+							nodes: []node{
+								&nodeLiteral{str: " ", pos: span{10, 11}},
+								&nodeElement{
+									tag:           tag{name: "br"},
+									startTagNodes: []node{&nodeLiteral{str: "<br/>", pos: span{start: 11, end: 16}}},
+									pos:           span{11, 16},
+									selfClosing:   true,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 	opts := cmp.AllowUnexported(unexported...)
 	for _, test := range tests {
@@ -450,7 +471,7 @@ func TestParseSyntaxErrors(t *testing.T) {
 		{
 			`^if true {
 	<illegal />
-}`, 2, 13,
+}`, 3, 2,
 		},
 		// FIXME(paulsmith): add more syntax errors
 	}

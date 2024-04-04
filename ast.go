@@ -177,6 +177,7 @@ type nodeElement struct {
 	startTagNodes []node
 	children      []node
 	pos           span
+	selfClosing   bool
 }
 
 func (e nodeElement) Pos() span { return e.pos }
