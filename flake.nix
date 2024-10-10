@@ -1,7 +1,7 @@
 {
   description = "Pushup is a new web framework for Go";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs = { self, nixpkgs }:
     let
@@ -64,7 +64,7 @@
 
       devShells = forEachSystem ({ pkgs, ... }: {
         default =
-          pkgs.mkShell { buildInputs = with pkgs; [ go_1_20 gotools gopls ]; };
+          pkgs.mkShell { buildInputs = with pkgs; [ go_1_23 gotools gopls ]; };
       });
     };
 }
