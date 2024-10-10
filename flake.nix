@@ -46,17 +46,22 @@
           };
 
         in {
-          default = pkgs.buildGoModule rec {
+          # https://github.com/NixOS/nixpkgs/blob/master/pkgs/build-support/go/module.nix
+          default = pkgs.buildGoModule.override {
+            go = pkgs.go_1_23;
+          } rec {
             inherit pname version src vendorHash subPackages CGO_ENABLED meta;
           };
 
-          withGo = pkgs.buildGoModule rec {
+          withGo = pkgs.buildGoModule.override {
+            go = pkgs.go_1_23;
+          } rec {
             inherit pname version src vendorHash subPackages CGO_ENABLED meta;
             nativeBuildInputs = with pkgs; [ makeWrapper ];
             allowGoReference = true;
             postInstall = ''
               wrapProgram $out/bin/${pname} --prefix PATH : ${
-                pkgs.lib.makeBinPath (with pkgs; [ go ])
+                pkgs.lib.makeBinPath (with pkgs; [ go_1_23 ])
               }
             '';
           };
