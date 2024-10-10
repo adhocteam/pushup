@@ -1,6 +1,6 @@
 module github.com/adhocteam/pushup
 
-go 1.20
+go 1.23
 
 require (
 	github.com/fsnotify/fsnotify v1.5.4
