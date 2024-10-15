@@ -9,11 +9,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 )
 
 func main() {
 	flag.Parse()
-	packageName := "main"
+	packageName := "parser"
 	if flag.NArg() > 0 {
 		packageName = flag.Arg(0)
 	}
@@ -25,8 +26,17 @@ func main() {
 
 	var raw bytes.Buffer
 	fmt.Fprintf(&raw, "// this file is mechanically generated, do not edit\npackage %s\nvar namedCharRefs = map[string]string {\n", packageName)
-	for k, v := range refs {
-		fmt.Fprintf(&raw, "\t%q: %q,\n", k, v)
+
+	// Create a slice of keys and sort them
+	keys := make([]string, 0, len(refs))
+	for k := range refs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	// Print keys in sorted order
+	for _, k := range keys {
+		fmt.Fprintf(&raw, "\t%q: %q,\n", k, refs[k])
 	}
 	fmt.Fprintln(&raw, "}")
 
