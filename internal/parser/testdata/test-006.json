@@ -1,0 +1,17 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodeImport",
+            "Node": {
+                "Decl": {
+                    "PkgName": "",
+                    "Path": "\"time\""
+                },
+                "Span": {
+                    "Start": 0,
+                    "End": 0
+                }
+            }
+        }
+    ]
+}

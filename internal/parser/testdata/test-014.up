@@ -1,0 +1,5 @@
+^partial foo {
+				^if true {
+					<p></p>
+				}
+			}

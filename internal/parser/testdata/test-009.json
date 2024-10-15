@@ -1,0 +1,14 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodeGoStrExpr",
+            "Node": {
+                "Expr": "foo.bar(\"asd\").baz.biz()",
+                "Span": {
+                    "Start": 1,
+                    "End": 25
+                }
+            }
+        }
+    ]
+}

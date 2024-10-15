@@ -1,0 +1,8 @@
+^{
+	type product struct {
+		name string
+		price float32
+	}
+
+	products := []product{{name: "Widget", price: 9.49}}
+}

@@ -1,0 +1,14 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodeGoStrExpr",
+            "Node": {
+                "Expr": "getParam(req, \"name\")",
+                "Span": {
+                    "Start": 1,
+                    "End": 22
+                }
+            }
+        }
+    ]
+}

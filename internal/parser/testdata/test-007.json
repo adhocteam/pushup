@@ -1,0 +1,92 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodeElement",
+            "Node": {
+                "Tag": {
+                    "Name": "a",
+                    "Attrs": [
+                        {
+                            "Name": {
+                                "Text": "href",
+                                "Start": 3
+                            },
+                            "Value": {
+                                "Text": "^url",
+                                "Start": 9
+                            }
+                        }
+                    ]
+                },
+                "StartTagNodes": [
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "\u003ca ",
+                            "Span": {
+                                "Start": 0,
+                                "End": 3
+                            }
+                        }
+                    },
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "href",
+                            "Span": {
+                                "Start": 3,
+                                "End": 7
+                            }
+                        }
+                    },
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "=\"",
+                            "Span": {
+                                "Start": 7,
+                                "End": 9
+                            }
+                        }
+                    },
+                    {
+                        "Type": "NodeGoStrExpr",
+                        "Node": {
+                            "Expr": "url",
+                            "Span": {
+                                "Start": 0,
+                                "End": 3
+                            }
+                        }
+                    },
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "\"\u003e",
+                            "Span": {
+                                "Start": 13,
+                                "End": 15
+                            }
+                        }
+                    }
+                ],
+                "Children": [
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "x",
+                            "Span": {
+                                "Start": 15,
+                                "End": 16
+                            }
+                        }
+                    }
+                ],
+                "Span": {
+                    "Start": 0,
+                    "End": 15
+                }
+            }
+        }
+    ]
+}

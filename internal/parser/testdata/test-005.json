@@ -1,0 +1,15 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodeGoCode",
+            "Node": {
+                "Context": 0,
+                "Code": "type product struct {\n\t\tname string\n\t\tprice float32\n\t}\n\n\tproducts := []product{{name: \"Widget\", price: 9.49}}\n",
+                "Span": {
+                    "Start": 2,
+                    "End": 112
+                }
+            }
+        }
+    ]
+}

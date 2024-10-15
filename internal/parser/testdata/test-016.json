@@ -1,0 +1,51 @@
+{
+    "Nodes": [
+        {
+            "Type": "NodeElement",
+            "Node": {
+                "Tag": {
+                    "Name": "p",
+                    "Attrs": null
+                },
+                "StartTagNodes": [
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": "\u003cp\u003e",
+                            "Span": {
+                                "Start": 0,
+                                "End": 3
+                            }
+                        }
+                    }
+                ],
+                "Children": [
+                    {
+                        "Type": "NodeGoStrExpr",
+                        "Node": {
+                            "Expr": "foo",
+                            "Span": {
+                                "Start": 4,
+                                "End": 7
+                            }
+                        }
+                    },
+                    {
+                        "Type": "NodeLiteral",
+                        "Node": {
+                            "Text": ".",
+                            "Span": {
+                                "Start": 7,
+                                "End": 8
+                            }
+                        }
+                    }
+                ],
+                "Span": {
+                    "Start": 0,
+                    "End": 3
+                }
+            }
+        }
+    ]
+}
