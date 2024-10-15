@@ -24,7 +24,7 @@ func ParseFile(name string) (*ast.Document, error) {
 		return nil, fmt.Errorf("reading file: %w", err)
 	}
 
-	doc, err := parse(string(text))
+	doc, err := Parse(string(text))
 	if err != nil {
 		return nil, fmt.Errorf("parsing file: %w", err)
 	}
@@ -32,7 +32,7 @@ func ParseFile(name string) (*ast.Document, error) {
 	return doc, nil
 }
 
-func parse(source string) (doc *ast.Document, err error) {
+func Parse(source string) (doc *ast.Document, err error) {
 	p := newParser(source)
 	defer func() {
 		if e := recover(); e != nil {

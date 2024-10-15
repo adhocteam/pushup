@@ -27,7 +27,7 @@ func TestParser(t *testing.T) {
 				t.Fatalf("failed to read input file: %v", err)
 			}
 
-			actual, err := parse(string(input))
+			actual, err := Parse(string(input))
 			if err != nil {
 				t.Fatalf("unexpected error parsing input: %v", err)
 			}
@@ -80,7 +80,7 @@ func TestParseSyntaxErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			tree, err := parse(tt.input)
+			tree, err := Parse(tt.input)
 			if tree != nil {
 				t.Errorf("expected nil tree, got %v", tree)
 			}
@@ -112,7 +112,7 @@ func FuzzParser(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, in []byte) {
-		_, err := parse(string(in))
+		_, err := Parse(string(in))
 		if err != nil {
 			if _, ok := err.(syntaxError); !ok {
 				t.Errorf("expected syntax error, got %T %v", err, err)
