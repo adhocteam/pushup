@@ -32,19 +32,19 @@ func ParseFile(name string) (*ast.Document, error) {
 	return doc, nil
 }
 
-func parse(source string) (tree *ast.Document, err error) {
+func parse(source string) (doc *ast.Document, err error) {
 	p := newParser(source)
 	defer func() {
 		if e := recover(); e != nil {
 			if se, ok := e.(syntaxError); ok {
-				tree = nil
+				doc = nil
 				err = se
 			} else {
 				panic(e)
 			}
 		}
 	}()
-	tree = p.htmlParser.parseDocument()
+	doc = p.htmlParser.parseDocument()
 	return
 }
 
@@ -364,7 +364,7 @@ var voidElements = []string{
 }
 
 func (p *htmlParser) parseDocument() *ast.Document {
-	tree := new(ast.Document)
+	doc := new(ast.Document)
 
 tokenLoop:
 	for {
@@ -379,21 +379,21 @@ tokenLoop:
 		switch p.toktyp {
 		// TODO(paulsmith): check for void element self-closing tags
 		case html.StartTagToken:
-			tree.Nodes = append(tree.Nodes, p.parseElement())
+			doc.Nodes = append(doc.Nodes, p.parseElement())
 		case html.SelfClosingTagToken:
-			tree.Nodes = append(tree.Nodes, p.parseStartTag()...)
+			doc.Nodes = append(doc.Nodes, p.parseStartTag()...)
 		case html.EndTagToken:
 			panic("UNREACHABLE")
 		case html.DoctypeToken, html.CommentToken:
-			tree.Nodes = append(tree.Nodes, p.emitLiteral())
+			doc.Nodes = append(doc.Nodes, p.emitLiteral())
 		case html.TextToken:
-			tree.Nodes = append(tree.Nodes, p.parseTextToken()...)
+			doc.Nodes = append(doc.Nodes, p.parseTextToken()...)
 		default:
 			panic("")
 		}
 	}
 
-	return tree
+	return doc
 }
 
 func (p *htmlParser) transition() ast.Node {
