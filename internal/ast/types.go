@@ -641,11 +641,11 @@ type NodeWrapper struct {
 	Node Node
 }
 
-type SyntaxTree struct {
+type Document struct {
 	Nodes []Node
 }
 
-func (st *SyntaxTree) UnmarshalJSON(data []byte) error {
+func (st *Document) UnmarshalJSON(data []byte) error {
 	type raw struct {
 		Nodes []json.RawMessage
 	}
@@ -666,7 +666,7 @@ func (st *SyntaxTree) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func optimize(tree *SyntaxTree) *SyntaxTree {
+func optimize(tree *Document) *Document {
 	tree.Nodes = coalesceLiterals(tree.Nodes)
 	return tree
 }

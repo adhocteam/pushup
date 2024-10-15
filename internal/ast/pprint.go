@@ -41,7 +41,7 @@ func (p *prettyPrinter) dedent() {
 	}
 }
 
-func (p *prettyPrinter) PrettyPrint(t *SyntaxTree) {
+func (p *prettyPrinter) PrettyPrint(t *Document) {
 	p.printNodes(NodeList(t.Nodes))
 }
 
@@ -141,6 +141,6 @@ func isAllWhitespace(s string) bool {
 	return strings.TrimSpace(s) == ""
 }
 
-func PrettyPrintTree(t *SyntaxTree) {
+func PrettyPrintTree(t *Document) {
 	NewPrettyPrinter(os.Stdout).PrettyPrint(t)
 }

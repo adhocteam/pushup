@@ -18,7 +18,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-func ParseFile(name string) (*ast.SyntaxTree, error) {
+func ParseFile(name string) (*ast.Document, error) {
 	text, err := os.ReadFile(name)
 	if err != nil {
 		return nil, fmt.Errorf("reading file: %w", err)
@@ -32,7 +32,7 @@ func ParseFile(name string) (*ast.SyntaxTree, error) {
 	return doc, nil
 }
 
-func parse(source string) (tree *ast.SyntaxTree, err error) {
+func parse(source string) (tree *ast.Document, err error) {
 	p := newParser(source)
 	defer func() {
 		if e := recover(); e != nil {
@@ -363,8 +363,8 @@ var voidElements = []string{
 	"wbr",
 }
 
-func (p *htmlParser) parseDocument() *ast.SyntaxTree {
-	tree := new(ast.SyntaxTree)
+func (p *htmlParser) parseDocument() *ast.Document {
+	tree := new(ast.Document)
 
 tokenLoop:
 	for {
