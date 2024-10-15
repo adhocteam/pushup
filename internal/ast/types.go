@@ -572,17 +572,17 @@ type visitor interface {
 	visit(Node) visitor
 }
 
-type inspector func(Node) bool
+type Inspector func(Node) bool
 
-func (f inspector) visit(n Node) visitor {
+func (f Inspector) visit(n Node) visitor {
 	if f(n) {
 		return f
 	}
 	return nil
 }
 
-func inspect(n Node, f func(Node) bool) {
-	walk(inspector(f), n)
+func Inspect(n Node, f func(Node) bool) {
+	walk(Inspector(f), n)
 }
 
 func walkNodeList(v visitor, list []Node) {

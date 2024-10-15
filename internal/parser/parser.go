@@ -6,7 +6,6 @@ import (
 	"go/scanner"
 	"go/token"
 	"io"
-	"os"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -17,20 +16,6 @@ import (
 
 	"golang.org/x/net/html"
 )
-
-func ParseFile(name string) (*ast.Document, error) {
-	text, err := os.ReadFile(name)
-	if err != nil {
-		return nil, fmt.Errorf("reading file: %w", err)
-	}
-
-	doc, err := Parse(string(text))
-	if err != nil {
-		return nil, fmt.Errorf("parsing file: %w", err)
-	}
-
-	return doc, nil
-}
 
 func Parse(source string) (doc *ast.Document, err error) {
 	p := newParser(source)
