@@ -360,6 +360,7 @@ func (b *buildCmd) do() error {
 			buildDir:          b.outDir,
 			outFile:           b.outFile,
 			verbose:           b.verbose,
+			codeGenOnly:       b.codeGenOnly,
 		}
 		if err := buildProject(context.Background(), params); err != nil {
 			return fmt.Errorf("building project: %w", err)
