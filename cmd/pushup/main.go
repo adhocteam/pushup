@@ -6,16 +6,16 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/adhocteam/pushup/internal"
+	"github.com/adhocteam/pushup/internal/command"
 )
 
-type command struct {
+type subcmd struct {
 	name  string
 	setup func(*flag.FlagSet)
 	run   func(*flag.FlagSet) error
 }
 
-var commands = []command{
+var subcommands = []subcmd{
 	{
 		name: "build",
 		setup: func(fs *flag.FlagSet) {
@@ -23,7 +23,7 @@ var commands = []command{
 		},
 		run: func(fs *flag.FlagSet) error {
 			root := fs.Lookup("r").Value.String()
-			return internal.Build(root)
+			return command.Build(root)
 		},
 	},
 	{
@@ -38,9 +38,9 @@ var commands = []command{
 			prettyPrint := fs.Lookup("print-ast").Value.(flag.Getter).Get().(bool)
 			filename := fs.Arg(0)
 			if prettyPrint {
-				return internal.PrettyPrintAST(filename)
+				return command.PrettyPrintAST(filename)
 			}
-			return internal.Compile(filename)
+			return command.Compile(filename)
 		},
 	},
 }
@@ -88,10 +88,10 @@ func main() {
 	}
 }
 
-func findCommand(name string) *command {
-	for i := range commands {
-		if commands[i].name == name {
-			return &commands[i]
+func findCommand(name string) *subcmd {
+	for i := range subcommands {
+		if subcommands[i].name == name {
+			return &subcommands[i]
 		}
 	}
 	return nil
@@ -100,7 +100,7 @@ func findCommand(name string) *command {
 func printUsage() {
 	fmt.Fprintln(flag.CommandLine.Output(), "Usage: pushup <command>")
 	fmt.Fprintln(flag.CommandLine.Output(), "Commands:")
-	for _, cmd := range commands {
+	for _, cmd := range subcommands {
 		fmt.Fprintf(flag.CommandLine.Output(), "  %s\n", cmd.name)
 	}
 }
