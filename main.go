@@ -349,7 +349,7 @@ func (b *buildCmd) do() error {
 		}
 	}
 
-	if b.parseOnly || b.codeGenOnly {
+	if b.parseOnly {
 		return nil
 	}
 
@@ -760,6 +760,7 @@ type buildParams struct {
 	buildDir          string
 	outFile           string
 	verbose           bool
+	codeGenOnly       bool
 }
 
 // buildProject builds the Go program made up of the user's compiled .up
@@ -796,6 +797,13 @@ func buildProject(_ context.Context, b buildParams) error {
 	// The default output file is buildDir/bin/projectName
 	if b.outFile == "" {
 		b.outFile = filepath.Join(b.buildDir, "bin", b.projectName)
+	}
+
+	if b.codeGenOnly {
+		if b.verbose {
+			fmt.Printf("codegen only, not building executable\n")
+		}
+		return nil
 	}
 
 	args := []string{"build", "-o", b.outFile, filepath.Join(pkgName, "cmd", b.projectName)}
