@@ -22,7 +22,6 @@ func Compile(file string) error {
 	if err != nil {
 		return fmt.Errorf("parsing file: %w", err)
 	}
-	ast.PrettyPrintTree(doc)
 
 	// TODO: take a flag for optimizations
 	doc = ast.Optimize(doc)
@@ -33,6 +32,22 @@ func Compile(file string) error {
 	}
 
 	fmt.Println(string(out))
+
+	return nil
+}
+
+func PrettyPrintAST(file string) error {
+	text, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("reading file: %w", err)
+	}
+
+	doc, err := parser.Parse(string(text))
+	if err != nil {
+		return fmt.Errorf("parsing file: %w", err)
+	}
+
+	ast.PrettyPrintTree(doc)
 
 	return nil
 }

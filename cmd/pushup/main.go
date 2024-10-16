@@ -29,12 +29,18 @@ var commands = []command{
 	{
 		name: "compile",
 		setup: func(fs *flag.FlagSet) {
+			fs.Bool("print-ast", false, "Pretty-print the AST and then exit")
 		},
 		run: func(fs *flag.FlagSet) error {
 			if fs.NArg() < 1 {
 				return fmt.Errorf("missing file argument")
 			}
-			return internal.Compile(fs.Arg(0))
+			prettyPrint := fs.Lookup("print-ast").Value.(flag.Getter).Get().(bool)
+			filename := fs.Arg(0)
+			if prettyPrint {
+				return internal.PrettyPrintAST(filename)
+			}
+			return internal.Compile(filename)
 		},
 	},
 }
