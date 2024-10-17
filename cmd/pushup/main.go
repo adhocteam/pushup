@@ -28,6 +28,16 @@ var subcommands = []subcmd{
 		},
 	},
 	{
+		name: "clean",
+		setup: func(fs *flag.FlagSet) {
+			fs.String("r", ".", "Clean project from `root` directory")
+		},
+		run: func(fs *flag.FlagSet) error {
+			root := fs.Lookup("r").Value.String()
+			return command.Clean(root)
+		},
+	},
+	{
 		name: "compile",
 		setup: func(fs *flag.FlagSet) {
 			fs.Bool("print-ast", false, "Pretty-print the AST and then exit")
