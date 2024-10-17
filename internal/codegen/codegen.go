@@ -2,7 +2,6 @@ package codegen
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"go/format"
 	"io"
@@ -537,10 +536,6 @@ func genCodePage(g *pageCodeGen) (*codeGenResult, error) {
 		}
 		g.bodyPrintf("}\n")
 
-		g.bodyPrintf("func (%s *%s) buildCliArgs() []string {\n", methodReceiverName, typename)
-		g.bodyPrintf("  return %#v\n", os.Args)
-		g.bodyPrintf("}\n\n")
-
 		g.used("net/http")
 		g.bodyPrintf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
 
@@ -649,12 +644,6 @@ func genCodePage(g *pageCodeGen) (*codeGenResult, error) {
 		}
 	}
 	g.importDeclPrintf(")\n\n")
-
-	g.commentPrintf("/*\n")
-	if err := json.NewEncoder(&g.comments).Encode(result.Pages); err != nil {
-		return nil, fmt.Errorf("encoding link metadata: %w", err)
-	}
-	g.commentPrintf("*/\n")
 
 	raw, err := g.readAll()
 	if err != nil {
