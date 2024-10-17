@@ -54,7 +54,7 @@
 
       devShells = forEachSystem ({ pkgs, ... }: {
         default =
-          pkgs.mkShell { buildInputs = with pkgs; [ go_1_23 gotools gopls ]; };
+          pkgs.mkShell { buildInputs = with pkgs; [ go_1_23 ]; };
       });
     };
 }
