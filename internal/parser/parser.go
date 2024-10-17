@@ -6,6 +6,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"io"
+	"os"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -31,6 +32,14 @@ func Parse(source string) (doc *ast.Document, err error) {
 	}()
 	doc = p.htmlParser.parseDocument()
 	return
+}
+
+func ParseFile(file string) (*ast.Document, error) {
+	text, err := os.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("reading file: %w", err)
+	}
+	return Parse(string(text))
 }
 
 // parser is the main Pushup parser. it is comprised of an HTML parser and a Go

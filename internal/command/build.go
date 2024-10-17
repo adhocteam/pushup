@@ -1,6 +1,7 @@
 package command
 
 import (
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"path/filepath"
@@ -11,10 +12,17 @@ func Build(root string) error {
 	logger := slog.Default()
 	logger.Info("Building", "root", root)
 
-	findUpFiles(root, func(path string) error {
+	err := findUpFiles(root, func(path string) error {
 		logger.Info("Found .up file", "path", path)
+
+		//result, err := compile.Compile(path)
+
 		return nil
 	})
+
+	if err != nil {
+		return fmt.Errorf("finding .up files: %w", err)
+	}
 
 	return nil
 }

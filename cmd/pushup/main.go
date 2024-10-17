@@ -7,6 +7,7 @@ import (
 	"os/exec"
 
 	"github.com/adhocteam/pushup/internal/command"
+	"github.com/adhocteam/pushup/internal/compile"
 )
 
 type subcmd struct {
@@ -40,7 +41,8 @@ var subcommands = []subcmd{
 			if prettyPrint {
 				return command.PrettyPrintAST(filename)
 			}
-			return command.Compile(filename)
+			_, err := compile.Compile(filename)
+			return err
 		},
 	},
 }
