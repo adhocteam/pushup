@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"path/filepath"
+
+	"github.com/adhocteam/pushup/internal/compile"
 )
 
 func Build(root string) error {
@@ -12,16 +14,22 @@ func Build(root string) error {
 	logger := slog.Default()
 	logger.Info("Building", "root", root)
 
+	var upfiles []string
 	err := findUpFiles(root, func(path string) error {
-		logger.Info("Found .up file", "path", path)
-
-		//result, err := compile.Compile(path)
-
+		logger.Debug("Found .up file", "path", path)
+		upfiles = append(upfiles, path)
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("finding .up files: %w", err)
+	}
+
+	for _, file := range upfiles {
+		result, err := compile.Compile(file)
+		if err != nil {
+			return fmt.Errorf("compiling %q: %w", file, err)
+		}
+		logger.Info("Compiled", "source", file, "pkg", result.PkgName)
 	}
 
 	return nil
