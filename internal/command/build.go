@@ -3,6 +3,7 @@ package command
 import (
 	"fmt"
 	"io/fs"
+	"iter"
 	"log/slog"
 	"path/filepath"
 
@@ -14,17 +15,7 @@ func Build(root string) error {
 	logger := slog.Default()
 	logger.Info("Building", "root", root)
 
-	var upfiles []string
-	err := findUpFiles(root, func(path string) error {
-		logger.Debug("Found .up file", "path", path)
-		upfiles = append(upfiles, path)
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("finding .up files: %w", err)
-	}
-
-	for _, file := range upfiles {
+	for file := range findUpFiles(root) {
 		result, err := compile.Compile(file)
 		if err != nil {
 			return fmt.Errorf("compiling %q: %w", file, err)
@@ -35,16 +26,24 @@ func Build(root string) error {
 	return nil
 }
 
-func findUpFiles(root string, callback func(string) error) error {
-	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+func findUpFiles(root string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if !d.IsDir() && filepath.Ext(path) == ".up" {
+				if !yield(path) {
+					return filepath.SkipAll
+				}
+			}
+
+			return nil
+		})
+
 		if err != nil {
-			return err
+			panic(err)
 		}
-
-		if !d.IsDir() && filepath.Ext(path) == ".up" {
-			return callback(path)
-		}
-
-		return nil
-	})
+	}
 }
