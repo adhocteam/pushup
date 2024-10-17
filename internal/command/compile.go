@@ -1,6 +1,7 @@
 package command
 
 import (
+	"errors"
 	"fmt"
 	"go/build"
 	"os"
@@ -63,9 +64,18 @@ func goPackageName(dir string) (string, error) {
 	// TODO: make sure this works in lots of different module/package
 	// scenarios and relative calling working dirs
 	pkg, err := build.ImportDir(dir, build.ImportComment)
+	var noGoErr *build.NoGoError
 	if err != nil {
+		if errors.As(err, &noGoErr) {
+			// use dir name as package name
+			// TODO: might be wrong
+			name := filepath.Base(dir)
+			if name == "." {
+				name = "main"
+			}
+			return name, nil
+		}
 		return "", fmt.Errorf("importing Go package at directory %q: %w", dir, err)
 	}
-	pkgName := pkg.Name
-	return pkgName, nil
+	return pkg.Name, nil
 }
