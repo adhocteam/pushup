@@ -577,6 +577,13 @@ func genCodePage(g *pageCodeGen) (*codeGenResult, error) {
 		// return from Respond()
 		g.bodyPrintf("return nil\n")
 		g.bodyPrintf("}\n")
+
+		// Register route
+		g.bodyPrintf("\n")
+		g.bodyPrintf("func init() {\n")
+		g.used(pushupModulePath + "/route")
+		g.bodyPrintf("  route.Register(\"%s\", new(%s))\n", routeForPage(g.filename), typename)
+		g.bodyPrintf("}\n")
 	}
 
 	for _, partial := range g.page.partials {
