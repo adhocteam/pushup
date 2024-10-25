@@ -51,7 +51,7 @@ var subcommands = []subcmd{
 			if prettyPrint {
 				return command.PrettyPrintAST(filename)
 			}
-			_, err := compile.Compile(filename)
+			_, err := compile.Page(filename)
 			return err
 		},
 	},

@@ -19,7 +19,7 @@ func Build(root string) error {
 	logger.Info("Building", "root", root)
 
 	for file := range up.Find(root, "up") {
-		result, err := compile.Compile(file)
+		result, err := compile.Page(file)
 		if err != nil {
 			return fmt.Errorf("compiling %q: %w", file, err)
 		}

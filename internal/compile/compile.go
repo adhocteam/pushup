@@ -10,14 +10,26 @@ import (
 	"github.com/adhocteam/pushup/internal/ast"
 	"github.com/adhocteam/pushup/internal/codegen"
 	"github.com/adhocteam/pushup/internal/parser"
+	"github.com/adhocteam/pushup/internal/up"
 )
 
 type Compilation struct {
+	// SourceFile is the path to the source Pushup file
+	SourceFile string
+	// Target is the path to the generated Go file
+	Target string
+	// Kind is the type of Pushup file - page or component
+	Kind up.Kind
+	// PkgName is the Go package of the generated Go file
 	PkgName string
-	GenGo   string
+	// GeneratedGo is the generated Go code
+	GeneratedGo string
 }
 
-func Compile(file string) (*Compilation, error) {
+// Page compiles a Pushup file into a Go file.
+// It compiles a routable page, meaning a file with the .up extension in the
+// "pages" package or subpackage.
+func Page(file string) (*Compilation, error) {
 	pkgName, err := goPackageName(filepath.Dir(file))
 	if err != nil {
 		return nil, fmt.Errorf("Go package name: %w", err)
@@ -47,8 +59,25 @@ func Compile(file string) (*Compilation, error) {
 	}
 
 	result := &Compilation{
-		PkgName: pkgName,
-		GenGo:   string(gcode),
+		SourceFile:  file,
+		Target:      target,
+		Kind:        up.Page,
+		PkgName:     pkgName,
+		GeneratedGo: string(gcode),
+	}
+
+	return result, nil
+}
+
+func Component(file string) (*Compilation, error) {
+	// TODO ...
+
+	result := &Compilation{
+		SourceFile:  file,
+		Target:      "",
+		Kind:        up.Component,
+		PkgName:     "",
+		GeneratedGo: "",
 	}
 
 	return result, nil

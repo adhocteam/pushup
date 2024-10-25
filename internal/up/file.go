@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+type Kind int
+
+const (
+	Page Kind = iota
+	Component
+)
+
 func Find(root string, fileType string) iter.Seq[string] {
 	return func(yield func(string) bool) {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
