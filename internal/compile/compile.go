@@ -12,12 +12,12 @@ import (
 	"github.com/adhocteam/pushup/internal/parser"
 )
 
-type Result struct {
+type Compilation struct {
 	PkgName string
 	GenGo   string
 }
 
-func Compile(file string) (*Result, error) {
+func Compile(file string) (*Compilation, error) {
 	pkgName, err := goPackageName(filepath.Dir(file))
 	if err != nil {
 		return nil, fmt.Errorf("Go package name: %w", err)
@@ -46,7 +46,7 @@ func Compile(file string) (*Result, error) {
 		return nil, fmt.Errorf("writing file %q: %w", target, err)
 	}
 
-	result := &Result{
+	result := &Compilation{
 		PkgName: pkgName,
 		GenGo:   string(gcode),
 	}
