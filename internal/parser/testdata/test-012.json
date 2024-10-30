@@ -1,14 +1,19 @@
 {
-    "Nodes": [
-        {
-            "Type": "NodeGoStrExpr",
-            "Node": {
-                "Expr": "getParam(req, \"name\")",
-                "Span": {
-                    "Start": 1,
-                    "End": 22
+    "Nodes": {
+        "Type": "NodeList",
+        "Node": {
+            "Nodes": [
+                {
+                    "Type": "NodeGoStrExpr",
+                    "Node": {
+                        "Expr": "getParam(req, \"name\")",
+                        "Span": {
+                            "Start": 1,
+                            "End": 22
+                        }
+                    }
                 }
-            }
+            ]
         }
-    ]
+    }
 }

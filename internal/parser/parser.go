@@ -240,13 +240,13 @@ func (p *htmlParser) emitLiteralFromRange(start, end int) ast.Node {
 	return e
 }
 
-func (p *htmlParser) parseStartTag() []ast.Node {
+func (p *htmlParser) parseStartTag() *ast.NodeList {
 	// if there are no attributes, there's no more processing to do
 	if len(p.attrs) == 0 {
-		return []ast.Node{p.emitLiteralFromRange(0, len(p.raw))}
+		return ast.NewNodeList(p.emitLiteralFromRange(0, len(p.raw)))
 	}
 
-	nodes := []ast.Node{}
+	nodes := ast.NewNodeList()
 
 	// bytesRead keeps track of how far we've parsed into this p.raw string
 	bytesRead := 0
@@ -262,30 +262,30 @@ func (p *htmlParser) parseStartTag() []ast.Node {
 		// emit raw chars between tag name or last attribute and this
 		// attribute
 		if n := nameStartPos - bytesRead; n > 0 {
-			nodes = append(nodes, p.emitLiteralFromRange(bytesRead, bytesRead+n))
+			nodes.Append(p.emitLiteralFromRange(bytesRead, bytesRead+n))
 			bytesRead += n
 		}
 
 		// emit attribute name
 		nameNodes, newPos := p.parseAttributeNameOrValue(name, nameStartPos, nameEndPos, bytesRead)
-		nodes = append(nodes, nameNodes...)
+		nodes.Append(nameNodes...)
 		bytesRead = newPos
 
 		if valStartPos > bytesRead {
 			// emit any chars, including equals and quotes, between
 			// attribute name and attribute value, if any
-			nodes = append(nodes, p.emitLiteralFromRange(bytesRead, valStartPos))
+			nodes.Append(p.emitLiteralFromRange(bytesRead, valStartPos))
 			bytesRead = valStartPos
 
 			// emit attribute value
 			valNodes, newPos := p.parseAttributeNameOrValue(value, valStartPos, valEndPos, bytesRead)
-			nodes = append(nodes, valNodes...)
+			nodes.Append(valNodes...)
 			bytesRead = newPos
 		}
 	}
 
 	// emit anything from the last attribute to the close of the tag
-	nodes = append(nodes, p.emitLiteralFromRange(bytesRead, len(p.raw)))
+	nodes.Append(p.emitLiteralFromRange(bytesRead, len(p.raw)))
 
 	return nodes
 }
@@ -362,7 +362,7 @@ var voidElements = []string{
 }
 
 func (p *htmlParser) parseDocument() *ast.Document {
-	doc := new(ast.Document)
+	doc := ast.NewDocument()
 
 tokenLoop:
 	for {
@@ -377,15 +377,15 @@ tokenLoop:
 		switch p.toktyp {
 		// TODO(paulsmith): check for void element self-closing tags
 		case html.StartTagToken:
-			doc.Nodes = append(doc.Nodes, p.parseElement())
+			doc.Nodes.Append(p.parseElement())
 		case html.SelfClosingTagToken:
-			doc.Nodes = append(doc.Nodes, p.parseStartTag()...)
+			doc.Nodes.AppendFromList(p.parseStartTag())
 		case html.EndTagToken:
 			panic("UNREACHABLE")
 		case html.DoctypeToken, html.CommentToken:
-			doc.Nodes = append(doc.Nodes, p.emitLiteral())
+			doc.Nodes.Append(p.emitLiteral())
 		case html.TextToken:
-			doc.Nodes = append(doc.Nodes, p.parseTextToken()...)
+			doc.Nodes.Append(p.parseTextToken()...)
 		default:
 			panic("")
 		}
@@ -432,14 +432,14 @@ func (p *htmlParser) parseElement() ast.Node {
 
 	// <text></text> elements are just for parsing
 	if string(p.tagname) == "text" {
-		return &ast.NodeBlock{Nodes: result.Children}
+		return result.Children
 	}
 
 	return result
 }
 
-func (p *htmlParser) parseChildren() []ast.Node {
-	var result []ast.Node // either *nodeElement or *nodeLiteral
+func (p *htmlParser) parseChildren() *ast.NodeList {
+	result := ast.NewNodeList() // either *nodeElement or *nodeLiteral
 	var elemStack []*ast.NodeElement
 loop:
 	for {
@@ -457,7 +457,7 @@ loop:
 			elem.Span.End = p.parser.offset
 			elem.StartTagNodes = p.parseStartTag()
 			p.advance()
-			result = append(result, elem)
+			result.Append(elem)
 		case html.StartTagToken:
 			elem := new(ast.NodeElement)
 			elem.Tag = element.NewTag(p.tagname, p.attrs)
@@ -466,7 +466,7 @@ loop:
 			elem.StartTagNodes = p.parseStartTag()
 			p.advance()
 			elem.Children = p.parseChildren()
-			result = append(result, elem)
+			result.Append(elem)
 			elemStack = append(elemStack, elem)
 		case html.EndTagToken:
 			if len(elemStack) == 0 {
@@ -496,13 +496,13 @@ loop:
 						htmlNode.Span.Start = p.start
 						htmlNode.Span.End = p.start + len(leading)
 						htmlNode.Text = leading
-						result = append(result, &htmlNode)
+						result.Append(&htmlNode)
 					}
 					e := p.transition()
-					result = append(result, e)
+					result.Append(e)
 				}
 			} else {
-				result = append(result, p.emitLiteral())
+				result.Append(p.emitLiteral())
 			}
 			p.advance()
 		case html.CommentToken:
@@ -676,18 +676,18 @@ func (p *codeParser) backup() {
 	p.lookaheadToken = p.acceptedToken
 }
 
-func (p *codeParser) transition() *ast.NodeBlock {
+func (p *codeParser) transition() *ast.NodeList {
 	htmlParser := p.parser.htmlParser
 	htmlParser.advance()
-	var stmtBlock ast.NodeBlock
+	stmtBlock := ast.NewNodeList()
 	ws := htmlParser.skipWhitespace()
 	for _, n := range ws {
-		stmtBlock.Nodes = append(stmtBlock.Nodes, n)
+		stmtBlock.Append(n)
 	}
 	elem := htmlParser.parseElement()
-	stmtBlock.Nodes = append(stmtBlock.Nodes, elem)
+	stmtBlock.Append(elem)
 	p.reset()
-	return &stmtBlock
+	return stmtBlock
 }
 
 func (p *codeParser) parseCode() ast.Node {
@@ -816,13 +816,13 @@ loop:
 	return &stmt
 }
 
-func (p *codeParser) parseStmtBlock() *ast.NodeBlock {
+func (p *codeParser) parseStmtBlock() *ast.NodeList {
 	// we are sitting on the opening '{' token here
 	if p.peek().tok != token.LBRACE {
 		p.errorf("expected '{', got '%s'", p.peek().String())
 	}
 	p.advance()
-	var block *ast.NodeBlock
+	list := ast.NewNodeList()
 	switch p.peek().tok {
 	// check for a transition, i.e., stay in code parser
 	case token.XOR:
@@ -831,11 +831,11 @@ func (p *codeParser) parseStmtBlock() *ast.NodeBlock {
 		if p.peek().tok == token.SEMICOLON {
 			p.advance()
 		}
-		block = &ast.NodeBlock{Nodes: []ast.Node{code}}
+		list.Append(code)
 	case token.EOF:
 		p.errorf("premature end of block in IF statement")
 	default:
-		block = p.transition()
+		list = p.transition()
 	}
 	// we should be at the closing '}' token here
 	if p.peek().tok != token.RBRACE {
@@ -846,7 +846,7 @@ func (p *codeParser) parseStmtBlock() *ast.NodeBlock {
 		}
 	}
 	p.advance()
-	return block
+	return list
 }
 
 // TODO(paulsmith): extract a common function with parseCodeKeyword

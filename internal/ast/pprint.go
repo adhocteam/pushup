@@ -42,11 +42,11 @@ func (p *prettyPrinter) dedent() {
 }
 
 func (p *prettyPrinter) PrettyPrint(t *Document) {
-	p.printNodes(NodeList(t.Nodes))
+	p.printNodes(t.Nodes)
 }
 
-func (p *prettyPrinter) printNodes(nodes NodeList) {
-	for _, node := range nodes {
+func (p *prettyPrinter) printNodes(list *NodeList) {
+	for node := range list.All() {
 		p.printNode(node)
 	}
 }
@@ -67,11 +67,9 @@ func (p *prettyPrinter) printNode(n Node) {
 		p.printElement(node)
 	case *NodePartial:
 		p.printPartial(node)
-	case *NodeBlock:
-		p.printNodes(NodeList(node.Nodes))
 	case *NodeImport:
 		p.printImport(node)
-	case NodeList:
+	case *NodeList:
 		p.printNodes(node)
 	}
 }
@@ -117,7 +115,7 @@ func (p *prettyPrinter) printFor(n *NodeFor) {
 func (p *prettyPrinter) printElement(n *NodeElement) {
 	p.println("\x1b[31m%s\x1b[0m", n.Tag.Start())
 	p.indent()
-	p.printNodes(NodeList(n.Children))
+	p.printNodes(n.Children)
 	p.dedent()
 	p.println("\x1b[31m%s\x1b[0m", n.Tag.End())
 }

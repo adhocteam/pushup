@@ -1,38 +1,43 @@
 {
-    "Nodes": [
-        {
-            "Type": "NodePartial",
-            "Node": {
-                "Name": "foo",
-                "Span": {
-                    "Start": 8,
-                    "End": 12
-                },
-                "Block": {
-                    "Type": "NodeBlock",
+    "Nodes": {
+        "Type": "NodeList",
+        "Node": {
+            "Nodes": [
+                {
+                    "Type": "NodePartial",
                     "Node": {
-                        "Nodes": [
-                            {
-                                "Type": "NodeBlock",
-                                "Node": {
-                                    "Nodes": [
-                                        {
-                                            "Type": "NodeLiteral",
-                                            "Node": {
-                                                "Text": "bar",
-                                                "Span": {
-                                                    "Start": 20,
-                                                    "End": 23
+                        "Name": "foo",
+                        "Span": {
+                            "Start": 8,
+                            "End": 12
+                        },
+                        "Block": {
+                            "Type": "NodeList",
+                            "Node": {
+                                "Nodes": [
+                                    {
+                                        "Type": "NodeList",
+                                        "Node": {
+                                            "Nodes": [
+                                                {
+                                                    "Type": "NodeLiteral",
+                                                    "Node": {
+                                                        "Text": "bar",
+                                                        "Span": {
+                                                            "Start": 20,
+                                                            "End": 23
+                                                        }
+                                                    }
                                                 }
-                                            }
+                                            ]
                                         }
-                                    ]
-                                }
+                                    }
+                                ]
                             }
-                        ]
+                        }
                     }
                 }
-            }
+            ]
         }
-    ]
+    }
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"go/format"
 	"io"
-	"log/slog"
 	"strconv"
 	"strings"
 
@@ -82,7 +81,7 @@ func (g *generator) Generate(unit *up.CompileUnit) ([]byte, error) {
 		g.generateResponder(partial.TypeName, unit.Handler, func() {
 			// FIXME(paulsmith): need to generate code for everything but emitting
 			// top-level page values to the output
-			g.genNodePartial(ast.NodeList(g.unit.Nodes), partial)
+			g.genNodePartial(g.unit.Nodes, partial)
 		})
 	}
 
@@ -132,7 +131,7 @@ func (g *generator) generateResponder(typename string, handler *ast.NodeGoCode, 
 }
 
 func (g *generator) generate() {
-	ops := g.collectOutputOps(ast.NodeList(g.unit.Nodes))
+	ops := g.collectOutputOps(g.unit.Nodes)
 	g.generateFromOps(ops)
 }
 
@@ -150,7 +149,6 @@ func (g *generator) generateFromOps(ops []outputOp) {
 			g.printf("api.PrintEscaped(%s, %s)\n", ioWriterVar, op.expr)
 		case opFlush:
 			// TODO: ensure buffered content is written
-			slog.Debug("output op", "op", "flush")
 			continue
 		case opGoCode:
 			g.println(op.content)
@@ -188,9 +186,7 @@ func (g *generator) gatherOutputOps(node ast.Node, collector *outputCollector) {
 			span:    n.Span,
 		})
 
-		for _, child := range n.Children {
-			g.gatherOutputOps(child, collector)
-		}
+		g.gatherOutputOps(n.Children, collector)
 
 		collector.add(outputOp{
 			kind:    opStatic,
@@ -240,8 +236,8 @@ func (g *generator) gatherOutputOps(node ast.Node, collector *outputCollector) {
 		})
 		collector.add(outputOp{kind: opFlush})
 
-	case ast.NodeList:
-		for _, child := range n {
+	case *ast.NodeList:
+		for child := range n.All() {
 			g.gatherOutputOps(child, collector)
 		}
 
@@ -258,11 +254,6 @@ func (g *generator) gatherOutputOps(node ast.Node, collector *outputCollector) {
 
 	case *ast.NodePartial:
 		g.gatherOutputOps(n.Block, collector)
-
-	case *ast.NodeBlock:
-		for _, child := range n.Nodes {
-			g.gatherOutputOps(child, collector)
-		}
 
 	default:
 		panic(fmt.Sprintf("unexpected node type: %T %v", n, n))
@@ -283,7 +274,7 @@ func (g *generator) genNodePartial(n ast.Node, p *up.Partial) {
 		stateInPartialScope
 	)
 	state = stateStart
-	var nodes []ast.Node
+	nodes := &ast.NodeList{}
 
 	f = func(n ast.Node) bool {
 		if n != nil {
@@ -295,20 +286,12 @@ func (g *generator) genNodePartial(n ast.Node, p *up.Partial) {
 				f(n.Block)
 				state = stateStart
 				return false
-			case ast.NodeList:
+			case *ast.NodeList:
 				if state == stateInPartialScope {
-					nodes = append(nodes, n...)
+					nodes.AppendFromList(n)
 				} else {
-					for _, x := range n {
-						f(x)
-					}
-				}
-			case *ast.NodeBlock:
-				if state == stateInPartialScope {
-					nodes = append(nodes, n.Nodes...)
-				} else {
-					for _, x := range n.Nodes {
-						f(x)
+					for node := range n.All() {
+						f(node)
 					}
 				}
 			case *ast.NodeLiteral:
@@ -319,7 +302,7 @@ func (g *generator) genNodePartial(n ast.Node, p *up.Partial) {
 				}
 			default:
 				if state == stateInPartialScope {
-					nodes = append(nodes, n)
+					nodes.Append(n)
 				}
 			}
 		}
@@ -329,15 +312,15 @@ func (g *generator) genNodePartial(n ast.Node, p *up.Partial) {
 
 	ast.Inspect(n, f)
 
-	ops := g.collectOutputOps(ast.NodeList(nodes))
+	ops := g.collectOutputOps(nodes)
 	g.generateFromOps(ops)
 }
 
 func (g *generator) genElement(e *ast.NodeElement, f ast.Inspector) {
 	g.addImport("io", "")
 	g.nodeLineNo(e)
-	f(ast.NodeList(e.StartTagNodes))
-	f(ast.NodeList(e.Children))
+	f(e.StartTagNodes)
+	f(e.Children)
 	g.printf("io.WriteString(%s, %s)\n", ioWriterVar, strconv.Quote(e.Tag.End()))
 }
 

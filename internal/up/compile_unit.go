@@ -25,7 +25,7 @@ type CompileUnit struct {
 	// AST -> analyzer
 	Imports []ast.ImportDecl
 	Handler *ast.NodeGoCode
-	Nodes   []ast.Node
+	Nodes   *ast.NodeList
 
 	// Partials is a list of all top-level inline partials in this page (if
 	// File.Kind is a Page).

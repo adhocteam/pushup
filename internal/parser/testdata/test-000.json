@@ -1,24 +1,29 @@
 {
-    "Nodes": [
-        {
-            "Type": "NodeLiteral",
-            "Node": {
-                "Text": "^",
-                "Span": {
-                    "Start": 0,
-                    "End": 2
+    "Nodes": {
+        "Type": "NodeList",
+        "Node": {
+            "Nodes": [
+                {
+                    "Type": "NodeLiteral",
+                    "Node": {
+                        "Text": "^",
+                        "Span": {
+                            "Start": 0,
+                            "End": 2
+                        }
+                    }
+                },
+                {
+                    "Type": "NodeLiteral",
+                    "Node": {
+                        "Text": "foo",
+                        "Span": {
+                            "Start": 2,
+                            "End": 5
+                        }
+                    }
                 }
-            }
-        },
-        {
-            "Type": "NodeLiteral",
-            "Node": {
-                "Text": "foo",
-                "Span": {
-                    "Start": 2,
-                    "End": 5
-                }
-            }
+            ]
         }
-    ]
+    }
 }

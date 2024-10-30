@@ -47,27 +47,29 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 				}
 				unit.Handler = e
 			} else {
-				doc.Nodes[n] = e
+				doc.Nodes.SetAt(e, n)
 				n++
 			}
-		case ast.NodeList:
-			for _, x := range e {
-				f(x)
+		case *ast.NodeElement, *ast.NodeLiteral, *ast.NodePartial:
+			doc.Nodes.SetAt(e, n)
+			n++
+		case *ast.NodeList:
+			for node := range e.All() {
+				f(node)
 			}
 		default:
-			doc.Nodes[n] = e
-			n++
+			panic(fmt.Sprintf("unhandled node type: %T", e))
 		}
 		// don't recurse into child nodes
 		return false
 	}
 
-	ast.Inspect(ast.NodeList(doc.Nodes), f)
+	ast.Inspect(doc.Nodes, f)
 	if err != nil {
 		return fmt.Errorf("inspecting AST: %w", err)
 	}
 
-	unit.Nodes = doc.Nodes[:n]
+	unit.Nodes = doc.Nodes.Slice(0, n)
 
 	// This pass is for inline partials. It needs to be separate because the
 	// traversal of the tree is slightly different than the pass above.
@@ -79,8 +81,8 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 			switch e := e.(type) {
 			case *ast.NodeLiteral:
 			case *ast.NodeElement:
-				f(ast.NodeList(e.StartTagNodes))
-				f(ast.NodeList(e.Children))
+				f(e.StartTagNodes)
+				f(e.Children)
 				return false
 			case *ast.NodeGoStrExpr:
 			case *ast.NodeGoCode:
@@ -90,16 +92,13 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 					f(e.Alt)
 				}
 				return false
-			case ast.NodeList:
-				for _, x := range e {
-					f(x)
+			case *ast.NodeList:
+				for node := range e.All() {
+					f(node)
 				}
 				return false
 			case *ast.NodeFor:
 				f(e.Block)
-				return false
-			case *ast.NodeBlock:
-				f(ast.NodeList(e.Nodes))
 				return false
 			case *ast.NodePartial:
 				p := &up.Partial{
@@ -119,11 +118,13 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 				return false
 			case *ast.NodeImport:
 				// nothing to do
+			default:
+				panic(fmt.Sprintf("unhandled node type: %T", e))
 			}
 			return false
 		}
 
-		ast.Inspect(ast.NodeList(unit.Nodes), f)
+		ast.Inspect(unit.Nodes, f)
 	}
 
 	return nil

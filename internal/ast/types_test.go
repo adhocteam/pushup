@@ -2,7 +2,6 @@ package ast
 
 import (
 	"bytes"
-	"fmt"
 	"go/format"
 	"os"
 	"strings"
@@ -26,13 +25,12 @@ func TestCodeGenAST(t *testing.T) {
 		{"NodeLiteral", []fieldspec{{"Text", "string"}, {"Span", "source.Span"}}, "n.Span"},
 		{"NodeGoStrExpr", []fieldspec{{"Expr", "string"}, {"Span", "source.Span"}}, "n.Span"},
 		{"NodeGoCode", []fieldspec{{"Context", "GoCodeContext"}, {"Code", "string"}, {"Span", "source.Span"}}, "n.Span"},
-		{"NodeIf", []fieldspec{{"Cond", "*NodeGoStrExpr"}, {"Then", "*NodeBlock"}, {"Alt", "Node"}}, "n.Cond.Pos()"},
-		{"NodeFor", []fieldspec{{"Clause", "*NodeGoCode"}, {"Block", "*NodeBlock"}}, "n.Clause.Pos()"},
-		{"NodePartial", []fieldspec{{"Name", "string"}, {"Span", "source.Span"}, {"Block", "*NodeBlock"}}, "n.Span"},
-		{"NodeBlock", []fieldspec{{"Nodes", "[]Node"}}, "n.Nodes[0].Pos()"},
-		{"NodeElement", []fieldspec{{"Tag", "element.Tag"}, {"StartTagNodes", "[]Node"}, {"Children", "[]Node"}, {"Span", "source.Span"}}, "n.Span"},
+		{"NodeIf", []fieldspec{{"Cond", "*NodeGoStrExpr"}, {"Then", "*NodeList"}, {"Alt", "Node"}}, "n.Cond.Pos()"},
+		{"NodeFor", []fieldspec{{"Clause", "*NodeGoCode"}, {"Block", "*NodeList"}}, "n.Clause.Pos()"},
+		{"NodePartial", []fieldspec{{"Name", "string"}, {"Span", "source.Span"}, {"Block", "*NodeList"}}, "n.Span"},
+		{"NodeList", []fieldspec{{"Nodes", "[]Node"}}, "n.Nodes[0].Pos()"},
+		{"NodeElement", []fieldspec{{"Tag", "element.Tag"}, {"StartTagNodes", "*NodeList"}, {"Children", "*NodeList"}, {"Span", "source.Span"}}, "n.Span"},
 		{"NodeImport", []fieldspec{{"Decl", "ImportDecl"}, {"Span", "source.Span"}}, "n.Span"},
-		// TODO NodeList
 	}
 
 	beginMarker := `// BEGIN GENERATED CODE NODE DEFINITIONS -- DO NOT EDIT`
@@ -179,7 +177,6 @@ func (nw *NodeWrapper) UnmarshalJSON(data []byte) error {
 	buf.WriteString(endMarker)
 	buf.WriteString(after)
 
-	fmt.Println(string(buf.Bytes()))
 	src, err := format.Source(buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +188,7 @@ func (nw *NodeWrapper) UnmarshalJSON(data []byte) error {
 		if err := os.WriteFile("types.go.tmp", src, 0644); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Rename("types.go.tmp", "ast.go"); err != nil {
+		if err := os.Rename("types.go.tmp", "types.go"); err != nil {
 			t.Fatal(err)
 		}
 		t.Fatal("generated code differs from original code")

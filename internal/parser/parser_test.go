@@ -51,12 +51,12 @@ func TestParser(t *testing.T) {
 					t.Fatalf("failed to read golden file: %v", err)
 				}
 
-				var expected ast.Document
-				if err := json.Unmarshal(expectedJSON, &expected); err != nil {
+				expected := ast.NewDocument()
+				if err := json.Unmarshal(expectedJSON, expected); err != nil {
 					t.Fatalf("failed to unmarshal golden file: %v", err)
 				}
 
-				if diff := cmp.Diff(&expected, actual); diff != "" {
+				if diff := cmp.Diff(expected, actual); diff != "" {
 					t.Errorf("unexpected parse result (-expected +actual):\n%s", diff)
 				}
 			}

@@ -3,6 +3,7 @@ package ast
 import (
 	"encoding/json"
 	"fmt"
+	"iter"
 
 	"github.com/adhocteam/pushup/internal/element"
 	"github.com/adhocteam/pushup/internal/source"
@@ -161,7 +162,7 @@ var _ Node = (*NodeGoCode)(nil)
 
 type NodeIf struct {
 	Cond *NodeGoStrExpr
-	Then *NodeBlock
+	Then *NodeList
 	Alt  Node
 }
 
@@ -210,7 +211,7 @@ func (n *NodeIf) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(t.Then, &wrapped); err != nil {
 			return err
 		}
-		n.Then = wrapped.Node.(*NodeBlock)
+		n.Then = wrapped.Node.(*NodeList)
 	}
 
 	{
@@ -228,7 +229,7 @@ var _ Node = (*NodeIf)(nil)
 
 type NodeFor struct {
 	Clause *NodeGoCode
-	Block  *NodeBlock
+	Block  *NodeList
 }
 
 func (n NodeFor) Pos() source.Span {
@@ -274,7 +275,7 @@ func (n *NodeFor) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(t.Block, &wrapped); err != nil {
 			return err
 		}
-		n.Block = wrapped.Node.(*NodeBlock)
+		n.Block = wrapped.Node.(*NodeList)
 	}
 
 	return nil
@@ -285,7 +286,7 @@ var _ Node = (*NodeFor)(nil)
 type NodePartial struct {
 	Name  string
 	Span  source.Span
-	Block *NodeBlock
+	Block *NodeList
 }
 
 func (n NodePartial) Pos() source.Span {
@@ -329,7 +330,7 @@ func (n *NodePartial) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(t.Block, &wrapped); err != nil {
 			return err
 		}
-		n.Block = wrapped.Node.(*NodeBlock)
+		n.Block = wrapped.Node.(*NodeList)
 	}
 
 	return nil
@@ -337,29 +338,29 @@ func (n *NodePartial) UnmarshalJSON(data []byte) error {
 
 var _ Node = (*NodePartial)(nil)
 
-type NodeBlock struct {
+type NodeList struct {
 	Nodes []Node
 }
 
-func (n NodeBlock) Pos() source.Span {
+func (n NodeList) Pos() source.Span {
 	return n.Nodes[0].Pos()
 }
 
-func (n NodeBlock) MarshalJSON() ([]byte, error) {
-	type t NodeBlock
+func (n NodeList) MarshalJSON() ([]byte, error) {
+	type t NodeList
 
 	return json.Marshal(struct {
 		Type string
 		Node t
 	}{
-		Type: "NodeBlock",
+		Type: "NodeList",
 		Node: t{
 			Nodes: n.Nodes,
 		},
 	})
 }
 
-func (n *NodeBlock) UnmarshalJSON(data []byte) error {
+func (n *NodeList) UnmarshalJSON(data []byte) error {
 	type raw struct {
 		Nodes []json.RawMessage
 	}
@@ -380,12 +381,12 @@ func (n *NodeBlock) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-var _ Node = (*NodeBlock)(nil)
+var _ Node = (*NodeList)(nil)
 
 type NodeElement struct {
 	Tag           element.Tag
-	StartTagNodes []Node
-	Children      []Node
+	StartTagNodes *NodeList
+	Children      *NodeList
 	Span          source.Span
 }
 
@@ -413,8 +414,8 @@ func (n NodeElement) MarshalJSON() ([]byte, error) {
 func (n *NodeElement) UnmarshalJSON(data []byte) error {
 	type raw struct {
 		Tag           element.Tag
-		StartTagNodes []json.RawMessage
-		Children      []json.RawMessage
+		StartTagNodes json.RawMessage
+		Children      json.RawMessage
 		Span          source.Span
 	}
 	var t raw
@@ -425,20 +426,20 @@ func (n *NodeElement) UnmarshalJSON(data []byte) error {
 
 	n.Tag = t.Tag
 
-	for _, raw := range t.StartTagNodes {
+	{
 		var wrapped NodeWrapper
-		if err := json.Unmarshal(raw, &wrapped); err != nil {
+		if err := json.Unmarshal(t.StartTagNodes, &wrapped); err != nil {
 			return err
 		}
-		n.StartTagNodes = append(n.StartTagNodes, wrapped.Node)
+		n.StartTagNodes = wrapped.Node.(*NodeList)
 	}
 
-	for _, raw := range t.Children {
+	{
 		var wrapped NodeWrapper
-		if err := json.Unmarshal(raw, &wrapped); err != nil {
+		if err := json.Unmarshal(t.Children, &wrapped); err != nil {
 			return err
 		}
-		n.Children = append(n.Children, wrapped.Node)
+		n.Children = wrapped.Node.(*NodeList)
 	}
 
 	n.Span = t.Span
@@ -540,8 +541,8 @@ func (nw *NodeWrapper) UnmarshalJSON(data []byte) error {
 		err = json.Unmarshal(typeMap["Node"], &node)
 		nw.Node = &node
 
-	case "NodeBlock":
-		var node NodeBlock
+	case "NodeList":
+		var node NodeList
 		err = json.Unmarshal(typeMap["Node"], &node)
 		nw.Node = &node
 
@@ -564,9 +565,39 @@ func (nw *NodeWrapper) UnmarshalJSON(data []byte) error {
 
 // END GENERATED CODE NODE DEFINITIONS -- DO NOT EDIT
 
-type NodeList []Node
+// Extra NodeList methods
 
-func (n NodeList) Pos() source.Span { return n[0].Pos() }
+func NewNodeList(nodes ...Node) *NodeList {
+	nl := &NodeList{}
+	nl.Nodes = append(nl.Nodes, nodes...)
+	return nl
+}
+
+func (nl *NodeList) All() iter.Seq[Node] {
+	return func(yield func(Node) bool) {
+		for _, node := range nl.Nodes {
+			if !yield(node) {
+				return
+			}
+		}
+	}
+}
+
+func (nl *NodeList) Append(nodes ...Node) {
+	nl.Nodes = append(nl.Nodes, nodes...)
+}
+
+func (nl *NodeList) AppendFromList(other *NodeList) {
+	nl.Nodes = append(nl.Nodes, other.Nodes...)
+}
+
+func (nl *NodeList) SetAt(node Node, i int) {
+	nl.Nodes[i] = node
+}
+
+func (nl *NodeList) Slice(start, end int) *NodeList {
+	return &NodeList{Nodes: nl.Nodes[start:end]}
+}
 
 type visitor interface {
 	visit(Node) visitor
@@ -585,9 +616,9 @@ func Inspect(n Node, f func(Node) bool) {
 	walk(Inspector(f), n)
 }
 
-func walkNodeList(v visitor, list []Node) {
-	for _, n := range list {
-		walk(v, n)
+func walkNodeList(v visitor, list *NodeList) {
+	for node := range list.All() {
+		walk(v, node)
 	}
 }
 
@@ -615,11 +646,9 @@ func walk(v visitor, n Node) {
 	case *NodeFor:
 		walk(v, n.Clause)
 		walk(v, n.Block)
-	case *NodeBlock:
-		walkNodeList(v, n.Nodes)
 	case *NodeImport:
 		// no children
-	case NodeList:
+	case *NodeList:
 		walkNodeList(v, n)
 	case *NodePartial:
 		walk(v, n.Block)
@@ -643,26 +672,23 @@ type NodeWrapper struct {
 
 // Document represents a complete Pushup page or component.
 type Document struct {
-	Nodes []Node
+	Nodes *NodeList
 }
 
-func (st *Document) UnmarshalJSON(data []byte) error {
-	type raw struct {
-		Nodes []json.RawMessage
+func NewDocument() *Document {
+	return &Document{Nodes: NewNodeList()}
+}
+
+func (doc *Document) UnmarshalJSON(data []byte) error {
+	var t struct {
+		Nodes NodeWrapper
 	}
-	var t raw
 
 	if err := json.Unmarshal(data, &t); err != nil {
 		return err
 	}
 
-	for _, raw := range t.Nodes {
-		var wrapped NodeWrapper
-		if err := json.Unmarshal(raw, &wrapped); err != nil {
-			return err
-		}
-		st.Nodes = append(st.Nodes, wrapped.Node)
-	}
+	doc.Nodes = t.Nodes.Node.(*NodeList)
 
 	return nil
 }
