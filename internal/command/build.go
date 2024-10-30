@@ -8,45 +8,45 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"github.com/adhocteam/pushup/internal/compile"
-	"github.com/adhocteam/pushup/internal/up"
-	"golang.org/x/tools/go/packages"
+	"github.com/adhocteam/pushup/internal/compiler"
+	"github.com/adhocteam/pushup/internal/scan"
 )
 
 func Build(root string) error {
-	// TODO: take a logger optionally from the caller
-	logger := slog.Default()
-	logger.Info("Building", "root", root)
+	slog.Info("Building", "root", root)
 
-	for file := range up.Find(root, "up") {
-		result, err := compile.Page(file)
-		if err != nil {
-			return fmt.Errorf("compiling %q: %w", file, err)
-		}
-		logger.Info("Compiled", "source", file, "pkg", result.PkgName)
-	}
-
-	cfg := &packages.Config{Mode: packages.NeedModule}
-	pkgs, err := packages.Load(cfg, root)
+	scanner, err := scan.New(root)
 	if err != nil {
-		return fmt.Errorf("loading package: %w", err)
+		return fmt.Errorf("getting new scanner: %w", err)
 	}
-	if len(pkgs) == 0 {
-		return fmt.Errorf("expected at least one package, got none")
-	}
-	module := pkgs[0].Module
-	if module == nil {
-		return fmt.Errorf("no module found")
-	}
-	fmt.Println(module.Path)
 
+	if err := scanner.Scan(); err != nil {
+		return fmt.Errorf("scanning for Pushup files: %w", err)
+	}
+
+	compiler := compiler.New()
+
+	if err := scanner.CompileFiles(compiler); err != nil {
+		return fmt.Errorf("compiling files: %w", err)
+	}
+
+	project := scanner.Project()
+
+	if err := generateMainGo(root, project.Module.Path); err != nil {
+		return fmt.Errorf("generating main.go: %w", err)
+	}
+
+	return nil
+}
+
+func generateMainGo(root, modulePath string) error {
 	mainTmpl, err := template.New("main.go").Parse(mainDotGo)
 	if err != nil {
 		return fmt.Errorf("parsing main.go template: %w", err)
 	}
 
 	var mainSrc bytes.Buffer
-	pagesPkg := module.Path + "/" + "pages"
+	pagesPkg := modulePath + "/" + "pages"
 	if err := mainTmpl.Execute(&mainSrc, map[string]any{"PagesPkg": pagesPkg}); err != nil {
 		return fmt.Errorf("executing main.go template: %w", err)
 	}

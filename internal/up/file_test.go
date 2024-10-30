@@ -47,39 +47,33 @@ func TestFind(t *testing.T) {
 	tests := []struct {
 		name     string
 		root     string
-		fileType string
+		ext      Ext
 		expected []string
 	}{
 		{
-			name:     "Find .up.go files",
-			root:     tempDir,
-			fileType: "go",
+			name: "Find .up.go files",
+			root: tempDir,
+			ext:  DotUpDotGo,
 			expected: []string{
 				filepath.Join(tempDir, "example.up.go"),
 				filepath.Join(tempDir, "main.up.go"),
 			},
 		},
 		{
-			name:     "Find .up files",
-			root:     tempDir,
-			fileType: "up",
+			name: "Find .up files",
+			root: tempDir,
+			ext:  DotUp,
 			expected: []string{
 				filepath.Join(tempDir, "script.up"),
 				filepath.Join(tempDir, "nested/example.up"),
 			},
-		},
-		{
-			name:     "No match for .txt files",
-			root:     tempDir,
-			fileType: "txt",
-			expected: []string{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var results []string
-			findFunc := Find(tt.root, tt.fileType)
+			findFunc := Find(tt.root, tt.ext)
 			findFunc(func(path string) bool {
 				results = append(results, path)
 				return true

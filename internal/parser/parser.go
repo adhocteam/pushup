@@ -6,7 +6,6 @@ import (
 	"go/scanner"
 	"go/token"
 	"io"
-	"os"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -18,28 +17,12 @@ import (
 	"golang.org/x/net/html"
 )
 
-func Parse(source string) (doc *ast.Document, err error) {
-	p := newParser(source)
-	defer func() {
-		if e := recover(); e != nil {
-			if se, ok := e.(syntaxError); ok {
-				doc = nil
-				err = se
-			} else {
-				panic(e)
-			}
-		}
-	}()
-	doc = p.htmlParser.parseDocument()
-	return
+func New() *parser {
+	return newParser()
 }
 
-func ParseFile(file string) (*ast.Document, error) {
-	text, err := os.ReadFile(file)
-	if err != nil {
-		return nil, fmt.Errorf("reading file: %w", err)
-	}
-	return Parse(string(text))
+type Parser interface {
+	Parse([]byte) (*ast.Document, error)
 }
 
 // parser is the main Pushup parser. it is comprised of an HTML parser and a Go
@@ -55,13 +38,32 @@ type parser struct {
 	codeParser *codeParser
 }
 
-func newParser(source string) *parser {
+func newParser() *parser {
 	p := new(parser)
-	p.src = source
-	p.offset = 0
 	p.htmlParser = &htmlParser{parser: p}
 	p.codeParser = &codeParser{parser: p}
 	return p
+}
+
+func (p *parser) setSource(text []byte) {
+	p.src = string(text)
+	p.offset = 0
+}
+
+func (p *parser) Parse(text []byte) (doc *ast.Document, err error) {
+	p.setSource(text)
+	defer func() {
+		if e := recover(); e != nil {
+			if se, ok := e.(syntaxError); ok {
+				doc = nil
+				err = se
+			} else {
+				panic(e)
+			}
+		}
+	}()
+	doc = p.htmlParser.parseDocument()
+	return
 }
 
 // remainingSource returns the source code starting from the internal byte
@@ -76,6 +78,7 @@ func (p *parser) remainingSource() string {
 func (p *parser) sourceFrom(offset int) string {
 	if len(p.src) >= offset {
 		return p.src[offset:]
+
 	}
 	return ""
 }
@@ -213,7 +216,8 @@ func (p *htmlParser) parseAttributeNameOrValue(nameOrValue string, nameOrValueSt
 			} else {
 				pos++
 				saveParser := p.parser
-				p.parser = newParser(nameOrValue[1:])
+				p.parser = newParser()
+				p.parser.setSource([]byte(nameOrValue[1:]))
 				nodes = append(nodes, p.transition())
 				bytesRead := p.parser.offset
 				pos += bytesRead

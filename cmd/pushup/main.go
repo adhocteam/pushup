@@ -7,16 +7,15 @@ import (
 	"os/exec"
 
 	"github.com/adhocteam/pushup/internal/command"
-	"github.com/adhocteam/pushup/internal/compile"
 )
 
-type subcmd struct {
+type commandCli struct {
 	name  string
 	setup func(*flag.FlagSet)
 	run   func(*flag.FlagSet) error
 }
 
-var subcommands = []subcmd{
+var commands = []commandCli{
 	{
 		name: "build",
 		setup: func(fs *flag.FlagSet) {
@@ -51,8 +50,9 @@ var subcommands = []subcmd{
 			if prettyPrint {
 				return command.PrettyPrintAST(filename)
 			}
-			_, err := compile.Page(filename)
-			return err
+			// TODO: compile a single file ...
+			panic("unimplemented")
+			return nil
 		},
 	},
 }
@@ -100,10 +100,10 @@ func main() {
 	}
 }
 
-func findCommand(name string) *subcmd {
-	for i := range subcommands {
-		if subcommands[i].name == name {
-			return &subcommands[i]
+func findCommand(name string) *commandCli {
+	for i := range commands {
+		if commands[i].name == name {
+			return &commands[i]
 		}
 	}
 	return nil
@@ -112,7 +112,7 @@ func findCommand(name string) *subcmd {
 func printUsage() {
 	fmt.Fprintln(flag.CommandLine.Output(), "Usage: pushup <command>")
 	fmt.Fprintln(flag.CommandLine.Output(), "Commands:")
-	for _, cmd := range subcommands {
+	for _, cmd := range commands {
 		fmt.Fprintf(flag.CommandLine.Output(), "  %s\n", cmd.name)
 	}
 }

@@ -9,13 +9,13 @@ import (
 )
 
 func Clean(root string) error {
-	logger := slog.Default()
-	logger.Info("Cleaning", "root", root)
-	for file := range up.Find(root, "go") {
-		logger.Info("Removing generated file", "file", file)
+	slog.Info("Cleaning", "root", root)
+	for file := range up.Find(root, up.DotUpDotGo) {
+		slog.Info("Removing generated file", "file", file)
 		if err := os.Remove(file); err != nil {
 			return fmt.Errorf("removing %q: %w", file, err)
 		}
 	}
+	// TODO: delete generated main.go file? How to identify?
 	return nil
 }

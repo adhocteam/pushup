@@ -22,12 +22,14 @@ func TestParser(t *testing.T) {
 	}
 	for _, inputFile := range testCases {
 		t.Run(filepath.Base(inputFile), func(t *testing.T) {
+			t.Parallel()
 			input, err := os.ReadFile(inputFile)
 			if err != nil {
 				t.Fatalf("failed to read input file: %v", err)
 			}
 
-			actual, err := Parse(string(input))
+			parser := New()
+			actual, err := parser.Parse(input)
 			if err != nil {
 				t.Fatalf("unexpected error parsing input: %v", err)
 			}
@@ -80,7 +82,9 @@ func TestParseSyntaxErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			tree, err := Parse(tt.input)
+			t.Parallel()
+			parser := New()
+			tree, err := parser.Parse([]byte(tt.input))
 			if tree != nil {
 				t.Errorf("expected nil tree, got %v", tree)
 			}
@@ -112,7 +116,8 @@ func FuzzParser(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, in []byte) {
-		_, err := Parse(string(in))
+		parser := New()
+		_, err := parser.Parse(in)
 		if err != nil {
 			if _, ok := err.(syntaxError); !ok {
 				t.Errorf("expected syntax error, got %T %v", err, err)
@@ -138,6 +143,7 @@ func TestTagString(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
 			got := test.tag.String()
 			if diff := cmp.Diff(test.want, got); diff != "" {
 				t.Errorf("(-want, +got)\n%s", diff)

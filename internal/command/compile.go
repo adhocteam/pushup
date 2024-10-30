@@ -14,7 +14,8 @@ func PrettyPrintAST(file string) error {
 		return fmt.Errorf("reading file: %w", err)
 	}
 
-	doc, err := parser.Parse(string(text))
+	parser := parser.New()
+	doc, err := parser.Parse(text)
 	if err != nil {
 		return fmt.Errorf("parsing file: %w", err)
 	}

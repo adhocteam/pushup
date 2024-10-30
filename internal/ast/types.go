@@ -641,6 +641,7 @@ type NodeWrapper struct {
 	Node Node
 }
 
+// Document represents a complete Pushup page or component.
 type Document struct {
 	Nodes []Node
 }

@@ -7,10 +7,9 @@ import (
 )
 
 func Register(path string, responder Responder) {
-	logger := slog.Default()
 	globalRouterLock.Lock()
 	defer globalRouterLock.Unlock()
-	logger.Info("Registering", "path", path)
+	slog.Info("Registering", "path", path)
 	globalRouter[path] = route{path: path, responder: responder}
 }
 
