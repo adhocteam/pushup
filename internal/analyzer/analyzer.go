@@ -107,6 +107,7 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 					Parent: currentPartial,
 				}
 				p.TypeName = derivePartialTypeName(unit.File, p)
+				p.Route = routeForPartial(unit.Route, p)
 				if currentPartial != nil {
 					currentPartial.Children = append(currentPartial.Children, p)
 				}
@@ -180,6 +181,18 @@ func routeForPage(path string) string {
 		route += "/"
 	}
 	return route
+}
+
+func routeForPartial(pagePath string, partial *up.Partial) string {
+	if pagePath == "" {
+		pagePath = "/"
+	}
+
+	if !strings.HasSuffix(pagePath, "/") {
+		pagePath += "/"
+	}
+
+	return pagePath + partial.URLPath()
 }
 
 func cleanTitleCase(s string) string {

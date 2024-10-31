@@ -69,13 +69,13 @@ func (g *generator) Generate(unit *up.CompileUnit) ([]byte, error) {
 
 	g.generateResponder(unit.TypeName, unit.Handler, g.generate)
 
-	// Register route
-	g.println("")
-	g.println("func init() {")
-	g.addImport(pushupModulePath+"/route", "")
-	g.printf("route.Register(\"%s\", new(%s))\n", unit.Route, unit.TypeName)
-	g.println("}")
-	g.println("")
+	type route struct {
+		path     string
+		typeName string
+	}
+	var routes []route
+
+	routes = append(routes, route{path: unit.Route, typeName: unit.TypeName})
 
 	for _, partial := range g.unit.Partials {
 		g.generateResponder(partial.TypeName, unit.Handler, func() {
@@ -83,7 +83,17 @@ func (g *generator) Generate(unit *up.CompileUnit) ([]byte, error) {
 			// top-level page values to the output
 			g.genNodePartial(g.unit.Nodes, partial)
 		})
+		routes = append(routes, route{path: partial.Route, typeName: partial.TypeName})
 	}
+
+	// Register routes
+	g.println("")
+	g.println("func init() {")
+	g.addImport(pushupModulePath+"/route", "")
+	for _, route := range routes {
+		g.printf("route.Register(\"%s\", new(%s))\n", route.path, route.typeName)
+	}
+	g.println("}")
 
 	raw, err := g.bytes()
 	if err != nil {
@@ -104,6 +114,7 @@ func (g *generator) generateResponder(typename string, handler *ast.NodeGoCode, 
 
 	g.addImport("net/http", "")
 	g.printf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
+	g.println("w.Header().Set(\"Content-Type\", \"text/html\")")
 
 	if handler != nil {
 		srcLineNo := g.lineNo(handler.Pos())
