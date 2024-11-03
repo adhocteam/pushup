@@ -2,6 +2,7 @@ package ast
 
 import (
 	"bytes"
+	"fmt"
 	"go/format"
 	"os"
 	"strings"
@@ -29,8 +30,9 @@ func TestCodeGenAST(t *testing.T) {
 		{"NodeFor", []fieldspec{{"Clause", "*NodeGoCode"}, {"Block", "*NodeList"}}, "n.Clause.Pos()"},
 		{"NodePartial", []fieldspec{{"Name", "string"}, {"Span", "source.Span"}, {"Block", "*NodeList"}}, "n.Span"},
 		{"NodeList", []fieldspec{{"Nodes", "[]Node"}}, "n.Nodes[0].Pos()"},
-		{"NodeElement", []fieldspec{{"Tag", "element.Tag"}, {"StartTagNodes", "*NodeList"}, {"Children", "*NodeList"}, {"Span", "source.Span"}}, "n.Span"},
+		{"NodeElement", []fieldspec{{"Tag", "Tag"}, {"StartTagNodes", "*NodeList"}, {"Children", "*NodeList"}, {"Span", "source.Span"}, {"IsSelfClosing", "bool"}}, "n.Span"},
 		{"NodeImport", []fieldspec{{"Decl", "ImportDecl"}, {"Span", "source.Span"}}, "n.Span"},
+		{"NodeParam", []fieldspec{{"Decl", "VarDecl"}, {"Use", "bool"}, {"Span", "source.Span"}}, "n.Span"},
 	}
 
 	beginMarker := `// BEGIN GENERATED CODE NODE DEFINITIONS -- DO NOT EDIT`
@@ -55,6 +57,7 @@ func TestCodeGenAST(t *testing.T) {
 
 	buf.WriteString(before)
 	buf.WriteString(beginMarker)
+	buf.WriteString("\n// see types_test.go\n")
 
 	for _, ns := range nodespecs {
 		nodetmpl := `
@@ -65,57 +68,6 @@ type {{.Name}} struct {
 
 func (n {{.Name}}) Pos() source.Span {
 	return {{.SpanExpr}}
-}
-
-func (n {{.Name}}) MarshalJSON() ([]byte, error) {
-	type t {{.Name}}
-
-	return json.Marshal(struct {
-		Type string
-		Node t
-	}{
-		Type: "{{.Name}}",
-		Node: t{
-{{range .Fields}}		{{.Name}}: n.{{.Name}},
-{{end}}
-		},
-	})
-}
-
-func (n *{{.Name}}) UnmarshalJSON(data []byte) error {
-	type raw struct {
-{{range .Fields}}		{{.Name}} {{if isNodeType .Type}}json.RawMessage{{else if eq .Type "[]Node"}}[]json.RawMessage{{else}}{{.Type}}{{end}}
-{{end}}
-	}
-	var t raw
-
-	if err := json.Unmarshal(data, &t); err != nil {
-		return err
-	}
-
-{{range .Fields}}
-{{if isNodeType .Type}}
-	{
-		var wrapped NodeWrapper
-		if err := json.Unmarshal(t.{{.Name}}, &wrapped); err != nil {
-			return err
-		}
-		n.{{.Name}} = wrapped.Node{{if eq .Type "Node"}}{{else}}.({{.Type}}){{end}}
-	}
-{{else if eq .Type "[]Node"}}
-	for _, raw := range t.{{.Name}} {
-		var wrapped NodeWrapper
-		if err := json.Unmarshal(raw, &wrapped); err != nil {
-			return err
-		}
-		n.{{.Name}} = append(n.{{.Name}}, wrapped.Node)
-	}
-{{else}}
-	n.{{.Name}} = t.{{.Name}}
-{{end}}
-{{end}}
-
-	return nil
 }
 
 var _ Node = (*{{.Name}})(nil)
@@ -138,46 +90,18 @@ var _ Node = (*{{.Name}})(nil)
 		}
 	}
 
-	unmarshaltmpl := `
-func (nw *NodeWrapper) UnmarshalJSON(data []byte) error {
-	if string(data) == "null" {
-		return nil
+	buf.WriteString("func init() {\n")
+	buf.WriteString("\tgob.Register(&Document{})\n")
+	for _, ns := range nodespecs {
+		fmt.Fprintf(&buf, "\tgob.Register(&%s{})\n", ns.Name)
 	}
-
-	var typeMap map[string]json.RawMessage
-	if err := json.Unmarshal(data, &typeMap); err != nil {
-		return err
-	}
-
-	var typ string
-	if err := json.Unmarshal(typeMap["Type"], &typ); err != nil {
-		return err
-	}
-
-	var err error
-	switch typ {
-	{{range .}}
-		case "{{.Name}}":
-			var node {{.Name}}
-			err = json.Unmarshal(typeMap["Node"], &node)
-			nw.Node = &node
-	{{end}}
-	default:
-		return fmt.Errorf("unknown node type: %q", typ)
-	}
-
-	return err
-}
-`
-	tmpl := template.Must(template.New("unmarshal").Parse(unmarshaltmpl))
-	if err := tmpl.Execute(&buf, nodespecs); err != nil {
-		t.Fatal(err)
-	}
+	buf.WriteString("}\n")
 
 	buf.WriteString(endMarker)
 	buf.WriteString(after)
 
-	src, err := format.Source(buf.Bytes())
+	src := buf.Bytes()
+	src, err = format.Source(src)
 	if err != nil {
 		t.Fatal(err)
 	}

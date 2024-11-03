@@ -1,11 +1,10 @@
 package ast
 
 import (
-	"encoding/json"
+	"encoding/gob"
 	"fmt"
 	"iter"
 
-	"github.com/adhocteam/pushup/internal/element"
 	"github.com/adhocteam/pushup/internal/source"
 )
 
@@ -13,6 +12,12 @@ import (
 type ImportDecl struct {
 	PkgName string
 	Path    string
+}
+
+// VarDecl represents a Go variable declaration
+type VarDecl struct {
+	Ident string // i.e, the variable's name
+	Expr  string // i.e., the variable's type
 }
 
 // Node represents a portion of the Pushup syntax, like a chunk of HTML,
@@ -23,6 +28,8 @@ type Node interface {
 }
 
 // BEGIN GENERATED CODE NODE DEFINITIONS -- DO NOT EDIT
+// see types_test.go
+
 type NodeLiteral struct {
 	Text string
 	Span source.Span
@@ -30,39 +37,6 @@ type NodeLiteral struct {
 
 func (n NodeLiteral) Pos() source.Span {
 	return n.Span
-}
-
-func (n NodeLiteral) MarshalJSON() ([]byte, error) {
-	type t NodeLiteral
-
-	return json.Marshal(struct {
-		Type string
-		Node t
-	}{
-		Type: "NodeLiteral",
-		Node: t{
-			Text: n.Text,
-			Span: n.Span,
-		},
-	})
-}
-
-func (n *NodeLiteral) UnmarshalJSON(data []byte) error {
-	type raw struct {
-		Text string
-		Span source.Span
-	}
-	var t raw
-
-	if err := json.Unmarshal(data, &t); err != nil {
-		return err
-	}
-
-	n.Text = t.Text
-
-	n.Span = t.Span
-
-	return nil
 }
 
 var _ Node = (*NodeLiteral)(nil)
@@ -74,39 +48,6 @@ type NodeGoStrExpr struct {
 
 func (n NodeGoStrExpr) Pos() source.Span {
 	return n.Span
-}
-
-func (n NodeGoStrExpr) MarshalJSON() ([]byte, error) {
-	type t NodeGoStrExpr
-
-	return json.Marshal(struct {
-		Type string
-		Node t
-	}{
-		Type: "NodeGoStrExpr",
-		Node: t{
-			Expr: n.Expr,
-			Span: n.Span,
-		},
-	})
-}
-
-func (n *NodeGoStrExpr) UnmarshalJSON(data []byte) error {
-	type raw struct {
-		Expr string
-		Span source.Span
-	}
-	var t raw
-
-	if err := json.Unmarshal(data, &t); err != nil {
-		return err
-	}
-
-	n.Expr = t.Expr
-
-	n.Span = t.Span
-
-	return nil
 }
 
 var _ Node = (*NodeGoStrExpr)(nil)
@@ -121,43 +62,6 @@ func (n NodeGoCode) Pos() source.Span {
 	return n.Span
 }
 
-func (n NodeGoCode) MarshalJSON() ([]byte, error) {
-	type t NodeGoCode
-
-	return json.Marshal(struct {
-		Type string
-		Node t
-	}{
-		Type: "NodeGoCode",
-		Node: t{
-			Context: n.Context,
-			Code:    n.Code,
-			Span:    n.Span,
-		},
-	})
-}
-
-func (n *NodeGoCode) UnmarshalJSON(data []byte) error {
-	type raw struct {
-		Context GoCodeContext
-		Code    string
-		Span    source.Span
-	}
-	var t raw
-
-	if err := json.Unmarshal(data, &t); err != nil {
-		return err
-	}
-
-	n.Context = t.Context
-
-	n.Code = t.Code
-
-	n.Span = t.Span
-
-	return nil
-}
-
 var _ Node = (*NodeGoCode)(nil)
 
 type NodeIf struct {
@@ -170,61 +74,6 @@ func (n NodeIf) Pos() source.Span {
 	return n.Cond.Pos()
 }
 
-func (n NodeIf) MarshalJSON() ([]byte, error) {
-	type t NodeIf
-
-	return json.Marshal(struct {
-		Type string
-		Node t
-	}{
-		Type: "NodeIf",
-		Node: t{
-			Cond: n.Cond,
-			Then: n.Then,
-			Alt:  n.Alt,
-		},
-	})
-}
-
-func (n *NodeIf) UnmarshalJSON(data []byte) error {
-	type raw struct {
-		Cond json.RawMessage
-		Then json.RawMessage
-		Alt  json.RawMessage
-	}
-	var t raw
-
-	if err := json.Unmarshal(data, &t); err != nil {
-		return err
-	}
-
-	{
-		var wrapped NodeWrapper
-		if err := json.Unmarshal(t.Cond, &wrapped); err != nil {
-			return err
-		}
-		n.Cond = wrapped.Node.(*NodeGoStrExpr)
-	}
-
-	{
-		var wrapped NodeWrapper
-		if err := json.Unmarshal(t.Then, &wrapped); err != nil {
-			return err
-		}
-		n.Then = wrapped.Node.(*NodeList)
-	}
-
-	{
-		var wrapped NodeWrapper
-		if err := json.Unmarshal(t.Alt, &wrapped); err != nil {
-			return err
-		}
-		n.Alt = wrapped.Node
-	}
-
-	return nil
-}
-
 var _ Node = (*NodeIf)(nil)
 
 type NodeFor struct {
@@ -234,51 +83,6 @@ type NodeFor struct {
 
 func (n NodeFor) Pos() source.Span {
 	return n.Clause.Pos()
-}
-
-func (n NodeFor) MarshalJSON() ([]byte, error) {
-	type t NodeFor
-
-	return json.Marshal(struct {
-		Type string
-		Node t
-	}{
-		Type: "NodeFor",
-		Node: t{
-			Clause: n.Clause,
-			Block:  n.Block,
-		},
-	})
-}
-
-func (n *NodeFor) UnmarshalJSON(data []byte) error {
-	type raw struct {
-		Clause json.RawMessage
-		Block  json.RawMessage
-	}
-	var t raw
-
-	if err := json.Unmarshal(data, &t); err != nil {
-		return err
-	}
-
-	{
-		var wrapped NodeWrapper
-		if err := json.Unmarshal(t.Clause, &wrapped); err != nil {
-			return err
-		}
-		n.Clause = wrapped.Node.(*NodeGoCode)
-	}
-
-	{
-		var wrapped NodeWrapper
-		if err := json.Unmarshal(t.Block, &wrapped); err != nil {
-			return err
-		}
-		n.Block = wrapped.Node.(*NodeList)
-	}
-
-	return nil
 }
 
 var _ Node = (*NodeFor)(nil)
@@ -293,49 +97,6 @@ func (n NodePartial) Pos() source.Span {
 	return n.Span
 }
 
-func (n NodePartial) MarshalJSON() ([]byte, error) {
-	type t NodePartial
-
-	return json.Marshal(struct {
-		Type string
-		Node t
-	}{
-		Type: "NodePartial",
-		Node: t{
-			Name:  n.Name,
-			Span:  n.Span,
-			Block: n.Block,
-		},
-	})
-}
-
-func (n *NodePartial) UnmarshalJSON(data []byte) error {
-	type raw struct {
-		Name  string
-		Span  source.Span
-		Block json.RawMessage
-	}
-	var t raw
-
-	if err := json.Unmarshal(data, &t); err != nil {
-		return err
-	}
-
-	n.Name = t.Name
-
-	n.Span = t.Span
-
-	{
-		var wrapped NodeWrapper
-		if err := json.Unmarshal(t.Block, &wrapped); err != nil {
-			return err
-		}
-		n.Block = wrapped.Node.(*NodeList)
-	}
-
-	return nil
-}
-
 var _ Node = (*NodePartial)(nil)
 
 type NodeList struct {
@@ -346,105 +107,18 @@ func (n NodeList) Pos() source.Span {
 	return n.Nodes[0].Pos()
 }
 
-func (n NodeList) MarshalJSON() ([]byte, error) {
-	type t NodeList
-
-	return json.Marshal(struct {
-		Type string
-		Node t
-	}{
-		Type: "NodeList",
-		Node: t{
-			Nodes: n.Nodes,
-		},
-	})
-}
-
-func (n *NodeList) UnmarshalJSON(data []byte) error {
-	type raw struct {
-		Nodes []json.RawMessage
-	}
-	var t raw
-
-	if err := json.Unmarshal(data, &t); err != nil {
-		return err
-	}
-
-	for _, raw := range t.Nodes {
-		var wrapped NodeWrapper
-		if err := json.Unmarshal(raw, &wrapped); err != nil {
-			return err
-		}
-		n.Nodes = append(n.Nodes, wrapped.Node)
-	}
-
-	return nil
-}
-
 var _ Node = (*NodeList)(nil)
 
 type NodeElement struct {
-	Tag           element.Tag
+	Tag           Tag
 	StartTagNodes *NodeList
 	Children      *NodeList
 	Span          source.Span
+	IsSelfClosing bool
 }
 
 func (n NodeElement) Pos() source.Span {
 	return n.Span
-}
-
-func (n NodeElement) MarshalJSON() ([]byte, error) {
-	type t NodeElement
-
-	return json.Marshal(struct {
-		Type string
-		Node t
-	}{
-		Type: "NodeElement",
-		Node: t{
-			Tag:           n.Tag,
-			StartTagNodes: n.StartTagNodes,
-			Children:      n.Children,
-			Span:          n.Span,
-		},
-	})
-}
-
-func (n *NodeElement) UnmarshalJSON(data []byte) error {
-	type raw struct {
-		Tag           element.Tag
-		StartTagNodes json.RawMessage
-		Children      json.RawMessage
-		Span          source.Span
-	}
-	var t raw
-
-	if err := json.Unmarshal(data, &t); err != nil {
-		return err
-	}
-
-	n.Tag = t.Tag
-
-	{
-		var wrapped NodeWrapper
-		if err := json.Unmarshal(t.StartTagNodes, &wrapped); err != nil {
-			return err
-		}
-		n.StartTagNodes = wrapped.Node.(*NodeList)
-	}
-
-	{
-		var wrapped NodeWrapper
-		if err := json.Unmarshal(t.Children, &wrapped); err != nil {
-			return err
-		}
-		n.Children = wrapped.Node.(*NodeList)
-	}
-
-	n.Span = t.Span
-
-	return nil
 }
 
 var _ Node = (*NodeElement)(nil)
@@ -458,109 +132,32 @@ func (n NodeImport) Pos() source.Span {
 	return n.Span
 }
 
-func (n NodeImport) MarshalJSON() ([]byte, error) {
-	type t NodeImport
-
-	return json.Marshal(struct {
-		Type string
-		Node t
-	}{
-		Type: "NodeImport",
-		Node: t{
-			Decl: n.Decl,
-			Span: n.Span,
-		},
-	})
-}
-
-func (n *NodeImport) UnmarshalJSON(data []byte) error {
-	type raw struct {
-		Decl ImportDecl
-		Span source.Span
-	}
-	var t raw
-
-	if err := json.Unmarshal(data, &t); err != nil {
-		return err
-	}
-
-	n.Decl = t.Decl
-
-	n.Span = t.Span
-
-	return nil
-}
-
 var _ Node = (*NodeImport)(nil)
 
-func (nw *NodeWrapper) UnmarshalJSON(data []byte) error {
-	if string(data) == "null" {
-		return nil
-	}
+type NodeParam struct {
+	Decl VarDecl
+	Use  bool
+	Span source.Span
+}
 
-	var typeMap map[string]json.RawMessage
-	if err := json.Unmarshal(data, &typeMap); err != nil {
-		return err
-	}
+func (n NodeParam) Pos() source.Span {
+	return n.Span
+}
 
-	var typ string
-	if err := json.Unmarshal(typeMap["Type"], &typ); err != nil {
-		return err
-	}
+var _ Node = (*NodeParam)(nil)
 
-	var err error
-	switch typ {
-
-	case "NodeLiteral":
-		var node NodeLiteral
-		err = json.Unmarshal(typeMap["Node"], &node)
-		nw.Node = &node
-
-	case "NodeGoStrExpr":
-		var node NodeGoStrExpr
-		err = json.Unmarshal(typeMap["Node"], &node)
-		nw.Node = &node
-
-	case "NodeGoCode":
-		var node NodeGoCode
-		err = json.Unmarshal(typeMap["Node"], &node)
-		nw.Node = &node
-
-	case "NodeIf":
-		var node NodeIf
-		err = json.Unmarshal(typeMap["Node"], &node)
-		nw.Node = &node
-
-	case "NodeFor":
-		var node NodeFor
-		err = json.Unmarshal(typeMap["Node"], &node)
-		nw.Node = &node
-
-	case "NodePartial":
-		var node NodePartial
-		err = json.Unmarshal(typeMap["Node"], &node)
-		nw.Node = &node
-
-	case "NodeList":
-		var node NodeList
-		err = json.Unmarshal(typeMap["Node"], &node)
-		nw.Node = &node
-
-	case "NodeElement":
-		var node NodeElement
-		err = json.Unmarshal(typeMap["Node"], &node)
-		nw.Node = &node
-
-	case "NodeImport":
-		var node NodeImport
-		err = json.Unmarshal(typeMap["Node"], &node)
-		nw.Node = &node
-
-	default:
-		return fmt.Errorf("unknown node type: %q", typ)
-	}
-
-	return err
+func init() {
+	gob.Register(&Document{})
+	gob.Register(&NodeLiteral{})
+	gob.Register(&NodeGoStrExpr{})
+	gob.Register(&NodeGoCode{})
+	gob.Register(&NodeIf{})
+	gob.Register(&NodeFor{})
+	gob.Register(&NodePartial{})
+	gob.Register(&NodeList{})
+	gob.Register(&NodeElement{})
+	gob.Register(&NodeImport{})
+	gob.Register(&NodeParam{})
 }
 
 // END GENERATED CODE NODE DEFINITIONS -- DO NOT EDIT
@@ -568,8 +165,10 @@ func (nw *NodeWrapper) UnmarshalJSON(data []byte) error {
 // Extra NodeList methods
 
 func NewNodeList(nodes ...Node) *NodeList {
-	nl := &NodeList{}
-	nl.Nodes = append(nl.Nodes, nodes...)
+	nl := &NodeList{
+		Nodes: make([]Node, len(nodes)),
+	}
+	copy(nl.Nodes, nodes)
 	return nl
 }
 
@@ -597,6 +196,10 @@ func (nl *NodeList) SetAt(node Node, i int) {
 
 func (nl *NodeList) Slice(start, end int) *NodeList {
 	return &NodeList{Nodes: nl.Nodes[start:end]}
+}
+
+func (nl *NodeList) Len() int {
+	return len(nl.Nodes)
 }
 
 type visitor interface {
@@ -652,6 +255,8 @@ func walk(v visitor, n Node) {
 		walkNodeList(v, n)
 	case *NodePartial:
 		walk(v, n.Block)
+	case *NodeParam:
+		// no children
 	default:
 		panic(fmt.Sprintf("unhandled type %T", n))
 	}
@@ -679,16 +284,8 @@ func NewDocument() *Document {
 	return &Document{Nodes: NewNodeList()}
 }
 
-func (doc *Document) UnmarshalJSON(data []byte) error {
-	var t struct {
-		Nodes NodeWrapper
-	}
-
-	if err := json.Unmarshal(data, &t); err != nil {
-		return err
-	}
-
-	doc.Nodes = t.Nodes.Node.(*NodeList)
-
-	return nil
+func (d *Document) Pos() source.Span {
+	return d.Nodes.Slice(0, 1).Pos()
 }
+
+var _ Node = (*Document)(nil)

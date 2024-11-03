@@ -7,7 +7,7 @@ type outputOp struct {
 	kind    outputOpKind
 	content string
 	span    source.Span
-	expr    string // dynamic content (Go expressions)
+	noNl    bool
 }
 
 type outputOpKind int

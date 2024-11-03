@@ -3,7 +3,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/adhocteam/pushup/internal/element"
+	"github.com/adhocteam/pushup/internal/ast"
 	"github.com/adhocteam/pushup/internal/source"
 	"github.com/google/go-cmp/cmp"
 )
@@ -11,23 +11,23 @@ import (
 func TestOpenTagLexer(t *testing.T) {
 	tests := []struct {
 		input string
-		want  []*element.Attr
+		want  []*ast.Attr
 	}{
 		{
 			"<div>",
-			[]*element.Attr{},
+			[]*ast.Attr{},
 		},
 		{
 			"<div disabled>",
-			[]*element.Attr{{Name: source.StringPos{"disabled", source.Pos(5)}}},
+			[]*ast.Attr{{Name: source.StringPos{"disabled", source.Pos(5)}}},
 		},
 		{
 			`<div class="foo">`,
-			[]*element.Attr{{Name: source.StringPos{"class", source.Pos(5)}, Value: source.StringPos{"foo", source.Pos(12)}}},
+			[]*ast.Attr{{Name: source.StringPos{"class", source.Pos(5)}, Value: source.StringPos{"foo", source.Pos(12)}}},
 		},
 		{
 			`<p   data-^name="/foo/bar/^value"   thing="^asd"  >`,
-			[]*element.Attr{
+			[]*ast.Attr{
 				{
 					Name: source.StringPos{
 						"data-^name",
@@ -51,12 +51,12 @@ func TestOpenTagLexer(t *testing.T) {
 			},
 		},
 	}
-	opts := cmp.AllowUnexported(element.Attr{}, source.StringPos{})
+	opts := cmp.AllowUnexported(ast.Attr{}, source.StringPos{})
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
 			got, err := scanAttrs(tt.input)
 			if err != nil {
-				t.Fatalf("scanelement.Attrs: %v", err)
+				t.Fatalf("scanast.Attrs: %v", err)
 			}
 			if diff := cmp.Diff(tt.want, got, opts); diff != "" {
 				t.Errorf("(-want, +got)\n%s", diff)

@@ -23,13 +23,23 @@ type CompileUnit struct {
 	Route    string // eg., "/about"
 
 	// AST -> analyzer
-	Imports []ast.ImportDecl
-	Handler *ast.NodeGoCode
-	Nodes   *ast.NodeList
+	Imports            []ast.ImportDecl
+	Handler            *ast.NodeGoCode
+	Nodes              *ast.NodeList
+	ComponentCallSites map[*ast.NodeElement]*ast.Tag
 
 	// Partials is a list of all top-level inline partials in this page (if
 	// File.Kind is a Page).
 	Partials []*Partial
+}
+
+func NewCompileUnit(project *Project, file *File) *CompileUnit {
+	unit := &CompileUnit{
+		Project:            project,
+		File:               file,
+		ComponentCallSites: make(map[*ast.NodeElement]*ast.Tag),
+	}
+	return unit
 }
 
 // Partial represents an inline partial in a Pushup page.

@@ -30,6 +30,24 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 	n := 0
 	var err error
 
+	var checkComponentCallSite ast.Inspector
+	checkComponentCallSite = func(node ast.Node) bool {
+		switch node := node.(type) {
+		case *ast.NodeElement:
+			if strings.Contains(node.Tag.Name, ".") {
+				nodes := node.StartTagNodes.Nodes
+				tagName := nodes[0].(*ast.NodeLiteral).Text
+				node.Tag.Name, err = extractComponentName(tagName)
+				unit.ComponentCallSites[node] = &node.Tag
+			}
+		}
+		return true
+	}
+	ast.Inspect(doc.Nodes, checkComponentCallSite)
+	if err != nil {
+		return fmt.Errorf("checking component call sites: %w", err)
+	}
+
 	// This pass over the syntax tree nodes enforces invariants (only one
 	// handler may be declared per page) and aggregates imports
 	// for easier access in the subsequent code generation phase. as a
@@ -57,6 +75,11 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 			for node := range e.All() {
 				f(node)
 			}
+		case *ast.NodeParam:
+			if unit.File.Kind == up.Page {
+				err = fmt.Errorf("^param declarations are not permitted in Pushup pages")
+				return false
+			}
 		default:
 			panic(fmt.Sprintf("unhandled node type: %T", e))
 		}
@@ -71,10 +94,40 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 
 	unit.Nodes = doc.Nodes.Slice(0, n)
 
+	err = nil
+
+	var checkChildrenSlot ast.Inspector
+	var childrenSlotSeen bool
+	checkChildrenSlot = func(node ast.Node) bool {
+		switch node := node.(type) {
+		case *ast.NodeElement:
+			if unit.File.Kind == up.Component && node.Tag.Name == "children" {
+				if !childrenSlotSeen {
+					// is a slot for transclusion from callers, it may not have
+					// children of its own
+					if node.Children.Len() > 0 {
+						err = fmt.Errorf("<children/> may not have any child nodes of itself")
+						return false
+					}
+					childrenSlotSeen = true
+				} else {
+					err = fmt.Errorf("components may only use <children/> slot once")
+					return false
+				}
+			}
+		}
+		return true
+	}
+	ast.Inspect(doc.Nodes, checkChildrenSlot)
+	if err != nil {
+		return fmt.Errorf("checking component <children/> use: %w", err)
+	}
+
 	// This pass is for inline partials. It needs to be separate because the
 	// traversal of the tree is slightly different than the pass above.
 	{
 		var currentPartial *up.Partial
+		var err error
 
 		var f ast.Inspector
 		f = func(e ast.Node) bool {
@@ -101,6 +154,10 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 				f(e.Block)
 				return false
 			case *ast.NodePartial:
+				if unit.File.Kind == up.Component {
+					err = fmt.Errorf("partials are not allowed in components, only pages")
+					return false
+				}
 				p := &up.Partial{
 					Node:   e,
 					Name:   e.Name,
@@ -119,6 +176,8 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 				return false
 			case *ast.NodeImport:
 				// nothing to do
+			case *ast.NodeParam:
+				// nothing to do
 			default:
 				panic(fmt.Sprintf("unhandled node type: %T", e))
 			}
@@ -126,6 +185,9 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 		}
 
 		ast.Inspect(unit.Nodes, f)
+		if err != nil {
+			return fmt.Errorf("inspecting doc in partials pass: %w", err)
+		}
 	}
 
 	return nil
@@ -213,4 +275,22 @@ func cleanTitleCase(s string) string {
 		}
 	}
 	return string(buf[:i])
+}
+
+func extractComponentName(tagName string) (string, error) {
+	if tagName[0] != '<' {
+		return "", fmt.Errorf("expected leading '<'")
+	}
+	tagName = tagName[1:]
+	dot := strings.IndexRune(tagName, '.')
+	if dot < 1 || dot == -1 {
+		return "", fmt.Errorf("expected dotted name")
+	}
+	if space := strings.IndexRune(tagName, ' '); space != -1 {
+		return tagName[:space], nil
+	}
+	firstNonWord := strings.IndexFunc(tagName[dot+1:], func(r rune) bool {
+		return !unicode.IsLetter(r)
+	})
+	return tagName[:dot+1+firstNonWord], nil
 }

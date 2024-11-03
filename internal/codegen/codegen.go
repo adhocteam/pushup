@@ -50,7 +50,7 @@ func New() *generator {
 
 const (
 	methodReceiverName = "up"
-	ioWriterVar        = "__pushup_b"
+	writerVarName      = "__pushup_w"
 	pushupApi          = "github.com/adhocteam/pushup"
 	pushupModulePath   = "github.com/adhocteam/pushup"
 )
@@ -87,20 +87,22 @@ func (g *generator) Generate(unit *up.CompileUnit) ([]byte, error) {
 	}
 
 	// Register routes
-	g.println("")
-	g.println("func init() {")
-	g.addImport(pushupModulePath+"/route", "")
-	for _, route := range routes {
-		g.printf("route.Register(\"%s\", new(%s))\n", route.path, route.typeName)
+	if g.unit.File.Kind == up.Page {
+		g.println("")
+		g.println("func init() {")
+		g.addImport(pushupModulePath+"/route", "")
+		for _, route := range routes {
+			g.printf("route.Register(\"%s\", new(%s))\n", route.path, route.typeName)
+		}
+		g.println("}")
 	}
-	g.println("}")
 
-	raw, err := g.bytes()
+	code, err := g.bytes()
 	if err != nil {
 		return nil, fmt.Errorf("getting generated code bytes: %w", err)
 	}
 
-	code, err := format.Source(raw)
+	code, err = format.Source(code)
 	if err != nil {
 		return nil, fmt.Errorf("formatting generated Go code: %w", err)
 	}
@@ -113,7 +115,13 @@ func (g *generator) generateResponder(typename string, handler *ast.NodeGoCode, 
 	g.println("}")
 
 	g.addImport("net/http", "")
-	g.printf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
+	if g.unit.File.Kind == up.Page {
+		g.printf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
+	} else if g.unit.File.Kind == up.Component {
+		g.printf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, params map[string]any, children func(%s http.ResponseWriter)) error {\n", methodReceiverName, typename, writerVarName)
+	} else {
+		panic("unexpected file kind")
+	}
 	g.println("w.Header().Set(\"Content-Type\", \"text/html\")")
 
 	if handler != nil {
@@ -126,17 +134,11 @@ func (g *generator) generateResponder(typename string, handler *ast.NodeGoCode, 
 		}
 	}
 
-	g.println("// Begin user Go code and HTML")
-	g.println("{")
-
-	g.addImport("bytes", "")
-	g.printf("%s := new(bytes.Buffer)\n", ioWriterVar)
+	g.addImport(pushupApi, "api")
+	g.printf("%s := api.NewResponseWriter(w)\n", writerVarName)
 	codegenFn()
-	g.println("io.Copy(w, __pushup_b)")
 
-	g.println("}")
-	g.println("// End user Go code and HTML")
-
+	g.printf("%s.Flush()\n", writerVarName)
 	g.println("return nil")
 	g.println("}") // end Respond() method
 }
@@ -147,22 +149,29 @@ func (g *generator) generate() {
 }
 
 func (g *generator) generateFromOps(ops []outputOp) {
-	g.addImport("io", "")
-
+	prev := ops[0]
 	for _, op := range ops {
-		g.emitLineDirective(g.lineNo(op.span))
+		if !op.noNl && !prev.noNl {
+			g.emitLineDirective(g.lineNo(op.span))
+		}
 
 		switch op.kind {
 		case opStatic:
-			g.printf("io.WriteString(%s, %s)\n", ioWriterVar, strconv.Quote(op.content))
+			g.addImport("io", "")
+			g.printf("io.WriteString(%s, %s)\n", writerVarName, strconv.Quote(op.content))
 		case opDynamic:
 			g.addImport(pushupApi, "api")
-			g.printf("api.PrintEscaped(%s, %s)\n", ioWriterVar, op.expr)
+			g.printf("api.PrintEscaped(%s, %s)\n", writerVarName, op.content)
 		case opFlush:
 			// TODO: ensure buffered content is written
+			g.printf("%s.Flush()\n", writerVarName)
 			continue
 		case opGoCode:
-			g.println(op.content)
+			if op.noNl {
+				g.printf("%s", op.content)
+			} else {
+				g.println(op.content)
+			}
 		case opControlStart:
 			g.printf("%s {\n", op.content)
 		case opControlElse:
@@ -172,6 +181,7 @@ func (g *generator) generateFromOps(ops []outputOp) {
 		default:
 			panic("unknown output op kind")
 		}
+		prev = op
 	}
 }
 
@@ -191,6 +201,20 @@ func (g *generator) gatherOutputOps(node ast.Node, collector *outputCollector) {
 		})
 
 	case *ast.NodeElement:
+		if _, ok := g.unit.ComponentCallSites[n]; ok {
+			g.outputComponentCallSite(n, collector)
+			break
+		}
+
+		if g.unit.File.Kind == up.Component && n.Tag.Name == "children" {
+			collector.add(outputOp{
+				kind:    opGoCode,
+				content: fmt.Sprintf("if children != nil { children(%s) }", writerVarName),
+			})
+			collector.add(outputOp{kind: opFlush})
+			break
+		}
+
 		collector.add(outputOp{
 			kind:    opStatic,
 			content: n.Tag.Start(),
@@ -207,9 +231,20 @@ func (g *generator) gatherOutputOps(node ast.Node, collector *outputCollector) {
 
 	case *ast.NodeGoStrExpr:
 		collector.add(outputOp{
-			kind: opDynamic,
-			expr: n.Expr,
-			span: n.Span,
+			kind:    opDynamic,
+			content: n.Expr,
+			span:    n.Span,
+		})
+
+	case *ast.NodeParam:
+		if !n.Use {
+			panic(fmt.Sprintf("syntax invariant violated: ^param keyword in non-use context"))
+		}
+		g.addImport(pushupApi, "api")
+		collector.add(outputOp{
+			kind:    opDynamic,
+			content: fmt.Sprintf("api.Param(%s, req, params)", strconv.Quote(n.Decl.Ident)),
+			span:    n.Span,
 		})
 
 	case *ast.NodeIf:
@@ -271,6 +306,115 @@ func (g *generator) gatherOutputOps(node ast.Node, collector *outputCollector) {
 	}
 }
 
+func (g *generator) outputComponentCallSite(node *ast.NodeElement, collector *outputCollector) {
+	tag := node.Tag
+	collector.add(outputOp{
+		kind:    opGoCode,
+		content: fmt.Sprintf("(&%s{}).Respond(%s, req, map[string]any{", tag.Name, writerVarName),
+		// span: ??? // FIXME
+	})
+	// TODO: could match function arity (and types?? prob not) to component
+	for _, attr := range tag.Attrs {
+		for i, node := range attr.NameNodes {
+			switch node := node.(type) {
+			case *ast.NodeLiteral:
+				collector.add(outputOp{
+					kind:    opGoCode,
+					content: strconv.Quote(node.Text),
+					span:    node.Pos(),
+					noNl:    true,
+				})
+			case *ast.NodeGoStrExpr:
+				g.addImport("fmt", "")
+				collector.add(outputOp{
+					kind:    opGoCode,
+					content: fmt.Sprintf("fmt.Sprint(%s)", node.Expr),
+					span:    node.Pos(),
+					noNl:    true,
+				})
+			default:
+				panic(fmt.Sprintf("expected node literal or Go string expr, got: %T", node))
+			}
+			if i < len(attr.NameNodes)-1 {
+				collector.add(outputOp{
+					kind:    opGoCode,
+					content: "+",
+					noNl:    true,
+				})
+			}
+		}
+
+		collector.add(outputOp{
+			kind:    opGoCode,
+			content: ": ",
+			noNl:    true,
+		})
+
+		for i, node := range attr.ValueNodes {
+			switch node := node.(type) {
+			case *ast.NodeLiteral:
+				collector.add(outputOp{
+					kind:    opGoCode,
+					content: strconv.Quote(node.Text),
+					span:    node.Pos(),
+					noNl:    true,
+				})
+			case *ast.NodeGoStrExpr:
+				g.addImport("fmt", "")
+				collector.add(outputOp{
+					kind:    opGoCode,
+					content: fmt.Sprintf("fmt.Sprint(%s)", node.Expr),
+					span:    node.Pos(),
+					noNl:    true,
+				})
+			default:
+				panic(fmt.Sprintf("expected node literal or Go string expr, got: %T", node))
+			}
+			if i < len(attr.NameNodes)-1 {
+				collector.add(outputOp{
+					kind:    opGoCode,
+					content: "+",
+					noNl:    true,
+				})
+			}
+		}
+
+		collector.add(outputOp{
+			kind:    opGoCode,
+			content: ",",
+		})
+	}
+
+	collector.add(outputOp{
+		kind:    opGoCode,
+		content: "},",
+	})
+
+	if node.Children.Len() > 0 {
+		collector.add(outputOp{
+			kind:    opGoCode,
+			content: fmt.Sprintf("func(%s http.ResponseWriter) {", writerVarName),
+		})
+
+		g.gatherOutputOps(node.Children, collector)
+
+		collector.add(outputOp{
+			kind:    opGoCode,
+			content: "},",
+		})
+	} else {
+		collector.add(outputOp{
+			kind:    opGoCode,
+			content: "nil,",
+		})
+	}
+
+	collector.add(outputOp{
+		kind:    opGoCode,
+		content: ")",
+	})
+}
+
 func (g *generator) nodeLineNo(e ast.Node) {
 	g.emitLineDirective(g.lineNo(e.Pos()))
 }
@@ -309,7 +453,7 @@ func (g *generator) genNodePartial(n ast.Node, p *up.Partial) {
 				if state == stateInPartialScope {
 					g.addImport("io", "")
 					g.nodeLineNo(n)
-					g.printf("io.WriteString(%s, %s)\n", ioWriterVar, strconv.Quote(n.Text))
+					g.printf("io.WriteString(%s, %s)\n", writerVarName, strconv.Quote(n.Text))
 				}
 			default:
 				if state == stateInPartialScope {
@@ -325,14 +469,6 @@ func (g *generator) genNodePartial(n ast.Node, p *up.Partial) {
 
 	ops := g.collectOutputOps(nodes)
 	g.generateFromOps(ops)
-}
-
-func (g *generator) genElement(e *ast.NodeElement, f ast.Inspector) {
-	g.addImport("io", "")
-	g.nodeLineNo(e)
-	f(e.StartTagNodes)
-	f(e.Children)
-	g.printf("io.WriteString(%s, %s)\n", ioWriterVar, strconv.Quote(e.Tag.End()))
 }
 
 func (g *generator) addComment(comment string) {
@@ -361,6 +497,10 @@ func (g *generator) emitLineDirective(n int) {
 
 func (g *generator) bytes() ([]byte, error) {
 	pkgDecl := strings.NewReader("package " + g.unit.Package + "\n")
+
+	for _, decl := range g.unit.Imports {
+		g.imports[decl.Path] = decl.PkgName
+	}
 
 	if len(g.imports) > 0 {
 		fmt.Fprintln(&g.content.imports, "import (")

@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/adhocteam/pushup/internal/ast"
-	"github.com/adhocteam/pushup/internal/element"
 	"github.com/adhocteam/pushup/internal/source"
 
 	"golang.org/x/net/html"
@@ -135,7 +134,7 @@ type htmlParser struct {
 	tagname []byte
 	err     error
 	raw     string
-	attrs   []*element.Attr
+	attrs   []*ast.Attr
 
 	// the global parser offset at the beginning of a new token
 	start int
@@ -267,8 +266,9 @@ func (p *htmlParser) parseStartTag() *ast.NodeList {
 		}
 
 		// emit attribute name
-		nameNodes, newPos := p.parseAttributeNameOrValue(name, nameStartPos, nameEndPos, bytesRead)
-		nodes.Append(nameNodes...)
+		var newPos int
+		attr.NameNodes, newPos = p.parseAttributeNameOrValue(name, nameStartPos, nameEndPos, bytesRead)
+		nodes.Append(attr.NameNodes...)
 		bytesRead = newPos
 
 		if valStartPos > bytesRead {
@@ -278,8 +278,8 @@ func (p *htmlParser) parseStartTag() *ast.NodeList {
 			bytesRead = valStartPos
 
 			// emit attribute value
-			valNodes, newPos := p.parseAttributeNameOrValue(value, valStartPos, valEndPos, bytesRead)
-			nodes.Append(valNodes...)
+			attr.ValueNodes, newPos = p.parseAttributeNameOrValue(value, valStartPos, valEndPos, bytesRead)
+			nodes.Append(attr.ValueNodes...)
 			bytesRead = newPos
 		}
 	}
@@ -376,10 +376,8 @@ tokenLoop:
 		}
 		switch p.toktyp {
 		// TODO(paulsmith): check for void element self-closing tags
-		case html.StartTagToken:
+		case html.StartTagToken, html.SelfClosingTagToken:
 			doc.Nodes.Append(p.parseElement())
-		case html.SelfClosingTagToken:
-			doc.Nodes.AppendFromList(p.parseStartTag())
 		case html.EndTagToken:
 			panic("UNREACHABLE")
 		case html.DoctypeToken, html.CommentToken:
@@ -405,34 +403,48 @@ func (p *htmlParser) match(typ html.TokenType) bool {
 	return p.toktyp == typ
 }
 
+// parseEleementNode is a helper function to handle both start/self-closing tag
+// cases
+func (p *htmlParser) parseElementNode(toktyp html.TokenType) *ast.NodeElement {
+	elem := new(ast.NodeElement)
+	elem.Tag = ast.NewTag(p.tagname, p.attrs)
+	elem.Span.Start = p.parser.offset - len(p.raw)
+	elem.Span.End = p.parser.offset
+	elem.StartTagNodes = p.parseStartTag()
+	elem.Children = ast.NewNodeList()
+
+	if toktyp == html.SelfClosingTagToken {
+		elem.IsSelfClosing = true
+		return elem
+	}
+
+	return elem
+}
+
 func (p *htmlParser) parseElement() ast.Node {
-	var result *ast.NodeElement
-
-	// FIXME(paulsmith): handle self-closing elements
-	if !p.match(html.StartTagToken) {
-		p.errorf("expected an HTML element start tag, got %s", p.toktyp)
+	if !(p.match(html.StartTagToken) || p.match(html.SelfClosingTagToken)) {
+		p.errorf("expected an HTML element start tag or self-closing tag, got %s", p.toktyp)
 	}
+	toktyp := p.toktyp
 
-	result = new(ast.NodeElement)
-	result.Tag = element.NewTag(p.tagname, p.attrs)
-	result.Span.Start = p.parser.offset - len(p.raw)
-	result.Span.End = p.parser.offset
-	result.StartTagNodes = p.parseStartTag()
-	p.advance()
+	result := p.parseElementNode(toktyp)
 
-	result.Children = p.parseChildren()
+	if !result.IsSelfClosing {
+		p.advance()
+		result.Children.AppendFromList(p.parseChildren())
 
-	if !p.match(html.EndTagToken) {
-		p.errorf("expected an HTML element end tag, got %q", p.toktyp)
-	}
+		if !p.match(html.EndTagToken) {
+			p.errorf("expected an HTML element end tag, got %q", p.toktyp)
+		}
 
-	if result.Tag.Name != string(p.tagname) {
-		p.errorf("expected </%s> end tag, got </%s>", result.Tag.Name, p.tagname)
-	}
+		if result.Tag.Name != string(p.tagname) {
+			p.errorf("expected </%s> end tag, got </%s>", result.Tag.Name, p.tagname)
+		}
 
-	// <text></text> elements are just for parsing
-	if string(p.tagname) == "text" {
-		return result.Children
+		// <text></text> elements are just for parsing
+		if string(p.tagname) == "text" {
+			return result.Children
+		}
 	}
 
 	return result
@@ -450,24 +462,16 @@ loop:
 			} else {
 				p.errorf("HTML tokenizer: %w", p.err)
 			}
-		case html.SelfClosingTagToken:
-			elem := new(ast.NodeElement)
-			elem.Tag = element.NewTag(p.tagname, p.attrs)
-			elem.Span.Start = p.parser.offset - len(p.raw)
-			elem.Span.End = p.parser.offset
-			elem.StartTagNodes = p.parseStartTag()
-			p.advance()
+		case html.StartTagToken, html.SelfClosingTagToken:
+			elem := p.parseElementNode(p.toktyp)
+			if p.toktyp == html.StartTagToken {
+				p.advance()
+				elem.Children = p.parseChildren()
+				elemStack = append(elemStack, elem)
+			} else {
+				p.advance()
+			}
 			result.Append(elem)
-		case html.StartTagToken:
-			elem := new(ast.NodeElement)
-			elem.Tag = element.NewTag(p.tagname, p.attrs)
-			elem.Span.Start = p.parser.offset - len(p.raw)
-			elem.Span.End = p.parser.offset
-			elem.StartTagNodes = p.parseStartTag()
-			p.advance()
-			elem.Children = p.parseChildren()
-			result.Append(elem)
-			elemStack = append(elemStack, elem)
 		case html.EndTagToken:
 			if len(elemStack) == 0 {
 				return result
@@ -717,6 +721,9 @@ func (p *codeParser) parseCode() ast.Node {
 	} else if tok == token.IDENT && lit == "partial" {
 		p.advance()
 		e = p.parsePartialKeyword()
+	} else if tok == token.IDENT && lit == "param" {
+		p.advance()
+		e = p.parseParamKeyword()
 	} else if tok == token.LBRACE {
 		e = p.parseCodeBlock()
 	} else if tok == token.IMPORT {
@@ -828,9 +835,7 @@ func (p *codeParser) parseStmtBlock() *ast.NodeList {
 	case token.XOR:
 		p.advance()
 		code := p.parseCode()
-		if p.peek().tok == token.SEMICOLON {
-			p.advance()
-		}
+		p.expect(token.SEMICOLON)
 		list.Append(code)
 	case token.EOF:
 		p.errorf("premature end of block in IF statement")
@@ -901,6 +906,44 @@ func (p *codeParser) parsePartialKeyword() *ast.NodePartial {
 	return result
 }
 
+func (p *codeParser) parseParamKeyword() *ast.NodeParam {
+	/*
+	   examples:
+	   TRANS_SYMparam name string   // declaration
+	   TRANS_SYMparam(score)        // use
+	*/
+	// enter function one past the "param" IDENT token
+	result := &ast.NodeParam{}
+	result.Span.Start = int(p.acceptedToken.value.pos) // TODO: encapsulate this
+	switch p.peek().tok {
+	case token.IDENT:
+		result.Decl.Ident = p.peek().lit
+		p.advance()
+		if !p.peek().tok.IsLiteral() {
+			p.errorf("expected literal, got %s", p.peek().tok)
+		}
+		result.Decl.Expr = p.peek().lit
+		p.advance()
+	case token.LPAREN:
+		p.advance()
+		result.Decl.Ident = p.peek().lit
+		p.advance()
+		p.expect(token.RPAREN)
+		result.Use = true
+	default:
+		p.errorf("expected identifier or open paren, got %s", p.peek().lit)
+	}
+	result.Span.End = p.parser.offset
+	return result
+}
+
+func (p *codeParser) expect(tok token.Token) {
+	if p.peek().tok != tok {
+		p.errorf("expected %q got %q", tok, p.peek().lit)
+	}
+	p.advance()
+}
+
 func (p *codeParser) parseCodeBlock() *ast.NodeGoCode {
 	result := &ast.NodeGoCode{Context: ast.InlineGoCode}
 	if p.peek().tok != token.LBRACE {
@@ -950,7 +993,7 @@ func (p *codeParser) parseImportKeyword() *ast.NodeImport {
 	// we are one token past the 'import' keyword
 	switch p.peek().tok {
 	case token.STRING:
-		e.Decl.Path = p.peek().lit
+		e.Decl.Path = p.peek().lit[1 : len(p.peek().lit)-1]
 		p.advance()
 	case token.IDENT:
 		e.Decl.PkgName = p.peek().lit
@@ -958,7 +1001,7 @@ func (p *codeParser) parseImportKeyword() *ast.NodeImport {
 		if p.peek().tok != token.STRING {
 			p.errorf("expected string, got %s", p.peek().tok)
 		}
-		e.Decl.Path = p.peek().lit
+		e.Decl.Path = p.peek().lit[1 : len(p.peek().lit)-1]
 	case token.PERIOD:
 		e.Decl.PkgName = "."
 		p.advance()

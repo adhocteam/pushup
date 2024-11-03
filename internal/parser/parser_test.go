@@ -1,16 +1,17 @@
 package parser
 
 import (
-	"encoding/json"
+	"encoding/gob"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/adhocteam/pushup/internal/ast"
-	"github.com/adhocteam/pushup/internal/element"
 	"github.com/adhocteam/pushup/internal/source"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 var update = flag.Bool("update", false, "update golden files")
@@ -20,9 +21,15 @@ func TestParser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	opts := []cmp.Option{
+		cmpopts.EquateEmpty(), // Treats nil slices and empty slices as equal
+	}
+
 	for _, inputFile := range testCases {
 		t.Run(filepath.Base(inputFile), func(t *testing.T) {
 			t.Parallel()
+
 			input, err := os.ReadFile(inputFile)
 			if err != nil {
 				t.Fatalf("failed to read input file: %v", err)
@@ -34,34 +41,50 @@ func TestParser(t *testing.T) {
 				t.Fatalf("unexpected error parsing input: %v", err)
 			}
 
-			goldenFile := inputFile[:len(inputFile)-len(".up")] + ".json"
+			goldenFile := inputFile[:len(inputFile)-len(".up")] + ".gob"
 
-			if *update {
-				actualJSON, err := json.MarshalIndent(actual, "", "    ")
-				if err != nil {
-					t.Fatalf("failed to marshal actual result: %v", err)
-				}
-
-				if err := os.WriteFile(goldenFile, actualJSON, 0644); err != nil {
-					t.Fatalf("failed to update golden file: %v", err)
+			if *update || !fileExists(goldenFile) {
+				if err := writeDocGolden(actual, goldenFile); err != nil {
+					t.Fatalf("failed to create golden file: %v", err)
 				}
 			} else {
-				expectedJSON, err := os.ReadFile(goldenFile)
+				expected, err := readDocGolden(goldenFile)
 				if err != nil {
 					t.Fatalf("failed to read golden file: %v", err)
 				}
 
-				expected := ast.NewDocument()
-				if err := json.Unmarshal(expectedJSON, expected); err != nil {
-					t.Fatalf("failed to unmarshal golden file: %v", err)
-				}
-
-				if diff := cmp.Diff(expected, actual); diff != "" {
+				if diff := cmp.Diff(expected, actual, opts...); diff != "" {
 					t.Errorf("unexpected parse result (-expected +actual):\n%s", diff)
 				}
 			}
 		})
 	}
+}
+
+func writeDocGolden(doc *ast.Document, filename string) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("creating file: %w", err)
+	}
+	defer f.Close()
+
+	encoder := gob.NewEncoder(f)
+	return encoder.Encode(doc)
+}
+
+func readDocGolden(filename string) (*ast.Document, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("opening file: %w", err)
+	}
+	defer f.Close()
+
+	var doc ast.Document
+	decoder := gob.NewDecoder(f)
+	if err := decoder.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("decoding golden file: %w", err)
+	}
+	return &doc, nil
 }
 
 func TestParseSyntaxErrors(t *testing.T) {
@@ -74,8 +97,9 @@ func TestParseSyntaxErrors(t *testing.T) {
 		{"^if", 1, 4},
 		{
 			`^if true {
-	<illegal />
-}`, 2, 13,
+    <div></div>
+    <div></div>
+}`, 2, 16,
 		},
 		// FIXME(paulsmith): add more syntax errors
 	}
@@ -96,6 +120,7 @@ func TestParseSyntaxErrors(t *testing.T) {
 				t.Errorf("expected syntax error type, got %T", err)
 			}
 			if tt.lineNo != serr.lineNo || tt.column != serr.column {
+				t.Logf("syntax error: %v", serr.err)
 				t.Errorf("line:column: want %d:%d, got %d:%d", tt.lineNo, tt.column, serr.lineNo, serr.column)
 			}
 		})
@@ -128,15 +153,15 @@ func FuzzParser(f *testing.F) {
 
 func TestTagString(t *testing.T) {
 	tests := []struct {
-		tag  element.Tag
+		tag  ast.Tag
 		want string
 	}{
 		{
-			element.Tag{Name: "h1"},
+			ast.Tag{Name: "h1"},
 			"h1",
 		},
 		{
-			element.Tag{Name: "div", Attrs: []*element.Attr{{Name: source.StringPos{Text: "class"}, Value: source.StringPos{Text: "banner"}}}},
+			ast.Tag{Name: "div", Attrs: []*ast.Attr{{Name: source.StringPos{Text: "class"}, Value: source.StringPos{Text: "banner"}}}},
 			"div class=\"banner\"",
 		},
 	}
@@ -150,4 +175,9 @@ func TestTagString(t *testing.T) {
 			}
 		})
 	}
+}
+
+func fileExists(name string) bool {
+	_, err := os.Stat(name)
+	return err == nil
 }

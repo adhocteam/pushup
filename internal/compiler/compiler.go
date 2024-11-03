@@ -29,20 +29,7 @@ func New() *compiler {
 }
 
 func (c *compiler) Compile(project *up.Project, file up.File) ([]byte, error) {
-	switch file.Kind {
-	case up.Page:
-		return c.compilePage(project, file)
-	case up.Component:
-		return c.compilePage(project, file)
-		// TODO: this is temporary
-		//return c.compileComponent(file)
-	default:
-		panic("unexpected file kind")
-	}
-}
-
-func (c *compiler) compilePage(project *up.Project, file up.File) ([]byte, error) {
-	unit := up.CompileUnit{Project: project, File: &file}
+	unit := up.NewCompileUnit(project, &file)
 
 	pkg, err := deriveGoPackage(filepath.Dir(file.Path))
 	if err != nil {
@@ -55,11 +42,11 @@ func (c *compiler) compilePage(project *up.Project, file up.File) ([]byte, error
 		return nil, fmt.Errorf("parsing file: %w", err)
 	}
 
-	if err := analyzer.Analyze(doc, &unit); err != nil {
+	if err := analyzer.Analyze(doc, unit); err != nil {
 		return nil, fmt.Errorf("analyzing parse: %w", err)
 	}
 
-	code, err := c.generator.Generate(&unit)
+	code, err := c.generator.Generate(unit)
 	if err != nil {
 		return nil, fmt.Errorf("generating code: %w", err)
 	}

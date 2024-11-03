@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/adhocteam/pushup/internal/element"
+	"github.com/adhocteam/pushup/internal/ast"
 	"github.com/adhocteam/pushup/internal/source"
 )
 
@@ -26,11 +26,11 @@ import (
 //
 // https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
 
-func scanAttrs(openTag string) (attrs []*element.Attr, err error) {
+func scanAttrs(openTag string) (attrs []*ast.Attr, err error) {
 	// maintain some invariants, we are not a general-purpose HTML
 	// tokenizer/parser, we are just parsing open tags.
 	if len(openTag) == 0 {
-		return []*element.Attr{}, nil
+		return []*ast.Attr{}, nil
 	}
 	if ch := openTag[0]; ch != '<' {
 		return nil, openTagScanError(fmt.Sprintf("expected '<', got '%c'", ch))
@@ -178,7 +178,7 @@ func (s openTagLexState) String() string {
 
 const eof = -1
 
-func (l *openTagLexer) scan() []*element.Attr {
+func (l *openTagLexer) scan() []*ast.Attr {
 loop:
 	for {
 		switch l.state {
@@ -446,10 +446,10 @@ loop:
 		}
 	}
 
-	result := make([]*element.Attr, len(l.attrs))
+	result := make([]*ast.Attr, len(l.attrs))
 	for i := range l.attrs {
 		builder := l.attrs[i]
-		attr := &element.Attr{
+		attr := &ast.Attr{
 			Name: source.StringPos{
 				Text:  builder.name.String(),
 				Start: builder.name.start,
