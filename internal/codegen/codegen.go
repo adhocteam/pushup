@@ -164,7 +164,7 @@ func (g *generator) generateFromOps(ops []outputOp) {
 			g.printf("api.PrintEscaped(%s, %s)\n", writerVarName, op.content)
 		case opFlush:
 			// TODO: ensure buffered content is written
-			g.printf("%s.Flush()\n", writerVarName)
+			//g.printf("%s.Flush()\n", writerVarName)
 			continue
 		case opGoCode:
 			if op.noNl {
@@ -392,7 +392,8 @@ func (g *generator) outputComponentCallSite(node *ast.NodeElement, collector *ou
 
 	if node.Children.Len() > 0 {
 		collector.add(outputOp{
-			kind:    opGoCode,
+			kind: opGoCode,
+			// TODO: consider writer type
 			content: fmt.Sprintf("func(%s http.ResponseWriter) {", writerVarName),
 		})
 
