@@ -35,6 +35,7 @@ func (h *responderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := h.responder.Respond(w, r)
 	if err != nil {
 		// TODO: custom error page
+		slog.Error("handling response", "error", err)
 		http.Error(w, http.StatusText(500), 500)
 	}
 }

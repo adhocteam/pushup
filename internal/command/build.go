@@ -62,15 +62,15 @@ const mainDotGo = `package main
 
 import (
     "log"
-    "net/http"
 
     "github.com/adhocteam/pushup/route"
+    "github.com/adhocteam/pushup/server"
 
     _ "{{ .PagesPkg }}"
 )
 
 func main() {
-    http.Handle("/", route.Handler())
-    log.Fatal(http.ListenAndServe(":8080", nil))
+    server := server.New(":8080", route.Handler())
+    log.Fatal(server.ListenAndServe())
 }
 `

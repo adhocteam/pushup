@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 
@@ -20,9 +21,12 @@ var commands = []commandCli{
 		name: "build",
 		setup: func(fs *flag.FlagSet) {
 			fs.String("r", ".", "Build project from `root` directory")
+			fs.Bool("v", false, "Verbose logging")
 		},
 		run: func(fs *flag.FlagSet) error {
 			root := fs.Lookup("r").Value.String()
+			verbose := fs.Lookup("v").Value.(flag.Getter).Get().(bool)
+			setupLogging(verbose)
 			return command.Build(root)
 		},
 	},
@@ -30,10 +34,28 @@ var commands = []commandCli{
 		name: "clean",
 		setup: func(fs *flag.FlagSet) {
 			fs.String("r", ".", "Clean project from `root` directory")
+			fs.Bool("v", false, "Verbose logging")
 		},
 		run: func(fs *flag.FlagSet) error {
 			root := fs.Lookup("r").Value.String()
+			verbose := fs.Lookup("v").Value.(flag.Getter).Get().(bool)
+			setupLogging(verbose)
 			return command.Clean(root)
+		},
+	},
+	{
+		name: "dev",
+		setup: func(fs *flag.FlagSet) {
+			fs.String("r", ".", "Development server `root` directory")
+			fs.Int("port", 8000, "Development server port")
+			fs.Bool("v", false, "Verbose logging")
+		},
+		run: func(fs *flag.FlagSet) error {
+			root := fs.Lookup("r").Value.String()
+			port := fs.Lookup("port").Value.(flag.Getter).Get().(int)
+			verbose := fs.Lookup("v").Value.(flag.Getter).Get().(bool)
+			setupLogging(verbose)
+			return command.DevServer(root, port)
 		},
 	},
 	{
@@ -123,4 +145,18 @@ func findGo() bool {
 		return false
 	}
 	return true
+}
+
+func setupLogging(verbose bool) {
+	logLevel := new(slog.LevelVar)
+	if verbose {
+		logLevel.Set(slog.LevelDebug)
+	} else {
+		logLevel.Set(slog.LevelInfo)
+	}
+
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: logLevel,
+	})
+	slog.SetDefault(slog.New(handler))
 }
