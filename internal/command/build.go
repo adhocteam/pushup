@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"fmt"
+	"go/format"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -30,16 +31,17 @@ func Build(root string) error {
 		return fmt.Errorf("compiling files: %w", err)
 	}
 
-	project := scanner.Project()
-
-	if err := generateMainGo(root, project.Module.Path); err != nil {
+	if err := generateMainGo(scanner); err != nil {
 		return fmt.Errorf("generating main.go: %w", err)
 	}
 
 	return nil
 }
 
-func generateMainGo(root, modulePath string) error {
+func generateMainGo(scanner *scan.Scanner) error {
+	project := scanner.Project()
+	modulePath := project.Module.Path
+
 	mainTmpl, err := template.New("main.go").Parse(mainDotGo)
 	if err != nil {
 		return fmt.Errorf("parsing main.go template: %w", err)
@@ -47,11 +49,21 @@ func generateMainGo(root, modulePath string) error {
 
 	var mainSrc bytes.Buffer
 	pagesPkg := modulePath + "/" + "pages"
-	if err := mainTmpl.Execute(&mainSrc, map[string]any{"PagesPkg": pagesPkg}); err != nil {
+	data := map[string]any{
+		"PagesPkg":   pagesPkg,
+		"ModulePath": modulePath,
+		"StaticDir":  scanner.Project().StaticDir,
+	}
+	if err := mainTmpl.Execute(&mainSrc, data); err != nil {
 		return fmt.Errorf("executing main.go template: %w", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(root, "main.go"), mainSrc.Bytes(), 0664); err != nil {
+	content, err := format.Source(mainSrc.Bytes())
+	if err != nil {
+		return fmt.Errorf("formatting main.go: %w", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(project.RootDir, "main.go"), content, 0664); err != nil {
 		return fmt.Errorf("writing main.go: %w", err)
 	}
 
@@ -67,10 +79,13 @@ import (
     "github.com/adhocteam/pushup/server"
 
     _ "{{ .PagesPkg }}"
+    {{ if .StaticDir }}"{{ .ModulePath }}/static"{{ end }}
 )
 
 func main() {
-    server := server.New(":8080", route.Handler())
+    server := server.New(":8080")
+    server.Mux().Handle("/", route.Handler())
+    {{ if .StaticDir }}server.Mux().Handle("/static/", static.Handler()){{ end }}
     log.Fatal(server.ListenAndServe())
 }
 `

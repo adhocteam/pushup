@@ -6,6 +6,7 @@ type Project struct {
 	Module    Module
 	ModuleDir string
 	Files     []File
+	StaticDir string // path to static assets directory to be embedded
 }
 
 type Module struct {

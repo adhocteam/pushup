@@ -2,6 +2,7 @@ package scan
 
 import (
 	"fmt"
+	"go/format"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -32,6 +33,7 @@ func New(rootDir string) (*Scanner, error) {
 			Module:    up.Module{Path: modPath},
 			ModuleDir: modDir,
 			Files:     []up.File{},
+			StaticDir: "",
 		},
 	}
 
@@ -69,6 +71,14 @@ func (s *Scanner) Scan() error {
 		})
 	}
 
+	if staticDir, has := s.hasStaticDir(); has {
+		s.project.StaticDir = staticDir
+		slog.Debug("static assets directory detected", "path", staticDir)
+		if err := s.generateStaticPackage(); err != nil {
+			return fmt.Errorf("generating static package: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -87,19 +97,46 @@ func (s *Scanner) CompileFiles(compiler compiler.Compiler) error {
 	return nil
 }
 
-func loadGoModule(root string) (mod up.Module, err error) {
-	file := filepath.Join(root, "go.mod")
-	content, err := os.ReadFile(file)
-	if err != nil {
-		err = fmt.Errorf("reading %q: %w", file, err)
-		return
+func (s *Scanner) hasStaticDir() (string, bool) {
+	// TODO: allow for static name to be configured/overridden
+	staticDir := filepath.Join(s.project.RootDir, "static")
+	if info, err := os.Stat(staticDir); err == nil {
+		return staticDir, info.IsDir()
 	}
-	module, err := modfile.Parse(file, content, nil)
+	return "", false
+}
+
+func (s *Scanner) generateStaticPackage() error {
+	staticDir := filepath.Join(s.project.RootDir, "static")
+	staticGo := filepath.Join(staticDir, "static.go")
+	slog.Info("generating static package", "path", staticGo)
+	// TODO: allow for package name to be configured/overridden
+	content := []byte(`package static
+
+import (
+    "embed"
+    "net/http"
+    "log/slog"
+)
+
+//go:embed *
+var assets embed.FS
+
+func Handler() http.Handler {
+    return http.StripPrefix("/static/", http.FileServer(http.FS(assets)))
+}
+`)
+
+	content, err := format.Source(content)
 	if err != nil {
-		err = fmt.Errorf("parsing go.mod: %w", err)
+		return fmt.Errorf("formatting static.go: %w", err)
 	}
-	mod.Path = module.Module.Mod.Path
-	return
+
+	if err := os.WriteFile(staticGo, []byte(content), 0644); err != nil {
+		return fmt.Errorf("writing static.go: %w", err)
+	}
+
+	return nil
 }
 
 func findModulePath(dir string) (modulePath string, goModDir string, err error) {

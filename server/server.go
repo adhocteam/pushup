@@ -12,13 +12,17 @@ type Server struct {
 	*http.Server
 }
 
-func New(addr string, handler http.Handler) *Server {
+func New(addr string) *Server {
 	return &Server{
 		Server: &http.Server{
 			Addr:    addr,
-			Handler: handler,
+			Handler: http.NewServeMux(),
 		},
 	}
+}
+
+func (s *Server) Mux() *http.ServeMux {
+	return s.Handler.(*http.ServeMux)
 }
 
 func (s *Server) ListenAndServe() error {
