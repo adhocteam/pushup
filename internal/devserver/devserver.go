@@ -51,7 +51,6 @@ func (s *DevServer) debounceEvents(ctx context.Context, interval time.Duration, 
 	for {
 		select {
 		case event := <-s.watcher.watcher.Events:
-			slog.Debug("file watcher event", "event", event)
 			if !s.filterEvent(event) {
 				continue
 			}
@@ -69,6 +68,7 @@ func (s *DevServer) debounceEvents(ctx context.Context, interval time.Duration, 
 
 		case <-timer.C:
 			if hasPending {
+				slog.Debug("triggering reload from file", "event", pendingEvent)
 				fn(pendingEvent)
 				hasPending = false
 			}
@@ -118,22 +118,6 @@ func (s *DevServer) Run(ctx context.Context) error {
 		return fmt.Errorf("creating new file watcher: %w", err)
 	}
 
-	go s.debounceEvents(ctx, 125*time.Millisecond, func(event fsnotify.Event) {
-		slog.Info("got reloading event", "event", event)
-		s.watcher.watcher.Close()
-		if err := s.rebuildAndReload(ctx); err != nil {
-			slog.Error("rebuild failed", "error", err)
-			return
-		}
-		s.reloader.triggerReload()
-		// TODO: dedupe this with the above
-		var err error
-		s.watcher, err = newFileWatcher(s.root)
-		if err != nil {
-			slog.Error("creating new file watcher", "error", err)
-		}
-	})
-
 	var socketPath string
 	socketPath, s.socketListener, err = s.createUnixSocket()
 	if err != nil {
@@ -171,6 +155,22 @@ func (s *DevServer) Run(ctx context.Context) error {
 	if err := s.rebuildAndReload(ctx); err != nil {
 		return fmt.Errorf("starting child server failed: %w", err)
 	}
+
+	go s.debounceEvents(ctx, 125*time.Millisecond, func(event fsnotify.Event) {
+		slog.Info("got reloading event", "event", event)
+		s.watcher.watcher.Close()
+		if err := s.rebuildAndReload(ctx); err != nil {
+			slog.Error("rebuild failed", "error", err)
+			return
+		}
+		s.reloader.triggerReload()
+		// TODO: dedupe this with the above
+		var err error
+		s.watcher, err = newFileWatcher(s.root)
+		if err != nil {
+			slog.Error("creating new file watcher", "error", err)
+		}
+	})
 
 	defer func() {
 		if err := s.Cleanup(); err != nil {

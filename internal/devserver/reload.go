@@ -28,7 +28,7 @@ func (r *reloader) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
-	slog.Debug("handling websocket connection", "conn", conn)
+	slog.Debug("accepting websocket connection")
 
 	r.Lock()
 	r.clients[conn] = true
