@@ -116,7 +116,6 @@ func (s *Scanner) generateStaticPackage() error {
 import (
     "embed"
     "net/http"
-    "log/slog"
 )
 
 //go:embed *

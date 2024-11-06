@@ -111,19 +111,31 @@ func (g *generator) Generate(unit *up.CompileUnit) ([]byte, error) {
 }
 
 func (g *generator) generateResponder(typename string, handler *ast.NodeGoCode, codegenFn func()) {
-	g.printf("type %s struct {", typename)
-	g.println("}")
-
+	g.addImport(pushupApi, "api")
 	g.addImport("net/http", "")
-	if g.unit.File.Kind == up.Page {
-		g.printf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
-	} else if g.unit.File.Kind == up.Component {
-		g.printf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, params map[string]any, children func(%s http.ResponseWriter)) error {\n", methodReceiverName, typename, writerVarName)
-	} else {
-		panic("unexpected file kind")
-	}
-	g.println("w.Header().Set(\"Content-Type\", \"text/html\")")
 
+	g.printf("type %s struct {\n", typename)
+	g.println("}")
+	g.println("")
+
+	g.printf("type %s_usercontext struct {\n", typename)
+	g.println(" request *http.Request")
+	g.println(" writer http.ResponseWriter")
+	g.println(" params map[string]any")
+	g.println(" children func(api.UserContext)")
+	g.println("}")
+	g.println("")
+
+	g.printf("func (ctx *%s_usercontext) Request() *http.Request { return ctx.request }\n", typename)
+	g.println("")
+	g.printf("func (ctx *%s_usercontext) Writer() http.ResponseWriter { return ctx.writer }\n", typename)
+	g.println("")
+	g.printf("func (ctx *%s_usercontext) Params() map[string]any { return ctx.params }\n", typename)
+	g.println("")
+	g.printf("func (ctx *%s_usercontext) Children() func(api.UserContext) { return ctx.children }\n", typename)
+	g.println("")
+
+	g.printf("func user_%s(ctx api.UserContext) error {\n", typename)
 	if handler != nil {
 		srcLineNo := g.lineNo(handler.Pos())
 		lines := strings.Split(handler.Code, "\n")
@@ -133,13 +145,30 @@ func (g *generator) generateResponder(typename string, handler *ast.NodeGoCode, 
 			srcLineNo++
 		}
 	}
-
-	g.addImport(pushupApi, "api")
-	g.printf("%s := api.NewResponseWriter(w)\n", writerVarName)
 	codegenFn()
-
-	g.printf("%s.Flush()\n", writerVarName)
+	g.println("ctx.Writer().(http.Flusher).Flush()")
 	g.println("return nil")
+	g.println("}")
+	g.println("")
+
+	if g.unit.File.Kind == up.Page {
+		g.printf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
+		g.println("w.Header().Set(\"Content-Type\", \"text/html\")")
+	} else if g.unit.File.Kind == up.Component {
+		g.printf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, params map[string]any, children func(api.UserContext)) error {\n", methodReceiverName, typename)
+	} else {
+		panic("unexpected file kind")
+	}
+
+	g.printf("ctx := new(%s_usercontext)\n", typename)
+	g.println("ctx.request = req")
+	g.println("ctx.writer = api.NewResponseWriter(w)")
+	if g.unit.File.Kind == up.Component {
+		g.println("ctx.params = params")
+		g.println("ctx.children = children")
+	}
+	g.printf("err := user_%s(ctx)\n", typename)
+	g.println("return err")
 	g.println("}") // end Respond() method
 }
 
@@ -158,13 +187,12 @@ func (g *generator) generateFromOps(ops []outputOp) {
 		switch op.kind {
 		case opStatic:
 			g.addImport("io", "")
-			g.printf("io.WriteString(%s, %s)\n", writerVarName, strconv.Quote(op.content))
+			g.printf("io.WriteString(ctx.Writer(), %s)\n", strconv.Quote(op.content))
 		case opDynamic:
 			g.addImport(pushupApi, "api")
-			g.printf("api.PrintEscaped(%s, %s)\n", writerVarName, op.content)
+			g.printf("api.PrintEscaped(ctx.Writer(), %s)\n", op.content)
 		case opFlush:
-			// TODO: ensure buffered content is written
-			//g.printf("%s.Flush()\n", writerVarName)
+			g.println("ctx.Writer().(http.Flusher).Flush()")
 			continue
 		case opGoCode:
 			if op.noNl {
@@ -209,7 +237,7 @@ func (g *generator) gatherOutputOps(node ast.Node, collector *outputCollector) {
 		if g.unit.File.Kind == up.Component && n.Tag.Name == "children" {
 			collector.add(outputOp{
 				kind:    opGoCode,
-				content: fmt.Sprintf("if children != nil { children(%s) }", writerVarName),
+				content: fmt.Sprintf("if ctx.Children() != nil { ctx.Children()(ctx) }"),
 			})
 			collector.add(outputOp{kind: opFlush})
 			break
@@ -243,7 +271,7 @@ func (g *generator) gatherOutputOps(node ast.Node, collector *outputCollector) {
 		g.addImport(pushupApi, "api")
 		collector.add(outputOp{
 			kind:    opDynamic,
-			content: fmt.Sprintf("api.Param(%s, req, params)", strconv.Quote(n.Decl.Ident)),
+			content: fmt.Sprintf("api.Param(%s, ctx.Request(), ctx.Params())", strconv.Quote(n.Decl.Ident)),
 			span:    n.Span,
 		})
 
@@ -310,7 +338,7 @@ func (g *generator) outputComponentCallSite(node *ast.NodeElement, collector *ou
 	tag := node.Tag
 	collector.add(outputOp{
 		kind:    opGoCode,
-		content: fmt.Sprintf("(&%s{}).Respond(%s, req, map[string]any{", tag.Name, writerVarName),
+		content: fmt.Sprintf("(&%s{}).Respond(ctx.Writer(), ctx.Request(), map[string]any{", tag.Name),
 		// span: ??? // FIXME
 	})
 	// TODO: could match function arity (and types?? prob not) to component
@@ -394,7 +422,7 @@ func (g *generator) outputComponentCallSite(node *ast.NodeElement, collector *ou
 		collector.add(outputOp{
 			kind: opGoCode,
 			// TODO: consider writer type
-			content: fmt.Sprintf("func(%s http.ResponseWriter) {", writerVarName),
+			content: fmt.Sprintf("func(ctx api.UserContext) {"),
 		})
 
 		g.gatherOutputOps(node.Children, collector)

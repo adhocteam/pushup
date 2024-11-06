@@ -31,6 +31,13 @@ func PrintEscaped(w io.Writer, val any) {
 	}
 }
 
+type UserContext interface {
+	Request() *http.Request
+	Writer() http.ResponseWriter
+	Params() map[string]any
+	Children() func(UserContext)
+}
+
 type pushupResponseWriter struct {
 	http.ResponseWriter
 	buf *bytes.Buffer
