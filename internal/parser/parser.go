@@ -199,34 +199,37 @@ const (
 	transSymEsc = transSymStr + transSymStr
 )
 
-func (p *htmlParser) parseAttributeNameOrValue(nameOrValue string, nameOrValueStartPos, nameOrValueEndPos int, pos int) ([]ast.Node, int) {
+func (p *htmlParser) parseAttributeNameOrValue(nameOrValue string, nameOrValueStartPos, nameOrValueEndPos int) ([]ast.Node, int) {
 	var nodes []ast.Node
-	if strings.ContainsRune(nameOrValue, transSym) {
-		for pos < nameOrValueEndPos && strings.ContainsRune(nameOrValue, transSym) {
-			if idx := strings.IndexRune(nameOrValue, transSym); idx > 0 {
-				nodes = append(nodes, p.emitLiteralFromRange(pos, pos+idx))
-				pos += idx
-				nameOrValue = nameOrValue[idx:]
-			}
-			if strings.HasPrefix(nameOrValue, transSymStr+transSymStr) {
-				nodes = append(nodes, p.emitLiteralFromRange(pos, pos+1))
-				pos += 2
-				nameOrValue = nameOrValue[2:]
-			} else {
-				pos++
-				saveParser := p.parser
-				p.parser = newParser()
-				p.parser.setSource([]byte(nameOrValue[1:]))
-				nodes = append(nodes, p.transition())
-				bytesRead := p.parser.offset
-				pos += bytesRead
-				p.parser = saveParser
-				nameOrValue = nameOrValue[bytesRead:]
-			}
+	pos := nameOrValueStartPos
+	for pos < nameOrValueEndPos {
+		if strings.HasPrefix(nameOrValue, transSymStr+transSymStr) {
+			nodes = append(nodes, p.emitLiteralFromRange(pos, pos+1))
+			pos += 2
+			nameOrValue = nameOrValue[2:]
+			continue
 		}
-	} else {
-		nodes = append(nodes, p.emitLiteralFromRange(nameOrValueStartPos, nameOrValueEndPos))
-		pos = nameOrValueEndPos
+		idx := strings.IndexRune(nameOrValue, transSym)
+		if idx == -1 {
+			nodes = append(nodes, p.emitLiteralFromRange(pos, nameOrValueEndPos))
+			pos = nameOrValueEndPos
+			break
+		} else if idx > 0 {
+			nodes = append(nodes, p.emitLiteralFromRange(pos, pos+idx))
+			pos += idx
+			nameOrValue = nameOrValue[idx:]
+			continue
+		}
+		// transition symbol is next char (== pos)
+		pos++
+		saveParser := p.parser
+		p.parser = newParser()
+		p.parser.setSource([]byte(nameOrValue[1:]))
+		nodes = append(nodes, p.transition())
+		bytesRead := p.parser.offset
+		pos += bytesRead
+		p.parser = saveParser
+		nameOrValue = nameOrValue[bytesRead:]
 	}
 	return nodes, pos
 }
@@ -267,7 +270,7 @@ func (p *htmlParser) parseStartTag() *ast.NodeList {
 
 		// emit attribute name
 		var newPos int
-		attr.NameNodes, newPos = p.parseAttributeNameOrValue(name, nameStartPos, nameEndPos, bytesRead)
+		attr.NameNodes, newPos = p.parseAttributeNameOrValue(name, nameStartPos, nameEndPos)
 		nodes.Append(attr.NameNodes...)
 		bytesRead = newPos
 
@@ -278,7 +281,7 @@ func (p *htmlParser) parseStartTag() *ast.NodeList {
 			bytesRead = valStartPos
 
 			// emit attribute value
-			attr.ValueNodes, newPos = p.parseAttributeNameOrValue(value, valStartPos, valEndPos, bytesRead)
+			attr.ValueNodes, newPos = p.parseAttributeNameOrValue(value, valStartPos, valEndPos)
 			nodes.Append(attr.ValueNodes...)
 			bytesRead = newPos
 		}
