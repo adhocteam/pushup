@@ -30,7 +30,7 @@ func TestCodeGenAST(t *testing.T) {
 		{"NodeFor", []fieldspec{{"Clause", "*NodeGoCode"}, {"Block", "*NodeList"}}, "n.Clause.Pos()"},
 		{"NodePartial", []fieldspec{{"Name", "string"}, {"Span", "source.Span"}, {"Block", "*NodeList"}}, "n.Span"},
 		{"NodeList", []fieldspec{{"Nodes", "[]Node"}}, "n.Nodes[0].Pos()"},
-		{"NodeElement", []fieldspec{{"Tag", "Tag"}, {"StartTagNodes", "*NodeList"}, {"Children", "*NodeList"}, {"Span", "source.Span"}, {"IsSelfClosing", "bool"}}, "n.Span"},
+		{"NodeElement", []fieldspec{{"Tag", "Tag"}, {"StartTagNodes", "*NodeList"}, {"Children", "*NodeList"}, {"Span", "source.Span"}, {"Flags", "ElementFlag"}}, "n.Span"},
 		{"NodeImport", []fieldspec{{"Decl", "ImportDecl"}, {"Span", "source.Span"}}, "n.Span"},
 		{"NodeParam", []fieldspec{{"Decl", "VarDecl"}, {"Use", "bool"}, {"Span", "source.Span"}}, "n.Span"},
 	}

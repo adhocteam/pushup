@@ -300,13 +300,15 @@ func (g *generator) gatherOutputOps(node ast.Node, collector *outputCollector) {
 			span:    n.Span,
 		})
 
-		g.gatherOutputOps(n.Children, collector)
+		if n.NeedsClosingTag() {
+			g.gatherOutputOps(n.Children, collector)
 
-		collector.add(outputOp{
-			kind:    opStatic,
-			content: n.Tag.End(),
-			span:    n.Span,
-		})
+			collector.add(outputOp{
+				kind:    opStatic,
+				content: n.Tag.End(),
+				span:    n.Span,
+			})
+		}
 
 	case *ast.NodeGoStrExpr:
 		collector.add(outputOp{

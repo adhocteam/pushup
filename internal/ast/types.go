@@ -27,6 +27,13 @@ type Node interface {
 	Pos() source.Span
 }
 
+type ElementFlag int
+
+const (
+	ElementFlagSelfClosing ElementFlag = 1 << iota
+	ElementFlagVoid
+)
+
 // BEGIN GENERATED CODE NODE DEFINITIONS -- DO NOT EDIT
 // see types_test.go
 
@@ -114,7 +121,7 @@ type NodeElement struct {
 	StartTagNodes *NodeList
 	Children      *NodeList
 	Span          source.Span
-	IsSelfClosing bool
+	Flags         ElementFlag
 }
 
 func (n NodeElement) Pos() source.Span {
@@ -202,6 +209,12 @@ func (nl *NodeList) Slice(start, end int) *NodeList {
 
 func (nl *NodeList) Len() int {
 	return len(nl.Nodes)
+}
+
+// Extra NodeElement methods
+
+func (n *NodeElement) NeedsClosingTag() bool {
+	return n.Flags&ElementFlagSelfClosing == 0 && n.Flags&ElementFlagVoid == 0
 }
 
 type visitor interface {

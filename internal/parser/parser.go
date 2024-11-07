@@ -344,21 +344,21 @@ func (p *htmlParser) parseTextToken() []ast.Node {
 }
 
 // https://html.spec.whatwg.org/multipage/syntax.html#void-elements
-var voidElements = []string{
-	"area",
-	"base",
-	"br",
-	"col",
-	"embed",
-	"hr",
-	"img",
-	"input",
-	"link",
-	"meta",
-	"param",
-	"source",
-	"track",
-	"wbr",
+var voidElements = map[string]bool{
+	"area":   true,
+	"base":   true,
+	"br":     true,
+	"col":    true,
+	"embed":  true,
+	"hr":     true,
+	"img":    true,
+	"input":  true,
+	"link":   true,
+	"meta":   true,
+	"param":  true,
+	"source": true,
+	"track":  true,
+	"wbr":    true,
 }
 
 func (p *htmlParser) parseDocument() *ast.Document {
@@ -413,9 +413,12 @@ func (p *htmlParser) parseElementNode(toktyp html.TokenType) *ast.NodeElement {
 	elem.StartTagNodes = p.parseStartTag()
 	elem.Children = ast.NewNodeList()
 
+	if voidElements[string(p.tagname)] {
+		elem.Flags |= ast.ElementFlagVoid
+	}
+
 	if toktyp == html.SelfClosingTagToken {
-		elem.IsSelfClosing = true
-		return elem
+		elem.Flags |= ast.ElementFlagSelfClosing
 	}
 
 	return elem
@@ -429,7 +432,7 @@ func (p *htmlParser) parseElement() ast.Node {
 
 	result := p.parseElementNode(toktyp)
 
-	if !result.IsSelfClosing {
+	if result.NeedsClosingTag() {
 		p.advance()
 		result.Children.AppendFromList(p.parseChildren())
 
@@ -464,7 +467,7 @@ loop:
 			}
 		case html.StartTagToken, html.SelfClosingTagToken:
 			elem := p.parseElementNode(p.toktyp)
-			if p.toktyp == html.StartTagToken {
+			if elem.NeedsClosingTag() {
 				p.advance()
 				elem.Children = p.parseChildren()
 				elemStack = append(elemStack, elem)

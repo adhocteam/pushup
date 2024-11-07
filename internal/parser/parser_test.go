@@ -175,3 +175,176 @@ func fileExists(name string) bool {
 	_, err := os.Stat(name)
 	return err == nil
 }
+
+func TestVoidElements(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantVoid bool
+	}{
+		{
+			name:     "br element",
+			input:    "<br>",
+			wantVoid: true,
+		},
+		{
+			name:     "img element",
+			input:    "<img src=\"test.jpg\">",
+			wantVoid: true,
+		},
+		{
+			name:     "div element",
+			input:    "<div></div>",
+			wantVoid: false,
+		},
+		{
+			name:     "input element",
+			input:    "<input type=\"text\">",
+			wantVoid: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			p := New()
+
+			doc, err := p.Parse([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("Parse failed: %v", err)
+			}
+
+			elem, ok := doc.Nodes.Nodes[0].(*ast.NodeElement)
+			if !ok {
+				t.Fatal("Expected NodeElement")
+			}
+
+			isVoid := elem.Flags&ast.ElementFlagVoid != 0
+			if isVoid != tt.wantVoid {
+				t.Errorf("got void=%v, want void=%v", isVoid, tt.wantVoid)
+			}
+
+			needsClosing := elem.NeedsClosingTag()
+			if needsClosing == tt.wantVoid {
+				t.Errorf("NeedsClosingTag()=%v, want opposite of void=%v", needsClosing, tt.wantVoid)
+			}
+		})
+	}
+}
+
+func TestSelfClosingElements(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		wantSelfClose bool
+	}{
+		{
+			name:          "self-closing div",
+			input:         "<div/>",
+			wantSelfClose: true,
+		},
+		{
+			name:          "normal div",
+			input:         "<div></div>",
+			wantSelfClose: false,
+		},
+		{
+			name:          "self-closing custom element",
+			input:         "<my-component/>",
+			wantSelfClose: true,
+		},
+		{
+			name:          "self-closing with attributes",
+			input:         "<div class=\"test\"/>",
+			wantSelfClose: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			p := New()
+
+			doc, err := p.Parse([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("Parse failed: %v", err)
+			}
+
+			elem, ok := doc.Nodes.Nodes[0].(*ast.NodeElement)
+			if !ok {
+				t.Fatal("Expected NodeElement")
+			}
+
+			isSelfClosing := elem.Flags&ast.ElementFlagSelfClosing != 0
+			if isSelfClosing != tt.wantSelfClose {
+				t.Errorf("got self-closing=%v, want self-closing=%v", isSelfClosing, tt.wantSelfClose)
+			}
+
+			needsClosing := elem.NeedsClosingTag()
+			if needsClosing == tt.wantSelfClose {
+				t.Errorf("NeedsClosingTag()=%v, want opposite of self-closing=%v", needsClosing, tt.wantSelfClose)
+			}
+		})
+	}
+}
+
+func TestMixedElements(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		wantChildren bool
+	}{
+		{
+			name: "void element inside div",
+			input: `<div>
+                                <br>
+                                <img src="test.jpg">
+                        </div>`,
+			wantChildren: true,
+		},
+		{
+			name: "self-closing inside div",
+			input: `<div>
+                                <custom-elem/>
+                        </div>`,
+			wantChildren: true,
+		},
+		{
+			name:         "multiple void elements",
+			input:        "<hr><br><img src=\"test.jpg\">",
+			wantChildren: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			p := New()
+
+			doc, err := p.Parse([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("Parse failed: %v", err)
+			}
+
+			// For inputs with a wrapper div
+			if tt.wantChildren {
+				elem, ok := doc.Nodes.Nodes[0].(*ast.NodeElement)
+				if !ok {
+					t.Fatal("Expected NodeElement")
+				}
+
+				if elem.Children == nil || elem.Children.Len() == 0 {
+					t.Error("Expected children nodes but got none")
+				}
+			} else {
+				// For multiple top-level elements
+				if len(doc.Nodes.Nodes) < 2 {
+					t.Error("Expected multiple top-level nodes")
+				}
+			}
+		})
+	}
+}
