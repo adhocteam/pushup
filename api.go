@@ -78,5 +78,8 @@ func Param(name string, req *http.Request, props map[string]any) any {
 	if val, ok := props[name]; ok {
 		return val
 	}
+	if val := req.PathValue(name); val != "" {
+		return val
+	}
 	return req.FormValue(name)
 }

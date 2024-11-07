@@ -234,7 +234,7 @@ func routeForPage(path string) string {
 	}
 	for i := range dirs {
 		if strings.HasSuffix(dirs[i], "__param") {
-			dirs[i] = ":" + strings.TrimSuffix(dirs[i], "__param")
+			dirs[i] = "{" + strings.TrimSuffix(dirs[i], "__param") + "}"
 		}
 	}
 	route = "/" + strings.Join(dirs, "/")
@@ -242,6 +242,10 @@ func routeForPage(path string) string {
 		// indexes always have a trailing slash
 		route += "/"
 	}
+	if route[len(route)-1] == '/' {
+		route += "{$}"
+	}
+
 	return route
 }
 
