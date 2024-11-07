@@ -842,12 +842,11 @@ func (p *codeParser) parseStmtBlock() *ast.NodeList {
 	default:
 		list = p.transition()
 	}
-	// we should be at the closing '}' token here
-	if p.peek().tok != token.RBRACE {
-		if p.peek().tok == token.LSS {
-			p.errorf("there must be a single HTML element inside a Go code block, try wrapping them in a <text></text> pseudo-element")
-		} else {
-			p.errorf("expected closing '}', got %v", p.peek())
+	// we should be at the closing '}' token here, but if not, try parsing some
+	// more
+	for p.peek().tok != token.RBRACE {
+		if p.peek().tok == token.LSS { // an HTML element
+			list.AppendFromList(p.transition())
 		}
 	}
 	p.advance()

@@ -95,12 +95,6 @@ func TestParseSyntaxErrors(t *testing.T) {
 		column int
 	}{
 		{"^if", 1, 4},
-		{
-			`^if true {
-    <div></div>
-    <div></div>
-}`, 2, 16,
-		},
 		// FIXME(paulsmith): add more syntax errors
 	}
 

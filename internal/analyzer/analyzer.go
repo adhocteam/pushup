@@ -68,7 +68,7 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 				doc.Nodes.SetAt(e, n)
 				n++
 			}
-		case *ast.NodeElement, *ast.NodeLiteral, *ast.NodePartial:
+		case *ast.NodeElement, *ast.NodeLiteral, *ast.NodePartial, *ast.NodeFor, *ast.NodeIf:
 			doc.Nodes.SetAt(e, n)
 			n++
 		case *ast.NodeList:
