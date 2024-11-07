@@ -7,10 +7,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"text/template"
 
 	"github.com/adhocteam/pushup/internal/compiler"
 	"github.com/adhocteam/pushup/internal/scan"
+	"github.com/adhocteam/pushup/internal/up"
 )
 
 func Build(root string) error {
@@ -42,17 +44,31 @@ func generateMainGo(scanner *scan.Scanner) error {
 	project := scanner.Project()
 	modulePath := project.Module.Path
 
+	packagePaths := make(map[string]bool)
+	packagePaths[modulePath+"/pages"] = true
+	// This assumes scanner.Scan() has already been called
+	for _, file := range project.Files {
+		if file.Kind != up.Page {
+			continue
+		}
+
+		dir := filepath.Dir(file.RelPath)
+		if dir != "pages" {
+			pkgPath := modulePath + "/" + dir
+			packagePaths[pkgPath] = true
+		}
+	}
+
 	mainTmpl, err := template.New("main.go").Parse(mainDotGo)
 	if err != nil {
 		return fmt.Errorf("parsing main.go template: %w", err)
 	}
 
 	var mainSrc bytes.Buffer
-	pagesPkg := modulePath + "/" + "pages"
 	data := map[string]any{
-		"PagesPkg":   pagesPkg,
-		"ModulePath": modulePath,
-		"StaticDir":  scanner.Project().StaticDir,
+		"PackagePaths": sortPackagePaths(packagePaths),
+		"ModulePath":   modulePath,
+		"StaticDir":    scanner.Project().StaticDir,
 	}
 	if err := mainTmpl.Execute(&mainSrc, data); err != nil {
 		return fmt.Errorf("executing main.go template: %w", err)
@@ -70,6 +86,15 @@ func generateMainGo(scanner *scan.Scanner) error {
 	return nil
 }
 
+func sortPackagePaths(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for path := range m {
+		out = append(out, path)
+	}
+	sort.Strings(out)
+	return out
+}
+
 const mainDotGo = `package main
 
 import (
@@ -78,8 +103,8 @@ import (
     "github.com/adhocteam/pushup/route"
     "github.com/adhocteam/pushup/server"
 
-    _ "{{ .PagesPkg }}"
-    {{ if .StaticDir }}"{{ .ModulePath }}/static"{{ end }}
+    {{ range .PackagePaths }}_ "{{ . }}"
+    {{ end }}{{ if .StaticDir }}"{{ .ModulePath }}/static"{{ end }}
 )
 
 func main() {
