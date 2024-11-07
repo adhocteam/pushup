@@ -153,7 +153,7 @@ func (g *generator) generateResponder(typename string, handler *ast.NodeGoCode, 
 
 	if g.unit.File.Kind == up.Page {
 		g.printf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request) error {\n", methodReceiverName, typename)
-		g.println("w.Header().Set(\"Content-Type\", \"text/html\")")
+		g.println("w.Header().Set(\"Content-Type\", \"text/html; charset=utf-8\")")
 	} else if g.unit.File.Kind == up.Component {
 		g.printf("func (%s *%s) Respond(w http.ResponseWriter, req *http.Request, params map[string]any, children func(api.UserContext)) error {\n", methodReceiverName, typename)
 	} else {
@@ -248,7 +248,55 @@ func (g *generator) gatherOutputOps(node ast.Node, collector *outputCollector) {
 
 		collector.add(outputOp{
 			kind:    opStatic,
-			content: n.Tag.Start(),
+			content: "<" + n.Tag.Name,
+			span:    n.Span,
+		})
+
+		if len(n.Tag.Attrs) > 0 {
+			collector.add(outputOp{
+				kind:    opStatic,
+				content: " ",
+				span:    n.Span,
+			})
+		}
+
+		// TODO: the complexity of this could be better organized/encapsulated
+		for i, attr := range n.Tag.Attrs {
+			var lastSpan source.Span
+			for _, nameNode := range attr.NameNodes {
+				g.gatherOutputOps(nameNode, collector)
+				lastSpan = nameNode.Pos()
+			}
+			if len(attr.ValueNodes) > 0 {
+				collector.add(outputOp{
+					kind:    opStatic,
+					content: `="`,
+					span:    lastSpan,
+				})
+			}
+			for _, valueNode := range attr.ValueNodes {
+				g.gatherOutputOps(valueNode, collector)
+				lastSpan = valueNode.Pos()
+			}
+			if len(attr.ValueNodes) > 0 {
+				collector.add(outputOp{
+					kind:    opStatic,
+					content: `"`,
+					span:    lastSpan,
+				})
+			}
+			if i < len(n.Tag.Attrs)-1 {
+				collector.add(outputOp{
+					kind:    opStatic,
+					content: " ",
+					span:    lastSpan,
+				})
+			}
+		}
+
+		collector.add(outputOp{
+			kind:    opStatic,
+			content: ">",
 			span:    n.Span,
 		})
 
@@ -391,10 +439,9 @@ func (g *generator) outputComponentCallSite(node *ast.NodeElement, collector *ou
 					noNl:    true,
 				})
 			case *ast.NodeGoStrExpr:
-				g.addImport("fmt", "")
 				collector.add(outputOp{
 					kind:    opGoCode,
-					content: fmt.Sprintf("fmt.Sprint(%s)", node.Expr),
+					content: node.Expr,
 					span:    node.Pos(),
 					noNl:    true,
 				})

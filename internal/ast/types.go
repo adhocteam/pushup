@@ -174,9 +174,11 @@ func NewNodeList(nodes ...Node) *NodeList {
 
 func (nl *NodeList) All() iter.Seq[Node] {
 	return func(yield func(Node) bool) {
-		for _, node := range nl.Nodes {
-			if !yield(node) {
-				return
+		if nl != nil {
+			for _, node := range nl.Nodes {
+				if !yield(node) {
+					return
+				}
 			}
 		}
 	}

@@ -379,7 +379,7 @@ tokenLoop:
 		case html.StartTagToken, html.SelfClosingTagToken:
 			doc.Nodes.Append(p.parseElement())
 		case html.EndTagToken:
-			panic("UNREACHABLE")
+			p.errorf("unbalanced and unmatched end tag: %q", p.raw)
 		case html.DoctypeToken, html.CommentToken:
 			doc.Nodes.Append(p.emitLiteral())
 		case html.TextToken:
@@ -915,14 +915,30 @@ func (p *codeParser) parseParamKeyword() *ast.NodeParam {
 	result := &ast.NodeParam{}
 	result.Span.Start = int(p.acceptedToken.value.pos) // TODO: encapsulate this
 	switch p.peek().tok {
+	// parse Go type expression
 	case token.IDENT:
 		result.Decl.Ident = p.peek().lit
 		p.advance()
+		var expr string
+		if p.peek().tok == token.MUL {
+			expr = "*"
+			p.advance()
+		}
 		if !p.peek().tok.IsLiteral() {
 			p.errorf("expected literal, got %s", p.peek().tok)
 		}
-		result.Decl.Expr = p.peek().lit
+		expr += p.peek().lit
 		p.advance()
+		if p.peek().tok == token.PERIOD {
+			expr += "."
+			p.advance()
+			if !p.peek().tok.IsLiteral() {
+				p.errorf("expected literal, got %s", p.peek().tok)
+			}
+			expr += p.peek().lit
+			p.advance()
+		}
+		result.Decl.Expr = expr
 	case token.LPAREN:
 		p.advance()
 		result.Decl.Ident = p.peek().lit
@@ -1001,6 +1017,7 @@ func (p *codeParser) parseImportKeyword() *ast.NodeImport {
 			p.errorf("expected string, got %s", p.peek().tok)
 		}
 		e.Decl.Path = p.peek().lit[1 : len(p.peek().lit)-1]
+		p.advance()
 	case token.PERIOD:
 		e.Decl.PkgName = "."
 		p.advance()
@@ -1008,6 +1025,7 @@ func (p *codeParser) parseImportKeyword() *ast.NodeImport {
 			p.errorf("expected string, got %s", p.peek().tok)
 		}
 		e.Decl.Path = p.peek().lit
+		p.advance()
 	default:
 		p.errorf("unexpected token type after "+transSymStr+"import: %s", p.peek().tok)
 	}
