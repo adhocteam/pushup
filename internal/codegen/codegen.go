@@ -178,6 +178,9 @@ func (g *generator) generate() {
 }
 
 func (g *generator) generateFromOps(ops []outputOp) {
+	if len(ops) == 0 {
+		return
+	}
 	prev := ops[0]
 	for _, op := range ops {
 		if !op.noNl && !prev.noNl {
