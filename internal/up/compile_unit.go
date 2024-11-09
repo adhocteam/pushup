@@ -24,13 +24,12 @@ type CompileUnit struct {
 
 	// AST -> analyzer
 	Imports            []ast.ImportDecl
-	Handler            *ast.NodeGoCode
 	Nodes              *ast.NodeList
 	ComponentCallSites map[*ast.NodeElement]*ast.Tag
 
-	// Partials is a list of all top-level inline partials in this page (if
+	// Partials is a map of all top-level inline partials in this page (if
 	// File.Kind is a Page).
-	Partials []*Partial
+	Partials map[*ast.NodePartial]*Partial
 }
 
 func NewCompileUnit(project *Project, file *File) *CompileUnit {
@@ -38,6 +37,7 @@ func NewCompileUnit(project *Project, file *File) *CompileUnit {
 		Project:            project,
 		File:               file,
 		ComponentCallSites: make(map[*ast.NodeElement]*ast.Tag),
+		Partials:           make(map[*ast.NodePartial]*Partial),
 	}
 	return unit
 }
@@ -50,8 +50,7 @@ type Partial struct {
 	Children []*Partial
 
 	// Derived info
-	TypeName string // eg., "AboutPageListPartial"
-	Route    string // eg., "/about/list"
+	Route string // a net/http ServeMux pattern, eg., "/about/list", "/{$}"
 }
 
 // URLPath produces the URL path segment for the partial. this takes in to

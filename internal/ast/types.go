@@ -60,9 +60,8 @@ func (n NodeGoStrExpr) Pos() source.Span {
 var _ Node = (*NodeGoStrExpr)(nil)
 
 type NodeGoCode struct {
-	Context GoCodeContext
-	Code    string
-	Span    source.Span
+	Code string
+	Span source.Span
 }
 
 func (n NodeGoCode) Pos() source.Span {
@@ -277,13 +276,6 @@ func walk(v visitor, n Node) {
 	}
 	v.visit(nil)
 }
-
-type GoCodeContext int
-
-const (
-	InlineGoCode GoCodeContext = iota
-	HandlerGoCode
-)
 
 type NodeWrapper struct {
 	Type string

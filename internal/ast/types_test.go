@@ -25,7 +25,7 @@ func TestCodeGenAST(t *testing.T) {
 	nodespecs := []nodespec{
 		{"NodeLiteral", []fieldspec{{"Text", "string"}, {"Span", "source.Span"}}, "n.Span"},
 		{"NodeGoStrExpr", []fieldspec{{"Expr", "string"}, {"Span", "source.Span"}}, "n.Span"},
-		{"NodeGoCode", []fieldspec{{"Context", "GoCodeContext"}, {"Code", "string"}, {"Span", "source.Span"}}, "n.Span"},
+		{"NodeGoCode", []fieldspec{{"Code", "string"}, {"Span", "source.Span"}}, "n.Span"},
 		{"NodeIf", []fieldspec{{"Cond", "*NodeGoStrExpr"}, {"Then", "*NodeList"}, {"Alt", "Node"}}, "n.Cond.Pos()"},
 		{"NodeFor", []fieldspec{{"Clause", "*NodeGoCode"}, {"Block", "*NodeList"}}, "n.Clause.Pos()"},
 		{"NodePartial", []fieldspec{{"Name", "string"}, {"Span", "source.Span"}, {"Block", "*NodeList"}}, "n.Span"},

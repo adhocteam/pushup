@@ -709,22 +709,19 @@ func (p *codeParser) parseCode() ast.Node {
 	if tok == token.IF {
 		p.advance()
 		e = p.parseIfStmt()
-	} else if tok == token.IDENT && lit == "handler" {
-		p.advance()
-		e = p.parseHandlerKeyword()
-		// NOTE(paulsmith): there is a tricky bit here where an implicit
-		// expression in the form of an identifier token is next and we would
-		// not be able to distinguish it from a keyword. this is also a problem
-		// for name collisions because a user could create a variable named the
-		// same as a keyword and then later try to use it in an implicit
-		// expression, but it would be parsed with the keyword parsing flow
-		// (which probably would lead to an infinite loop because it wouldn't
-		// terminate and the user would be left with an unresponsive Pushup
-		// compiler). a fix could be to have a notion of allowed contexts in
-		// which a keyword block or an implicit expression could be used in the
-		// surrounding markup, and only parse for either depending on which
-		// context is current.
 	} else if tok == token.IDENT && lit == "partial" {
+		// NOTE(paulsmith): this is for the following keywords: there is a
+		// tricky bit here where an implicit expression in the form of an
+		// identifier token is next and we would not be able to distinguish it
+		// from a keyword. this is also a problem for name collisions because a
+		// user could create a variable named the same as a keyword and then
+		// later try to use it in an implicit expression, but it would be
+		// parsed with the keyword parsing flow (which probably would lead to
+		// an infinite loop because it wouldn't terminate and the user would be
+		// left with an unresponsive Pushup compiler). a fix could be to have a
+		// notion of allowed contexts in which a keyword block or an implicit
+		// expression could be used in the surrounding markup, and only parse
+		// for either depending on which context is current.
 		p.advance()
 		e = p.parsePartialKeyword()
 	} else if tok == token.IDENT && lit == "param" {
@@ -859,40 +856,6 @@ func (p *codeParser) parseStmtBlock() *ast.NodeList {
 	return list
 }
 
-// TODO(paulsmith): extract a common function with parseCodeKeyword
-func (p *codeParser) parseHandlerKeyword() *ast.NodeGoCode {
-	result := &ast.NodeGoCode{Context: ast.HandlerGoCode}
-	// we are one token past the 'handler' keyword
-	if p.peek().tok != token.LBRACE {
-		p.errorf("expected '{', got '%s'", p.peek().tok)
-	}
-	depth := 1
-	p.advance()
-	result.Span.Start = p.parser.offset
-	start := p.peek().pos
-loop:
-	for {
-		switch p.peek().tok {
-		case token.LBRACE:
-			depth++
-		case token.RBRACE:
-			depth--
-			if depth == 0 {
-				break loop
-			}
-		}
-		p.advance()
-	}
-	n := (p.file.Offset(p.prev().pos) - p.file.Offset(start)) + len(p.prev().String())
-	if p.peek().tok != token.RBRACE {
-		panic("")
-	}
-	p.advance()
-	result.Code = p.sourceFrom(start)[:n]
-	result.Span.End = result.Span.Start + n
-	return result
-}
-
 func (p *codeParser) parsePartialKeyword() *ast.NodePartial {
 	// enter function one past the "partial" IDENT token
 	// FIXME(paulsmith): we are currently requiring that the name of the
@@ -966,7 +929,7 @@ func (p *codeParser) expect(tok token.Token) {
 }
 
 func (p *codeParser) parseCodeBlock() *ast.NodeGoCode {
-	result := &ast.NodeGoCode{Context: ast.InlineGoCode}
+	result := new(ast.NodeGoCode)
 	if p.peek().tok != token.LBRACE {
 		p.errorf("expected '{', got '%s'", p.peek().tok)
 	}

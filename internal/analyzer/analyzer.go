@@ -24,6 +24,7 @@ func (f analyzeFunc) Analyze(doc *ast.Document, unit *up.CompileUnit) error {
 func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 	unit.TypeName = deriveTypeName(unit.File)
 	if unit.File.Kind == up.Page {
+		// TODO: this assumes unit.File is properly initialized
 		unit.Route = routeForPage(unit.File.RelPath)
 	}
 
@@ -57,18 +58,7 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 		switch e := e.(type) {
 		case *ast.NodeImport:
 			unit.Imports = append(unit.Imports, e.Decl)
-		case *ast.NodeGoCode:
-			if e.Context == ast.HandlerGoCode {
-				if unit.Handler != nil {
-					err = fmt.Errorf("only one handler per page can be defined")
-					return false
-				}
-				unit.Handler = e
-			} else {
-				doc.Nodes.SetAt(e, n)
-				n++
-			}
-		case *ast.NodeElement, *ast.NodeLiteral, *ast.NodePartial, *ast.NodeFor, *ast.NodeIf:
+		case *ast.NodeElement, *ast.NodeLiteral, *ast.NodePartial, *ast.NodeFor, *ast.NodeIf, *ast.NodeGoCode:
 			doc.Nodes.SetAt(e, n)
 			n++
 		case *ast.NodeList:
@@ -163,7 +153,6 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 					Name:   e.Name,
 					Parent: currentPartial,
 				}
-				p.TypeName = derivePartialTypeName(unit.File, p)
 				p.Route = routeForPartial(unit.Route, p)
 				if currentPartial != nil {
 					currentPartial.Children = append(currentPartial.Children, p)
@@ -172,7 +161,7 @@ func analyze(doc *ast.Document, unit *up.CompileUnit) error {
 				currentPartial = p
 				f(e.Block)
 				currentPartial = prevPartial
-				unit.Partials = append(unit.Partials, p)
+				unit.Partials[e] = p
 				return false
 			case *ast.NodeImport:
 				// nothing to do
@@ -205,12 +194,6 @@ func deriveTypeName(file *up.File) string {
 		typename += "Page"
 	}
 	return typename
-}
-
-func derivePartialTypeName(file *up.File, partial *up.Partial) string {
-	filename := filepath.Base(file.Path)
-	filename = strings.TrimSuffix(filename, filepath.Ext(filename))
-	return cleanTitleCase(filename) + "Page" + cleanTitleCase(partial.URLPath()) + "Partial"
 }
 
 // routeForPage produces the URL path route from the name of the Pushup page.
@@ -252,6 +235,10 @@ func routeForPage(path string) string {
 func routeForPartial(pagePath string, partial *up.Partial) string {
 	if pagePath == "" {
 		pagePath = "/"
+	}
+
+	if strings.HasSuffix(pagePath, "/{$}") {
+		pagePath = pagePath[:len(pagePath)-len("/{$}")]
 	}
 
 	if !strings.HasSuffix(pagePath, "/") {

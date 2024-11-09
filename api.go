@@ -31,47 +31,67 @@ func PrintEscaped(w io.Writer, val any) {
 	}
 }
 
-type UserContext interface {
+type PushupContext interface {
 	Request() *http.Request
 	Writer() http.ResponseWriter
 	Params() map[string]any
-	Children() func(UserContext)
+	Children() func(PushupContext)
 }
 
-type pushupResponseWriter struct {
+type ResponseWriter struct {
 	http.ResponseWriter
-	buf *bytes.Buffer
+	buf     *bytes.Buffer
+	discard bool
 }
 
-func NewResponseWriter(w http.ResponseWriter) *pushupResponseWriter {
-	return &pushupResponseWriter{
+func NewResponseWriter(w http.ResponseWriter) *ResponseWriter {
+	var discard bool
+	if rw, ok := w.(*ResponseWriter); ok {
+		discard = rw.discard
+	}
+	return &ResponseWriter{
 		ResponseWriter: w,
 		buf:            new(bytes.Buffer),
+		discard:        discard,
 	}
 }
 
-func (w *pushupResponseWriter) Write(b []byte) (int, error) {
+func (w *ResponseWriter) Write(b []byte) (int, error) {
+	if w.discard {
+		return len(b), nil
+	}
 	return w.buf.Write(b)
 }
 
-func (w *pushupResponseWriter) Flush() {
+func (w *ResponseWriter) flush() (int64, error) {
+	if rw, ok := w.ResponseWriter.(*ResponseWriter); ok {
+		return w.buf.WriteTo(rw.buf)
+	}
+	return w.buf.WriteTo(w.ResponseWriter)
+}
+
+func (w *ResponseWriter) Flush() {
 	_, err := w.flush()
 	if err != nil {
 		panic(fmt.Sprintf("unexpected error flushing buffer to underlying response writer: %v", err))
 	}
 }
 
-func (w *pushupResponseWriter) FlushError() error {
+func (w *ResponseWriter) FlushError() error {
 	_, err := w.flush()
 	return err
 }
 
-func (w *pushupResponseWriter) flush() (int64, error) {
-	return w.buf.WriteTo(w.ResponseWriter)
+func (w *ResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
-func (w *pushupResponseWriter) Unwrap() http.ResponseWriter {
-	return w.ResponseWriter
+func (w *ResponseWriter) SetDiscard() {
+	w.discard = true
+}
+
+func (w *ResponseWriter) UnsetDiscard() {
+	w.discard = false
 }
 
 func Param(name string, req *http.Request, props map[string]any) any {
