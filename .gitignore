@@ -1,3 +1,4 @@
 .direnv/
 .envrc
 /pushup
+node_modules/

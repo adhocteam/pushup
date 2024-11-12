@@ -1,0 +1,19 @@
+{
+  "name": "tree-sitter-pushup",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-html": "0.23.2",
+    "tree-sitter-go": "0.23.3"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24.4"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "grammars": [
+    {
+      "name": "pushup",
+      "camelcase": "Pushup",
+      "scope": "source.pushup",
+      "file-types": [
+        ".up"
+      ],
+      "injection-regex": "^pushup$"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Pushup is a web framework for the Go programming language",
+    "authors": [
+      {
+        "name": "Paul Smith",
+        "email": "paul@adhoc.team",
+        "url": "https://pauladamsmith.com/"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/adhocteam/pushup"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": true,
+    "node": true,
+    "python": true,
+    "rust": true,
+    "swift": true
+  }
+}

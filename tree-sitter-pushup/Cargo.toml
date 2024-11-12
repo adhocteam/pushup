@@ -1,0 +1,27 @@
+[package]
+name = "tree-sitter-pushup"
+description = "Pushup is a web framework for the Go programming language"
+version = "0.1.0"
+authors = ["Paul Smith <paul@adhoc.team>"]
+license = "MIT"
+readme = "README.md"
+keywords = ["incremental", "parsing", "tree-sitter", "pushup"]
+categories = ["parsing", "text-editors"]
+repository = "https://github.com/adhocteam/pushup"
+edition = "2021"
+autoexamples = false
+
+build = "bindings/rust/build.rs"
+include = ["bindings/rust/*", "grammar.js", "queries/*", "src/*", "tree-sitter.json"]
+
+[lib]
+path = "bindings/rust/lib.rs"
+
+[dependencies]
+tree-sitter-language = "0.1"
+
+[build-dependencies]
+cc = "1.1.22"
+
+[dev-dependencies]
+tree-sitter = "0.24.4"
