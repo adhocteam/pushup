@@ -3,7 +3,8 @@ package lexer
 import "testing"
 
 func TestLexer(t *testing.T) {
-	src := []byte(`
+	src := []byte(`<!DOCTYPE html>
+<!-- foo -->
 ^if x == 1 {
     <p style="color: red" class=^class>
         hello

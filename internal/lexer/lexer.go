@@ -2,16 +2,19 @@ package lexer
 
 import (
 	"bytes"
-	"fmt"
+	"go/scanner"
+	"go/token"
 	"iter"
+	"log/slog"
 	"unicode/utf8"
 
 	"github.com/adhocteam/pushup/internal/source"
+	"golang.org/x/net/html"
 )
 
 type Lexer struct {
 	source  []byte
-	mode    mode
+	state   state
 	start   int
 	pos     int
 	current rune
@@ -20,15 +23,14 @@ type Lexer struct {
 func New(source []byte) *Lexer {
 	l := &Lexer{
 		source: source,
-		mode:   modeHTML,
+		state:  stateHTML,
 	}
-	l.advance()
 	return l
 }
 
 func (l *Lexer) advance() {
 	var size int
-	l.current, size = utf8.DecodeRune(l.source[l.pos:])
+	l.current, size = utf8.DecodeRune(l.src())
 	l.pos += size
 }
 
@@ -46,37 +48,74 @@ func (l *Lexer) Scan() iter.Seq[Token] {
 	}
 }
 
+func (l *Lexer) src() []byte {
+	slog.Info("src", "slice", l.source[l.pos:], "pos", l.pos)
+	return l.source[l.pos:]
+}
+
 func (l *Lexer) next() Token {
-	switch l.mode {
-	case modeHTML:
-		if l.current == utf8.RuneError {
-			return l.emit(ILLEGAL)
-		}
-
-		switch l.current {
-		case ' ', '\t', '\n':
-			for {
-				if !isWhitespace(l.current) {
-					l.backup()
-					break
-				}
-				l.advance()
+	slog.Info("next()", "state", l.state)
+	switch l.state {
+	case stateHTML:
+		z := html.NewTokenizer(bytes.NewReader(l.src()))
+		token := z.Next()
+		raw := z.Raw()
+		slog.Info("HTML token", "token", token, "raw", raw)
+		switch token {
+		case html.ErrorToken:
+			return l.emit(EOF)
+		case html.TextToken:
+			idx := bytes.IndexRune(raw, '^')
+			slog.Info("text", "idx", idx)
+			if idx == -1 {
+				l.pos += len(raw)
+				return l.emit(HTML_TEXT)
 			}
-			return l.emit(WHITESPACE)
-		case '^':
+			l.pos += idx + 1 // skip past '^'
+			l.switchState(stateGo)
+			return l.next()
+		case html.StartTagToken:
+		case html.SelfClosingTagToken:
+		case html.EndTagToken:
+		case html.CommentToken:
+			l.pos += len(raw)
+			return l.emit(HTML_TEXT)
+		case html.DoctypeToken:
+			l.pos += len(raw)
+			return l.emit(HTML_TEXT)
+		}
+		// TODO: push multiple tokens on stack to emit
+		l.pos += len(raw)
+		return l.emit(LT)
+
+	case stateGo:
+		var s scanner.Scanner
+		fset := token.NewFileSet()
+		file := fset.AddFile("", l.pos, len(l.src()))
+		s.Init(file, l.src(), nil, scanner.ScanComments)
+		for {
+			pos, tok, lit := s.Scan()
+			// TODO: next two lines are a hack
+			l.pos = int(pos)
 			l.advance()
-			if l.current == '^' {
-				// TODO: handle escaped ^^
+			slog.Info("go scanner", "l.pos", l.pos, "pos", pos, "tok", tok, "lit", lit, "file.Offset(pos)", file.Offset(pos), "fset.Position(pos)", fset.Position(pos))
+			switch tok {
+			case token.EOF:
+				break
+			case token.LBRACE:
+				l.advance()
+				l.switchState(stateHTML)
+				return l.emit(GO_EXPR)
 			}
-			return l.transition()
-		default:
-			panic(fmt.Sprintf("unhandled rune: %q", l.current))
 		}
-
-	case modeGo:
 	}
 
 	return l.emit(EOF)
+}
+
+func (l *Lexer) switchState(s state) {
+	slog.Info("switch state", "exiting", l.state, "entering", s)
+	l.state = s
 }
 
 func (l *Lexer) backup() {
@@ -106,7 +145,7 @@ func (l *Lexer) matchesPrefix(b []byte) bool {
 }
 
 func (l *Lexer) transition() Token {
-	l.mode = modeGo
+	defer l.switchState(stateGo)
 
 	for kw, tokType := range keywords {
 		if l.matchesPrefix([]byte(kw)) {
@@ -132,9 +171,20 @@ func isWhitespace(ch rune) bool {
 	return ch == ' ' || ch == '\t' || ch == '\n'
 }
 
-type mode int
+type state int
 
 const (
-	modeHTML mode = iota
-	modeGo
+	stateHTML state = iota
+	stateGo
 )
+
+func (s state) String() string {
+	switch s {
+	case stateHTML:
+		return "stateHTML"
+	case stateGo:
+		return "stateGo"
+	default:
+		panic("")
+	}
+}

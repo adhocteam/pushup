@@ -9,6 +9,7 @@ const (
 	EOF
 
 	HTML_IDENT // a, div, layout.Base
+	HTML_TEXT
 
 	GO_IDENT
 	GO_EXPR                // x > 0
@@ -42,6 +43,7 @@ var tokenTypes = [...]string{
 	EOF:     "EOF",
 
 	HTML_IDENT: "HTML_IDENT",
+	HTML_TEXT:  "HTML_TEXT",
 
 	GO_IDENT:               "GO_IDENT",
 	GO_EXPR:                "GO_EXPR",
