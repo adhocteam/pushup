@@ -14,7 +14,7 @@ import (
 
 func main() {
 	flag.Parse()
-	packageName := "parser"
+	packageName := "entities"
 	if flag.NArg() > 0 {
 		packageName = flag.Arg(0)
 	}

@@ -10,6 +10,10 @@ const (
 
 	HTML_IDENT // a, div, layout.Base
 	HTML_TEXT
+	HTML_START_TAG_NAME  // "<p" -- i.e., opening < and tag name but no attributes or closing >
+	HTML_GT              // ">"
+	HTML_SELF_CLOSING_GT // "/>"
+	HTML_END_TAG         // "</p>"
 
 	GO_IDENT
 	GO_EXPR                // x > 0
@@ -42,8 +46,12 @@ var tokenTypes = [...]string{
 	ILLEGAL: "ILLEGAL",
 	EOF:     "EOF",
 
-	HTML_IDENT: "HTML_IDENT",
-	HTML_TEXT:  "HTML_TEXT",
+	HTML_IDENT:           "HTML_IDENT",
+	HTML_TEXT:            "HTML_TEXT",
+	HTML_START_TAG_NAME:  "HTML_START_TAG_NAME",
+	HTML_GT:              "HTML_GT",
+	HTML_SELF_CLOSING_GT: "HTML_SELF_CLOSING_GT",
+	HTML_END_TAG:         "HTML_END_TAG",
 
 	GO_IDENT:               "GO_IDENT",
 	GO_EXPR:                "GO_EXPR",

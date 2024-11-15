@@ -1,5 +1,5 @@
 // this file is mechanically generated, do not edit
-package parser
+package lexer
 
 var namedCharRefs = map[string]string{
 	"&AElig":                            "Æ",

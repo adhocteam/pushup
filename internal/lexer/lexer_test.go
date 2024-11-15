@@ -5,6 +5,7 @@ import "testing"
 func TestLexer(t *testing.T) {
 	src := []byte(`<!DOCTYPE html>
 <!-- foo -->
+<br><hr />
 ^if x == 1 {
     <p style="color: red" class=^class>
         hello

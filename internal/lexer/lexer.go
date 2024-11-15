@@ -2,22 +2,39 @@ package lexer
 
 import (
 	"bytes"
+	"errors"
 	"go/scanner"
 	"go/token"
+	"io"
 	"iter"
 	"log/slog"
+	"strconv"
 	"unicode/utf8"
 
+	"github.com/adhocteam/pushup/internal/ast"
 	"github.com/adhocteam/pushup/internal/source"
 	"golang.org/x/net/html"
 )
 
 type Lexer struct {
-	source  []byte
-	state   state
+	source []byte
+	state  state
+
 	start   int
 	pos     int
 	current rune
+
+	// html state
+	hz     *html.Tokenizer
+	htok   html.TokenType
+	hraw   []byte
+	hattrs []*ast.Attr
+	hatidx int
+
+	// go state
+	gfile    *token.File
+	gfset    *token.FileSet
+	gscanner *scanner.Scanner
 }
 
 func New(source []byte) *Lexer {
@@ -54,59 +71,125 @@ func (l *Lexer) src() []byte {
 }
 
 func (l *Lexer) next() Token {
-	slog.Info("next()", "state", l.state)
-	switch l.state {
-	case stateHTML:
-		z := html.NewTokenizer(bytes.NewReader(l.src()))
-		token := z.Next()
-		raw := z.Raw()
-		slog.Info("HTML token", "token", token, "raw", raw)
-		switch token {
-		case html.ErrorToken:
-			return l.emit(EOF)
-		case html.TextToken:
-			idx := bytes.IndexRune(raw, '^')
-			slog.Info("text", "idx", idx)
-			if idx == -1 {
-				l.pos += len(raw)
+	for {
+		slog.Info("next()", "state", l.state)
+
+		switch l.state {
+		case stateHTML:
+			l.hz = html.NewTokenizer(bytes.NewReader(l.src()))
+			l.htok = l.hz.Next()
+			l.hraw = l.hz.Raw()
+			slog.Info("HTML token", "token", l.htok, "raw", l.hraw)
+
+			switch l.htok {
+			case html.ErrorToken:
+				err := l.hz.Err()
+				if errors.Is(err, io.EOF) {
+					return l.emit(EOF)
+				}
+				slog.Error("HTML tokenizer", "error", err)
+			case html.TextToken:
+				idx := bytes.IndexRune(l.hraw, '^')
+				slog.Info("text", "idx", idx)
+				if idx == -1 {
+					l.pos += len(l.hraw)
+					return l.emit(HTML_TEXT)
+				}
+				l.pos += idx
+				token := l.emit(HTML_TEXT) // emit text preceding the transition
+				l.pos += 1                 // skip past '^'
+				l.start = l.pos
+				l.switchState(stateGo)
+				return token
+			case html.StartTagToken, html.SelfClosingTagToken:
+				tagName, hasAttrs := l.hz.TagName()
+				n := len("<" + string(tagName))
+				l.pos += n
+				if hasAttrs {
+					// TODO: need to fix up the source position values of the attr
+					// names and values - they come back from scanAttrs() relative to
+					// the raw tag string, not the overall source
+					var err error
+					l.hatidx = 0
+					l.hattrs, err = scanAttrs(string(l.hraw))
+					if err != nil {
+						slog.Error("scanAttrs", "error", err)
+						return l.emit(ILLEGAL)
+					}
+					l.switchState(stateHTMLAttr)
+				} else {
+					l.switchState(stateHTMLAfterLastAttr)
+				}
+				l.hraw = l.hraw[n:]
+				return l.emit(HTML_START_TAG_NAME)
+			case html.EndTagToken:
+				l.pos += len(l.hraw)
+				return l.emit(HTML_END_TAG)
+			case html.CommentToken:
+				l.pos += len(l.hraw)
+				return l.emit(HTML_TEXT)
+			case html.DoctypeToken:
+				l.pos += len(l.hraw)
 				return l.emit(HTML_TEXT)
 			}
-			l.pos += idx + 1 // skip past '^'
-			l.switchState(stateGo)
-			return l.next()
-		case html.StartTagToken:
-		case html.SelfClosingTagToken:
-		case html.EndTagToken:
-		case html.CommentToken:
-			l.pos += len(raw)
-			return l.emit(HTML_TEXT)
-		case html.DoctypeToken:
-			l.pos += len(raw)
-			return l.emit(HTML_TEXT)
-		}
-		// TODO: push multiple tokens on stack to emit
-		l.pos += len(raw)
-		return l.emit(LT)
 
-	case stateGo:
-		var s scanner.Scanner
-		fset := token.NewFileSet()
-		file := fset.AddFile("", l.pos, len(l.src()))
-		s.Init(file, l.src(), nil, scanner.ScanComments)
-		for {
-			pos, tok, lit := s.Scan()
-			// TODO: next two lines are a hack
+			l.pos += len(l.hraw)
+			return l.emit(LT)
+
+		case stateHTMLAttr:
+			if l.hatidx < len(l.hattrs)-1 {
+				attr := l.hattrs[l.hatidx]
+				l.hatidx++
+				slog.Info("attrs", "idx", l.hatidx, "name", attr.Name, "value", attr.Value)
+			}
+
+		case stateHTMLAfterLastAttr:
+			for l.hraw[0] == ' ' || l.hraw[0] == '\n' || l.hraw[0] == '\t' {
+				l.hraw = l.hraw[1:]
+				l.pos++
+			}
+			if bytes.Equal(l.hraw, []byte(">")) {
+				l.pos += 1
+				l.switchState(stateHTML)
+				return l.emit(HTML_GT)
+			} else if bytes.Equal(l.hraw, []byte("/>")) {
+				l.pos += 2
+				l.switchState(stateHTML)
+				return l.emit(HTML_SELF_CLOSING_GT)
+			} else {
+				slog.Info("remaining", "l.hraw", l.hraw)
+			}
+
+		case stateGo:
+			l.gscanner = new(scanner.Scanner)
+			l.gfset = token.NewFileSet()
+			l.gfile = l.gfset.AddFile("", l.pos, len(l.src()))
+			l.gscanner.Init(l.gfile, l.src(), nil, scanner.ScanComments)
+			pos, tok, lit := l.gscanner.Scan()
+			slog.Debug("go scanner", "l.pos", l.pos, "pos", pos, "tok", tok, "lit", lit, "file.Offset(pos)", l.gfile.Offset(pos), "fset.Position(pos)", l.gfset.Position(pos))
 			l.pos = int(pos)
-			l.advance()
-			slog.Info("go scanner", "l.pos", l.pos, "pos", pos, "tok", tok, "lit", lit, "file.Offset(pos)", file.Offset(pos), "fset.Position(pos)", fset.Position(pos))
 			switch tok {
 			case token.EOF:
 				break
-			case token.LBRACE:
-				l.advance()
-				l.switchState(stateHTML)
-				return l.emit(GO_EXPR)
+			case token.IF:
+				l.pos += len("if")
+				l.switchState(stateGoCondExpr)
+				return l.emit(IF)
 			}
+
+		case stateGoCondExpr:
+			pos, tok, lit := l.gscanner.Scan()
+			for tok != token.LBRACE {
+				l.pos = int(pos)
+				pos, tok, lit = l.gscanner.Scan()
+				slog.Info("stateGoCondExpr", "pos", pos, "tok", tok, "lit", lit)
+			}
+			l.pos = int(pos)
+			token := l.emit(GO_EXPR)
+			l.pos++ // skip past the {
+			l.start = l.pos
+			l.switchState(stateHTML)
+			return token
 		}
 	}
 
@@ -175,16 +258,27 @@ type state int
 
 const (
 	stateHTML state = iota
+	stateHTMLAttr
+	stateHTMLAfterLastAttr
 	stateGo
+	stateGoCondExpr
 )
 
+var states = [...]string{
+	stateHTML:              "stateHTML",
+	stateHTMLAttr:          "stateHTMLAttr",
+	stateHTMLAfterLastAttr: "stateHTMLAfterLastAttr",
+	stateGo:                "stateGo",
+	stateGoCondExpr:        "stateGoCondExpr",
+}
+
 func (s state) String() string {
-	switch s {
-	case stateHTML:
-		return "stateHTML"
-	case stateGo:
-		return "stateGo"
-	default:
-		panic("")
+	str := ""
+	if 0 <= s && s < state(len(states)) {
+		str = states[s]
 	}
+	if str == "" {
+		str = "state(" + strconv.Itoa(int(s)) + ")"
+	}
+	return str
 }
