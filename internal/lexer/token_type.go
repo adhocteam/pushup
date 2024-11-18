@@ -14,6 +14,10 @@ const (
 	HTML_GT              // ">"
 	HTML_SELF_CLOSING_GT // "/>"
 	HTML_END_TAG         // "</p>"
+	HTML_ATTR_NAME_TEXT  // attribute text in the name position
+	HTML_ATTR_VALUE_TEXT // attribute text in the value position
+	HTML_ATTR_NAME_GO    // attribute Go code in the name position
+	HTML_ATTR_VALUE_GO   // attribute Go code in the value position
 
 	GO_IDENT
 	GO_EXPR                // x > 0
@@ -52,6 +56,10 @@ var tokenTypes = [...]string{
 	HTML_GT:              "HTML_GT",
 	HTML_SELF_CLOSING_GT: "HTML_SELF_CLOSING_GT",
 	HTML_END_TAG:         "HTML_END_TAG",
+	HTML_ATTR_NAME_TEXT:  "HTML_ATTR_NAME_TEXT",
+	HTML_ATTR_VALUE_TEXT: "HTML_ATTR_VALUE_TEXT",
+	HTML_ATTR_NAME_GO:    "HTML_ATTR_NAME_GO",
+	HTML_ATTR_VALUE_GO:   "HTML_ATTR_VALUE_GO",
 
 	GO_IDENT:               "GO_IDENT",
 	GO_EXPR:                "GO_EXPR",

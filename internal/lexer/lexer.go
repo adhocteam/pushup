@@ -3,18 +3,26 @@ package lexer
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"go/scanner"
 	"go/token"
 	"io"
 	"iter"
 	"log/slog"
+	"os"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/adhocteam/pushup/internal/ast"
 	"github.com/adhocteam/pushup/internal/source"
+	"github.com/lmittmann/tint"
 	"golang.org/x/net/html"
 )
+
+func init() {
+	slog.SetDefault(slog.New(tint.NewHandler(os.Stderr, nil)))
+}
 
 type Lexer struct {
 	source []byte
@@ -25,11 +33,13 @@ type Lexer struct {
 	current rune
 
 	// html state
-	hz     *html.Tokenizer
-	htok   html.TokenType
-	hraw   []byte
-	hattrs []*ast.Attr
-	hatidx int
+	hz      *html.Tokenizer
+	htok    html.TokenType
+	hraw    []byte
+	hattrs  []*ast.Attr
+	hatidx  int              // current attribute
+	hatname source.StringPos // current attribute name being consumed
+	hatval  source.StringPos // current attribute value being consumed
 
 	// go state
 	gfile    *token.File
@@ -66,20 +76,20 @@ func (l *Lexer) Scan() iter.Seq[Token] {
 }
 
 func (l *Lexer) src() []byte {
-	slog.Info("src", "slice", l.source[l.pos:], "pos", l.pos)
+	slog.Info("src", "slice", string(l.source[l.pos:]), "pos", l.pos)
 	return l.source[l.pos:]
 }
 
 func (l *Lexer) next() Token {
 	for {
-		slog.Info("next()", "state", l.state)
+		slog.Info("next token", "state", l.state)
 
 		switch l.state {
 		case stateHTML:
 			l.hz = html.NewTokenizer(bytes.NewReader(l.src()))
 			l.htok = l.hz.Next()
 			l.hraw = l.hz.Raw()
-			slog.Info("HTML token", "token", l.htok, "raw", l.hraw)
+			slog.Info("HTML token", "token", l.htok, "raw", string(l.hraw))
 
 			switch l.htok {
 			case html.ErrorToken:
@@ -88,6 +98,7 @@ func (l *Lexer) next() Token {
 					return l.emit(EOF)
 				}
 				slog.Error("HTML tokenizer", "error", err)
+
 			case html.TextToken:
 				idx := bytes.IndexRune(l.hraw, '^')
 				slog.Info("text", "idx", idx)
@@ -100,34 +111,44 @@ func (l *Lexer) next() Token {
 				l.pos += 1                 // skip past '^'
 				l.start = l.pos
 				l.switchState(stateGo)
-				return token
+				// don't emit an empty token
+				if idx > 0 {
+					return token
+				}
+				continue
+
 			case html.StartTagToken, html.SelfClosingTagToken:
 				tagName, hasAttrs := l.hz.TagName()
 				n := len("<" + string(tagName))
-				l.pos += n
 				if hasAttrs {
-					// TODO: need to fix up the source position values of the attr
-					// names and values - they come back from scanAttrs() relative to
-					// the raw tag string, not the overall source
 					var err error
 					l.hatidx = 0
-					l.hattrs, err = scanAttrs(string(l.hraw))
+					l.hattrs, err = scanAttrs(string(l.hraw), l.pos)
 					if err != nil {
 						slog.Error("scanAttrs", "error", err)
 						return l.emit(ILLEGAL)
 					}
 					l.switchState(stateHTMLAttr)
+					// TODO: this is fiddly logic
+					l.pos += n          // move past the "<tagname "
+					l.hraw = l.hraw[n:] // track same
+					token := l.emit(HTML_START_TAG_NAME)
+					return token
 				} else {
 					l.switchState(stateHTMLAfterLastAttr)
+					l.pos += n
+					l.hraw = l.hraw[n:]
+					return l.emit(HTML_START_TAG_NAME)
 				}
-				l.hraw = l.hraw[n:]
-				return l.emit(HTML_START_TAG_NAME)
+
 			case html.EndTagToken:
 				l.pos += len(l.hraw)
 				return l.emit(HTML_END_TAG)
+
 			case html.CommentToken:
 				l.pos += len(l.hraw)
 				return l.emit(HTML_TEXT)
+
 			case html.DoctypeToken:
 				l.pos += len(l.hraw)
 				return l.emit(HTML_TEXT)
@@ -137,34 +158,109 @@ func (l *Lexer) next() Token {
 			return l.emit(LT)
 
 		case stateHTMLAttr:
-			if l.hatidx < len(l.hattrs)-1 {
-				attr := l.hattrs[l.hatidx]
-				l.hatidx++
-				slog.Info("attrs", "idx", l.hatidx, "name", attr.Name, "value", attr.Value)
+			if len(l.hattrs) == 0 {
+				l.switchState(stateHTMLAfterLastAttr)
+				continue
 			}
 
+			l.hatname = l.hattrs[0].Name
+			l.hatval = l.hattrs[0].Value
+
+			// advance to start of attribute name but that's
+			// indexed from beginning of tag <, so adjust for that
+			l.pos = int(l.hatname.Start)
+			l.start = l.pos
+
+			l.switchState(stateHTMLAttrName)
+
+		case stateHTMLAttrName:
+			slog.Info("html attr name", "src", string(l.src()), "start", l.hatname.Start, "text", l.hatname.Text)
+			l.start = int(l.hatname.Start)
+			idx := strings.IndexRune(l.hatname.Text, '^')
+			// No transition
+			if idx == -1 {
+				l.pos = l.start + len(l.hatname.Text)
+				token := l.emit(HTML_ATTR_NAME_TEXT)
+				l.switchState(stateHTMLAttrValue)
+				l.pos = int(l.hatval.Start)
+				return token
+			} else if idx > 0 {
+				l.pos += idx
+				token := l.emit(HTML_ATTR_NAME_TEXT)
+				l.start++
+				l.switchState(stateHTMLAttrNameGoExpr)
+				return token
+			}
+			// idx == 0
+			l.start++
+			l.switchState(stateHTMLAttrNameGoExpr)
+			continue
+
+		case stateHTMLAttrValue:
+			slog.Info("html attr value", "src", string(l.src()), "start", l.hatval.Start, "text", l.hatval.Text)
+			l.start = int(l.hatval.Start)
+			idx := strings.IndexRune(l.hatval.Text, '^')
+			// No transition
+			if idx == -1 {
+				l.pos = l.start + len(l.hatval.Text)
+				token := l.emit(HTML_ATTR_VALUE_TEXT)
+				l.hattrs = l.hattrs[1:]
+				l.switchState(stateHTMLAttr)
+				return token
+			} else if idx > 0 {
+				l.pos += idx
+				token := l.emit(HTML_ATTR_VALUE_TEXT)
+				l.start++
+				l.switchState(stateHTMLAttrValueGoExpr)
+				return token
+			}
+			// idx == 0
+			l.start++
+			l.pos += idx
+			l.switchState(stateHTMLAttrValueGoExpr)
+			continue
+
+		case stateHTMLAttrNameGoExpr:
+			slog.Info("attr name go expr", "l.pos", l.pos, "src", l.src())
+			l.pos = int(l.hatname.Start) + len(l.hatname.Text)
+			l.switchState(stateHTMLAttrValue)
+			return l.emit(HTML_ATTR_NAME_GO)
+
+		case stateHTMLAttrValueGoExpr:
+			slog.Info("attr value go expr", "l.pos", l.pos, "src", string(l.src()))
+			l.pos = int(l.hatval.Start) + len(l.hatval.Text)
+			l.switchState(stateHTMLAttr)
+			l.hattrs = l.hattrs[1:]
+			return l.emit(HTML_ATTR_VALUE_GO)
+
 		case stateHTMLAfterLastAttr:
-			for l.hraw[0] == ' ' || l.hraw[0] == '\n' || l.hraw[0] == '\t' {
-				l.hraw = l.hraw[1:]
+			// There may be arbitrary whitespace between the end of the
+			// attributes (or tag name, if no attributes) and the > or /> of
+			// the tag.
+			src := l.src()
+			for src[0] == ' ' || src[0] == '\n' || src[0] == '\t' {
+				src = src[1:]
 				l.pos++
 			}
-			if bytes.Equal(l.hraw, []byte(">")) {
+			slog.Info("after last", "src", string(src))
+			if bytes.HasPrefix(src, []byte(">")) {
 				l.pos += 1
 				l.switchState(stateHTML)
 				return l.emit(HTML_GT)
-			} else if bytes.Equal(l.hraw, []byte("/>")) {
+			} else if bytes.HasPrefix(src, []byte("/>")) {
 				l.pos += 2
 				l.switchState(stateHTML)
 				return l.emit(HTML_SELF_CLOSING_GT)
 			} else {
-				slog.Info("remaining", "l.hraw", l.hraw)
+				panic(fmt.Sprintf("expected '>' or '/>', found %q", l.hraw))
 			}
 
 		case stateGo:
 			l.gscanner = new(scanner.Scanner)
 			l.gfset = token.NewFileSet()
-			l.gfile = l.gfset.AddFile("", l.pos, len(l.src()))
-			l.gscanner.Init(l.gfile, l.src(), nil, scanner.ScanComments)
+			src := l.src()
+			l.gfile = l.gfset.AddFile("", l.pos, len(src))
+			l.gscanner.Init(l.gfile, src, nil, scanner.ScanComments)
 			pos, tok, lit := l.gscanner.Scan()
 			slog.Debug("go scanner", "l.pos", l.pos, "pos", pos, "tok", tok, "lit", lit, "file.Offset(pos)", l.gfile.Offset(pos), "fset.Position(pos)", l.gfset.Position(pos))
 			l.pos = int(pos)
@@ -175,6 +271,8 @@ func (l *Lexer) next() Token {
 				l.pos += len("if")
 				l.switchState(stateGoCondExpr)
 				return l.emit(IF)
+			default:
+				panic(fmt.Sprintf("unhandled Go token: %v", tok))
 			}
 
 		case stateGoCondExpr:
@@ -192,8 +290,6 @@ func (l *Lexer) next() Token {
 			return token
 		}
 	}
-
-	return l.emit(EOF)
 }
 
 func (l *Lexer) switchState(s state) {
@@ -259,17 +355,25 @@ type state int
 const (
 	stateHTML state = iota
 	stateHTMLAttr
+	stateHTMLAttrName
+	stateHTMLAttrNameGoExpr
+	stateHTMLAttrValue
+	stateHTMLAttrValueGoExpr
 	stateHTMLAfterLastAttr
 	stateGo
 	stateGoCondExpr
 )
 
 var states = [...]string{
-	stateHTML:              "stateHTML",
-	stateHTMLAttr:          "stateHTMLAttr",
-	stateHTMLAfterLastAttr: "stateHTMLAfterLastAttr",
-	stateGo:                "stateGo",
-	stateGoCondExpr:        "stateGoCondExpr",
+	stateHTML:                "stateHTML",
+	stateHTMLAttr:            "stateHTMLAttr",
+	stateHTMLAttrName:        "stateHTMLAttrName",
+	stateHTMLAttrNameGoExpr:  "stateHTMLAttrNameGoExpr",
+	stateHTMLAttrValue:       "stateHTMLAttrValue",
+	stateHTMLAttrValueGoExpr: "stateHTMLAttrValueGoExpr",
+	stateHTMLAfterLastAttr:   "stateHTMLAfterLastAttr",
+	stateGo:                  "stateGo",
+	stateGoCondExpr:          "stateGoCondExpr",
 }
 
 func (s state) String() string {

@@ -54,7 +54,7 @@ func TestOpenTagLexer(t *testing.T) {
 	opts := cmp.AllowUnexported(ast.Attr{}, source.StringPos{})
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			got, err := scanAttrs(tt.input)
+			got, err := scanAttrs(tt.input, 0)
 			if err != nil {
 				t.Fatalf("scanast.Attrs: %v", err)
 			}
@@ -77,7 +77,7 @@ func FuzzOpenTagLexer(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, in []byte) {
-		_, err := scanAttrs(string(in))
+		_, err := scanAttrs(string(in), 0)
 		if err != nil {
 			if _, ok := err.(openTagScanError); !ok {
 				t.Errorf("expected scan error, got %T %v", err, err)

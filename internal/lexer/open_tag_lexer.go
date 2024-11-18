@@ -26,7 +26,7 @@ import (
 //
 // https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
 
-func scanAttrs(openTag string) (attrs []*ast.Attr, err error) {
+func scanAttrs(openTag string, baseOffset int) (attrs []*ast.Attr, err error) {
 	// maintain some invariants, we are not a general-purpose HTML
 	// tokenizer/parser, we are just parsing open tags.
 	if len(openTag) == 0 {
@@ -36,7 +36,7 @@ func scanAttrs(openTag string) (attrs []*ast.Attr, err error) {
 		return nil, openTagScanError(fmt.Sprintf("expected '<', got '%c'", ch))
 	}
 
-	l := newOpenTagLexer(openTag)
+	l := newOpenTagLexer(openTag, baseOffset)
 	// panic mode error handling
 	defer func() {
 		if e := recover(); e != nil {
@@ -61,6 +61,7 @@ func (e openTagScanError) Error() string {
 type openTagLexer struct {
 	raw         string
 	pos         int
+	baseOffset  int
 	state       openTagLexState
 	returnState openTagLexState
 	charRefBuf  bytes.Buffer
@@ -72,10 +73,12 @@ type openTagLexer struct {
 	currAttr *attrBuilder
 }
 
-func newOpenTagLexer(source string) *openTagLexer {
-	l := new(openTagLexer)
-	l.raw = source
-	l.state = openTagLexData
+func newOpenTagLexer(source string, baseOffset int) *openTagLexer {
+	l := &openTagLexer{
+		raw:        source,
+		state:      openTagLexData,
+		baseOffset: baseOffset,
+	}
 	return l
 }
 
@@ -496,14 +499,14 @@ func (l *openTagLexer) newAttr() {
 
 func (l *openTagLexer) appendCurrName(ch int) {
 	if l.currAttr.name.start == 0 {
-		l.currAttr.name.start = source.Pos(l.pos - 1)
+		l.currAttr.name.start = source.Pos(l.baseOffset + l.pos - 1)
 	}
 	l.currAttr.name.WriteByte(byte(ch))
 }
 
 func (l *openTagLexer) appendCurrVal(ch int) {
 	if l.currAttr.value.start == 0 {
-		l.currAttr.value.start = source.Pos(l.pos - 1)
+		l.currAttr.value.start = source.Pos(l.baseOffset + l.pos - 1)
 	}
 	l.currAttr.value.WriteByte(byte(ch))
 }
