@@ -8,7 +8,6 @@ const (
 	ILLEGAL TokenType = iota
 	EOF
 
-	HTML_IDENT // a, div, layout.Base
 	HTML_TEXT
 	HTML_START_TAG_NAME  // "<p" -- i.e., opening < and tag name but no attributes or closing >
 	HTML_GT              // ">"
@@ -16,8 +15,8 @@ const (
 	HTML_END_TAG         // "</p>"
 	HTML_ATTR_NAME_TEXT  // attribute text in the name position
 	HTML_ATTR_VALUE_TEXT // attribute text in the value position
-	HTML_ATTR_NAME_GO    // attribute Go code in the name position
-	HTML_ATTR_VALUE_GO   // attribute Go code in the value position
+	HTML_ATTR_NAME_GO    // attribute Go expression in the name position
+	HTML_ATTR_VALUE_GO   // attribute Go expression in the value position
 
 	GO_IDENT
 	GO_EXPR                // x > 0
@@ -25,16 +24,7 @@ const (
 	GO_EXPLICIT_EXPR_BEGIN // ^(
 	GO_BLOCK_BEGIN         // ^{
 
-	CARET      // escaped transition symbol, "^^" in source but '^' literal
-	LBRACE     // {
-	RBRACE     // }
-	LPAREN     // (
-	RPAREN     // )
 	WHITESPACE // [ \n\t"]
-	LT         // <
-	GT         // >
-	DOT        // .
-	START      // *
 
 	// Keywords
 	keywords_begin
@@ -50,7 +40,6 @@ var tokenTypes = [...]string{
 	ILLEGAL: "ILLEGAL",
 	EOF:     "EOF",
 
-	HTML_IDENT:           "HTML_IDENT",
 	HTML_TEXT:            "HTML_TEXT",
 	HTML_START_TAG_NAME:  "HTML_START_TAG_NAME",
 	HTML_GT:              "HTML_GT",
@@ -67,16 +56,7 @@ var tokenTypes = [...]string{
 	GO_EXPLICIT_EXPR_BEGIN: "^(",
 	GO_BLOCK_BEGIN:         "^{",
 
-	CARET:      "^",
-	LBRACE:     "{",
-	RBRACE:     "}",
-	LPAREN:     "(",
-	RPAREN:     ")",
 	WHITESPACE: "<ws>",
-	LT:         "<",
-	GT:         ">",
-	DOT:        ".",
-	START:      "*",
 
 	IMPORT:  "^import",
 	IF:      "^if",

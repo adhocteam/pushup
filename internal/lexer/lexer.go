@@ -76,20 +76,20 @@ func (l *Lexer) Scan() iter.Seq[Token] {
 }
 
 func (l *Lexer) src() []byte {
-	slog.Info("src", "slice", string(l.source[l.pos:]), "pos", l.pos)
+	slog.Debug("src", "slice", string(l.source[l.pos:]), "pos", l.pos)
 	return l.source[l.pos:]
 }
 
 func (l *Lexer) next() Token {
 	for {
-		slog.Info("next token", "state", l.state)
+		slog.Debug("next token", "state", l.state)
 
 		switch l.state {
 		case stateHTML:
 			l.hz = html.NewTokenizer(bytes.NewReader(l.src()))
 			l.htok = l.hz.Next()
 			l.hraw = l.hz.Raw()
-			slog.Info("HTML token", "token", l.htok, "raw", string(l.hraw))
+			slog.Debug("HTML token", "token", l.htok, "raw", string(l.hraw))
 
 			switch l.htok {
 			case html.ErrorToken:
@@ -101,7 +101,7 @@ func (l *Lexer) next() Token {
 
 			case html.TextToken:
 				idx := bytes.IndexRune(l.hraw, '^')
-				slog.Info("text", "idx", idx)
+				slog.Debug("text", "idx", idx)
 				if idx == -1 {
 					l.pos += len(l.hraw)
 					return l.emit(HTML_TEXT)
@@ -152,10 +152,10 @@ func (l *Lexer) next() Token {
 			case html.DoctypeToken:
 				l.pos += len(l.hraw)
 				return l.emit(HTML_TEXT)
-			}
 
-			l.pos += len(l.hraw)
-			return l.emit(LT)
+			default:
+				panic(fmt.Sprintf("unexpected HTML token type: %v", l.htok))
+			}
 
 		case stateHTMLAttr:
 			if len(l.hattrs) == 0 {
@@ -174,7 +174,7 @@ func (l *Lexer) next() Token {
 			l.switchState(stateHTMLAttrName)
 
 		case stateHTMLAttrName:
-			slog.Info("html attr name", "src", string(l.src()), "start", l.hatname.Start, "text", l.hatname.Text)
+			slog.Debug("html attr name", "src", string(l.src()), "start", l.hatname.Start, "text", l.hatname.Text)
 			l.start = int(l.hatname.Start)
 			idx := strings.IndexRune(l.hatname.Text, '^')
 			// No transition
@@ -197,7 +197,7 @@ func (l *Lexer) next() Token {
 			continue
 
 		case stateHTMLAttrValue:
-			slog.Info("html attr value", "src", string(l.src()), "start", l.hatval.Start, "text", l.hatval.Text)
+			slog.Debug("html attr value", "src", string(l.src()), "start", l.hatval.Start, "text", l.hatval.Text)
 			l.start = int(l.hatval.Start)
 			idx := strings.IndexRune(l.hatval.Text, '^')
 			// No transition
@@ -221,13 +221,13 @@ func (l *Lexer) next() Token {
 			continue
 
 		case stateHTMLAttrNameGoExpr:
-			slog.Info("attr name go expr", "l.pos", l.pos, "src", l.src())
+			slog.Debug("attr name go expr", "l.pos", l.pos, "src", l.src())
 			l.pos = int(l.hatname.Start) + len(l.hatname.Text)
 			l.switchState(stateHTMLAttrValue)
 			return l.emit(HTML_ATTR_NAME_GO)
 
 		case stateHTMLAttrValueGoExpr:
-			slog.Info("attr value go expr", "l.pos", l.pos, "src", string(l.src()))
+			slog.Debug("attr value go expr", "l.pos", l.pos, "src", string(l.src()))
 			l.pos = int(l.hatval.Start) + len(l.hatval.Text)
 			l.switchState(stateHTMLAttr)
 			l.hattrs = l.hattrs[1:]
@@ -242,7 +242,7 @@ func (l *Lexer) next() Token {
 				src = src[1:]
 				l.pos++
 			}
-			slog.Info("after last", "src", string(src))
+			slog.Debug("after last", "src", string(src))
 			if bytes.HasPrefix(src, []byte(">")) {
 				l.pos += 1
 				l.switchState(stateHTML)
@@ -280,7 +280,7 @@ func (l *Lexer) next() Token {
 			for tok != token.LBRACE {
 				l.pos = int(pos)
 				pos, tok, lit = l.gscanner.Scan()
-				slog.Info("stateGoCondExpr", "pos", pos, "tok", tok, "lit", lit)
+				slog.Debug("stateGoCondExpr", "pos", pos, "tok", tok, "lit", lit)
 			}
 			l.pos = int(pos)
 			token := l.emit(GO_EXPR)
@@ -293,7 +293,7 @@ func (l *Lexer) next() Token {
 }
 
 func (l *Lexer) switchState(s state) {
-	slog.Info("switch state", "exiting", l.state, "entering", s)
+	slog.Debug("switch state", "exiting", l.state, "entering", s)
 	l.state = s
 }
 
