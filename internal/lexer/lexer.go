@@ -33,9 +33,6 @@ type Lexer struct {
 	current rune
 
 	// html state
-	hz          *html.Tokenizer
-	htok        html.TokenType
-	hraw        []byte
 	hattrCursor *attrCursor
 
 	// go state
@@ -83,21 +80,21 @@ func (l *Lexer) next() Token {
 
 		switch l.state {
 		case stateHTML:
-			l.hz = html.NewTokenizer(bytes.NewReader(l.src()))
-			l.htok = l.hz.Next()
-			l.hraw = l.hz.Raw()
-			slog.Debug("HTML token", "token", l.htok, "raw", string(l.hraw))
+			z := html.NewTokenizer(bytes.NewReader(l.src()))
+			tok := z.Next()
+			raw := z.Raw()
+			slog.Debug("HTML token", "token", tok, "raw", string(raw))
 
-			switch l.htok {
+			switch tok {
 			case html.ErrorToken:
-				err := l.hz.Err()
+				err := z.Err()
 				if errors.Is(err, io.EOF) {
 					return l.emit(EOF)
 				}
 				slog.Error("HTML tokenizer", "error", err)
 
 			case html.TextToken:
-				idx := bytes.IndexRune(l.hraw, '^')
+				idx := bytes.IndexRune(raw, '^')
 				slog.Debug("text", "idx", idx)
 
 				// transition detected
@@ -114,22 +111,22 @@ func (l *Lexer) next() Token {
 					continue
 				}
 
-				if bracePos := matchesBlockClose(l.hraw); bracePos != -1 {
-					slog.Debug("matchesBlockClose", "l.hraw", string(l.hraw), "bracePos", bracePos, "l.src()", string(l.src()))
+				if bracePos := matchesBlockClose(raw); bracePos != -1 {
+					slog.Debug("matchesBlockClose", "raw", string(raw), "bracePos", bracePos, "l.src()", string(l.src()))
 					l.pos += bracePos
 					token := l.emit(HTML_TEXT)
 					l.switchState(stateGoBlockClose)
 					return token
 				}
 
-				l.pos += len(l.hraw)
+				l.pos += len(raw)
 				return l.emit(HTML_TEXT)
 
 			case html.StartTagToken, html.SelfClosingTagToken:
-				tagName, hasAttrs := l.hz.TagName()
+				tagName, hasAttrs := z.TagName()
 				n := len("<" + string(tagName))
 				if hasAttrs {
-					attrs, err := scanAttrs(string(l.hraw), l.pos)
+					attrs, err := scanAttrs(string(raw), l.pos)
 					if err != nil {
 						slog.Error("scanAttrs", "error", err)
 						return l.emit(ILLEGAL)
@@ -146,19 +143,19 @@ func (l *Lexer) next() Token {
 				}
 
 			case html.EndTagToken:
-				l.pos += len(l.hraw)
+				l.pos += len(raw)
 				return l.emit(HTML_END_TAG)
 
 			case html.CommentToken:
-				l.pos += len(l.hraw)
+				l.pos += len(raw)
 				return l.emit(HTML_TEXT)
 
 			case html.DoctypeToken:
-				l.pos += len(l.hraw)
+				l.pos += len(raw)
 				return l.emit(HTML_TEXT)
 
 			default:
-				panic(fmt.Sprintf("unexpected HTML token type: %v", l.htok))
+				panic(fmt.Sprintf("unexpected HTML token type: %v", tok))
 			}
 
 		case stateHTMLAttr:
