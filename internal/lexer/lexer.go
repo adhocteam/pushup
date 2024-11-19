@@ -437,7 +437,7 @@ func (c *attrCursor) advance() bool {
 
 // In a block of plain text (eg. HTML text token), matches whether a { is at
 // the end of a line, possibly preceded by whitespace.
-func matchesBlockOpen(text []byte) (bracePos int, ok bool) {
+func matchesBlockOpen(text []byte) (bracePos int) {
 	i := 0
 
 	for i < len(text) && isWhitespace(rune(text[i])) && !isNewline(rune(text[i])) {
@@ -445,19 +445,19 @@ func matchesBlockOpen(text []byte) (bracePos int, ok bool) {
 	}
 
 	if i >= len(text) || text[i] != '{' {
-		return -1, false
+		return -1
 	}
 	bracePos = i
 	i++
 
 	for i < len(text) && isWhitespace(rune(text[i])) {
 		if isNewline(rune(text[i])) {
-			return bracePos, true
+			return bracePos
 		}
 		i++
 	}
 
-	return -1, false
+	return -1
 }
 
 // In a block of plain text (eg. HTML text token), matches whether a } is at

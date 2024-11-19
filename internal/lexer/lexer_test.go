@@ -53,32 +53,26 @@ func TestMatchesBlockOpen(t *testing.T) {
 	tests := []struct {
 		in           []byte
 		wantBracePos int
-		wantOk       bool
 	}{
 		{
 			[]byte(""),
 			-1,
-			false,
 		},
 		{
 			[]byte("{"),
 			-1,
-			false,
 		},
 		{
 			[]byte("{\n"),
 			0,
-			true,
 		},
 		{
 			[]byte("{ \n"),
 			0,
-			true,
 		},
 		{
 			[]byte(" { \n"),
 			1,
-			true,
 		},
 	}
 
@@ -86,12 +80,9 @@ func TestMatchesBlockOpen(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			t.Parallel()
 
-			gotBracePos, gotOk := matchesBlockOpen(test.in)
+			gotBracePos := matchesBlockOpen(test.in)
 			if test.wantBracePos != gotBracePos {
 				t.Errorf("want match len: %d, got: %d", test.wantBracePos, gotBracePos)
-			}
-			if test.wantOk != gotOk {
-				t.Errorf("want ok: %t, got: %t", test.wantOk, gotOk)
 			}
 		})
 	}
