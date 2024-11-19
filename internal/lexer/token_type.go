@@ -23,6 +23,8 @@ const (
 	GO_IMPLICIT_EXPR_BEGIN // ^
 	GO_EXPLICIT_EXPR_BEGIN // ^(
 	GO_BLOCK_BEGIN         // ^{
+	GO_BLOCK_OPEN          // { at end of line
+	GO_BLOCK_CLOSE         // } at start of line
 
 	WHITESPACE // [ \n\t"]
 
@@ -55,6 +57,8 @@ var tokenTypes = [...]string{
 	GO_IMPLICIT_EXPR_BEGIN: "^",
 	GO_EXPLICIT_EXPR_BEGIN: "^(",
 	GO_BLOCK_BEGIN:         "^{",
+	GO_BLOCK_OPEN:          "GO_BLOCK_OPEN",
+	GO_BLOCK_CLOSE:         "GO_BLOCK_CLOSE",
 
 	WHITESPACE: "<ws>",
 

@@ -338,7 +338,11 @@ func (l *Lexer) transition() Token {
 }
 
 func isWhitespace(ch rune) bool {
-	return ch == ' ' || ch == '\t' || ch == '\n'
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
+}
+
+func isNewline(ch rune) bool {
+	return ch == '\n' || ch == '\r'
 }
 
 type state int
@@ -404,4 +408,26 @@ func (c *attrCursor) advance() bool {
 	c.name = c.attrs[c.current].Name
 	c.value = c.attrs[c.current].Value
 	return true
+}
+
+func matchesBlockOpen(text []byte) (matchLen int, ok bool) {
+	i := 0
+
+	for i < len(text) && isWhitespace(rune(text[i])) && !isNewline(rune(text[i])) {
+		i++
+	}
+
+	if i >= len(text) || text[i] != '{' {
+		return 0, false
+	}
+	i++
+
+	for i < len(text) && isWhitespace(rune(text[i])) {
+		if isNewline(rune(text[i])) {
+			return i + 1, true
+		}
+		i++
+	}
+
+	return 0, false
 }

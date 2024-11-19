@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"testing"
 	"text/tabwriter"
 )
 
@@ -42,4 +43,52 @@ func ExampleLexer() {
 	// HTML_END_TAG.........."</p>"...................70.....4
 	// HTML_TEXT............."\n}\n"..................74.....3
 	// EOF..................."".......................77.....0
+}
+
+func TestMatchesBlockOpen(t *testing.T) {
+	tests := []struct {
+		in           []byte
+		wantMatchLen int
+		wantOk       bool
+	}{
+		{
+			[]byte(""),
+			0,
+			false,
+		},
+		{
+			[]byte("{"),
+			0,
+			false,
+		},
+		{
+			[]byte("{\n"),
+			2,
+			true,
+		},
+		{
+			[]byte("{ \n"),
+			3,
+			true,
+		},
+		{
+			[]byte(" { \n"),
+			4,
+			true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+			t.Parallel()
+
+			gotMatchLen, gotOk := matchesBlockOpen(test.in)
+			if test.wantMatchLen != gotMatchLen {
+				t.Errorf("want match len: %d, got: %d", test.wantMatchLen, gotMatchLen)
+			}
+			if test.wantOk != gotOk {
+				t.Errorf("want ok: %t, got: %t", test.wantOk, gotOk)
+			}
+		})
+	}
 }
