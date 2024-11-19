@@ -432,3 +432,18 @@ func matchesBlockOpen(text []byte) (bracePos int, ok bool) {
 
 	return -1, false
 }
+
+func matchesBlockClose(text []byte) (bracePos int, ok bool) {
+	i := 0
+
+	for i < len(text) && isWhitespace(rune(text[i])) {
+		i++
+	}
+
+	if i >= len(text) || text[i] != '}' {
+		return -1, false
+	}
+	bracePos = i
+
+	return bracePos, true
+}

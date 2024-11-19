@@ -2,6 +2,8 @@ package lexer
 
 import (
 	"fmt"
+	"go/scanner"
+	"go/token"
 	"os"
 	"strconv"
 	"testing"
@@ -90,5 +92,69 @@ func TestMatchesBlockOpen(t *testing.T) {
 				t.Errorf("want ok: %t, got: %t", test.wantOk, gotOk)
 			}
 		})
+	}
+}
+
+func TestMatchesBlockClose(t *testing.T) {
+	tests := []struct {
+		in           []byte
+		wantBracePos int
+		wantOk       bool
+	}{
+		{
+			[]byte(""),
+			-1,
+			false,
+		},
+		{
+			[]byte("}"),
+			0,
+			true,
+		},
+		{
+			[]byte("\n}"),
+			1,
+			true,
+		},
+		{
+			[]byte(" } "),
+			1,
+			true,
+		},
+		{
+			[]byte("\n\t}"),
+			2,
+			true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+			t.Parallel()
+
+			gotBracePos, gotOk := matchesBlockClose(test.in)
+			if test.wantBracePos != gotBracePos {
+				t.Errorf("want match len: %d, got: %d", test.wantBracePos, gotBracePos)
+			}
+			if test.wantOk != gotOk {
+				t.Errorf("want ok: %t, got: %t", test.wantOk, gotOk)
+			}
+		})
+	}
+}
+func xTestGoScanner(_ *testing.T) {
+	src := `for i := range 10 {
+  println(i)
+}`
+	fset := token.NewFileSet()
+	file := fset.AddFile("", -1, len(src))
+	var s scanner.Scanner
+	s.Init(file, []byte(src), nil, scanner.ScanComments)
+	for {
+		pos, tok, lit := s.Scan()
+		if tok == token.EOF {
+			break
+		}
+		fmt.Println(pos, tok, lit)
 	}
 }
