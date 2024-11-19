@@ -26,6 +26,7 @@ func init() {
 
 type Lexer struct {
 	source []byte
+	mode   mode
 	state  state
 
 	start   int
@@ -101,7 +102,6 @@ func (l *Lexer) next() Token {
 					token := l.emit(HTML_TEXT) // emit text preceding the transition
 					l.pos += 1                 // skip past '^'
 					l.start = l.pos
-					l.syncGoScanner()
 					l.switchState(stateGo)
 					// don't emit an empty token
 					if idx > 0 {
@@ -114,7 +114,6 @@ func (l *Lexer) next() Token {
 					slog.Debug("matchesBlockClose", "raw", string(raw), "bracePos", bracePos, "l.src()", string(l.src()))
 					l.pos += bracePos
 					token := l.emit(HTML_TEXT)
-					l.syncGoScanner()
 					l.switchState(stateGoBlockClose)
 					return token
 				}
@@ -383,8 +382,53 @@ func isNewline(ch rune) bool {
 }
 
 func (l *Lexer) switchState(s state) {
+	mode, ok := stateModeMap[s]
+	if !ok {
+		panic(fmt.Sprintf("state not mapped to a mode: %v", s))
+	}
 	slog.Debug("switch state", "exiting", l.state, "entering", s)
+	if l.mode == modeHTML && mode == modeGo {
+		l.syncGoScanner()
+	}
+	l.mode = mode
 	l.state = s
+}
+
+type mode int
+
+const (
+	modeHTML mode = iota
+	modeGo
+)
+
+var modes = [...]string{
+	modeHTML: "modeHTML",
+	modeGo:   "modeGo",
+}
+
+func (m mode) String() string {
+	str := ""
+	if 0 <= m && m < mode(len(modes)) {
+		str = modes[m]
+	}
+	if str == "" {
+		str = "mode(" + strconv.Itoa(int(m)) + ")"
+	}
+	return str
+}
+
+var stateModeMap = map[state]mode{
+	stateHTML:                modeHTML,
+	stateHTMLAttr:            modeHTML,
+	stateHTMLAttrName:        modeHTML,
+	stateHTMLAttrNameGoExpr:  modeHTML,
+	stateHTMLAttrValue:       modeHTML,
+	stateHTMLAttrValueGoExpr: modeHTML,
+	stateHTMLAfterLastAttr:   modeHTML,
+	stateGo:                  modeGo,
+	stateGoCondExpr:          modeGo,
+	stateGoBlockOpen:         modeGo,
+	stateGoBlockClose:        modeGo,
 }
 
 type state int
