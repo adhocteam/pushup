@@ -478,3 +478,39 @@ func matchesBlockClose(text []byte) (bracePos int) {
 
 	return
 }
+
+type goToken struct {
+	pos token.Pos
+	tok token.Token
+	lit string
+}
+
+type goScanner struct {
+	*scanner.Scanner
+	buf  *goToken
+	last *goToken
+}
+
+func (s *goScanner) bufIsEmpty() bool {
+	return s.buf == nil
+}
+
+func (s *goScanner) get() goToken {
+	if s.bufIsEmpty() {
+		var tok goToken
+		tok.pos, tok.tok, tok.lit = s.Scan()
+		s.last = &tok
+		s.buf = s.last
+	}
+	tok := *s.buf
+	s.buf = nil
+	return tok
+}
+
+func (s *goScanner) unget() {
+	if s.bufIsEmpty() && s.last != nil {
+		s.buf = s.last
+	} else {
+		panic("unget() before call to get()")
+	}
+}

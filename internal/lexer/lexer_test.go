@@ -127,19 +127,86 @@ func TestMatchesBlockClose(t *testing.T) {
 		})
 	}
 }
-func xTestGoScanner(_ *testing.T) {
-	src := `for i := range 10 {
-  println(i)
-}`
-	fset := token.NewFileSet()
-	file := fset.AddFile("", -1, len(src))
-	var s scanner.Scanner
-	s.Init(file, []byte(src), nil, scanner.ScanComments)
-	for {
-		pos, tok, lit := s.Scan()
-		if tok == token.EOF {
-			break
-		}
-		fmt.Println(pos, tok, lit)
+
+func TestGoScanner(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		sequence func(*goScanner) error
+	}{
+		{
+			"get consumes token",
+			"a = b",
+			func(s *goScanner) error {
+				t1 := s.get()
+				t2 := s.get()
+				if t1 == t2 {
+					return fmt.Errorf("successive get() return same token: %#v", t1)
+				}
+				return nil
+			},
+		},
+		{
+			"unget after get",
+			"a = b",
+			func(s *goScanner) error {
+				t1 := s.get()
+				s.unget()
+				t2 := s.get()
+				if t1 != t2 {
+					return fmt.Errorf("token after unget() differs: %#v vs. %#v", t1, t2)
+				}
+				return nil
+			},
+		},
+		{
+			"double unget panics",
+			"a = b",
+			func(s *goScanner) (err error) {
+				defer func() {
+					if r := recover(); r == nil {
+						err = fmt.Errorf("unget() without get() did not panic")
+					}
+				}()
+
+				s.get()
+				s.unget()
+				// should panic
+				s.unget()
+
+				return
+			},
+		},
+		{
+			"unget without get",
+			"a = b",
+			func(s *goScanner) (err error) {
+				defer func() {
+					if r := recover(); r == nil {
+						err = fmt.Errorf("unget() without get() did not panic")
+					}
+				}()
+
+				// should panic
+				s.unget()
+
+				return
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fset := token.NewFileSet()
+			file := fset.AddFile("", fset.Base(), len(test.in))
+			scan := new(scanner.Scanner)
+			scan.Init(file, []byte(test.in), nil, scanner.ScanComments)
+			gs := &goScanner{Scanner: scan}
+			if err := test.sequence(gs); err != nil {
+				t.Error(err)
+			}
+		})
 	}
 }
