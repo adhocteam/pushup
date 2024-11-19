@@ -33,13 +33,10 @@ type Lexer struct {
 	current rune
 
 	// html state
-	hz      *html.Tokenizer
-	htok    html.TokenType
-	hraw    []byte
-	hattrs  []*ast.Attr
-	hatidx  int              // current attribute
-	hatname source.StringPos // current attribute name being consumed
-	hatval  source.StringPos // current attribute value being consumed
+	hz          *html.Tokenizer
+	htok        html.TokenType
+	hraw        []byte
+	hattrCursor *attrCursor
 
 	// go state
 	gfile    *token.File
@@ -121,23 +118,19 @@ func (l *Lexer) next() Token {
 				tagName, hasAttrs := l.hz.TagName()
 				n := len("<" + string(tagName))
 				if hasAttrs {
-					var err error
-					l.hatidx = 0
-					l.hattrs, err = scanAttrs(string(l.hraw), l.pos)
+					attrs, err := scanAttrs(string(l.hraw), l.pos)
 					if err != nil {
 						slog.Error("scanAttrs", "error", err)
 						return l.emit(ILLEGAL)
 					}
+					l.hattrCursor = newAttrCursor(attrs)
 					l.switchState(stateHTMLAttr)
-					// TODO: this is fiddly logic
-					l.pos += n          // move past the "<tagname "
-					l.hraw = l.hraw[n:] // track same
+					l.pos += n // move past the "<tagname "
 					token := l.emit(HTML_START_TAG_NAME)
 					return token
 				} else {
 					l.switchState(stateHTMLAfterLastAttr)
 					l.pos += n
-					l.hraw = l.hraw[n:]
 					return l.emit(HTML_START_TAG_NAME)
 				}
 
@@ -158,31 +151,29 @@ func (l *Lexer) next() Token {
 			}
 
 		case stateHTMLAttr:
-			if len(l.hattrs) == 0 {
+			slog.Debug("html attr", "hasMore", l.hattrCursor.hasMore())
+			if !l.hattrCursor.advance() {
 				l.switchState(stateHTMLAfterLastAttr)
 				continue
 			}
 
-			l.hatname = l.hattrs[0].Name
-			l.hatval = l.hattrs[0].Value
-
 			// advance to start of attribute name but that's
 			// indexed from beginning of tag <, so adjust for that
-			l.pos = int(l.hatname.Start)
+			l.pos = int(l.hattrCursor.name.Start)
 			l.start = l.pos
 
 			l.switchState(stateHTMLAttrName)
 
 		case stateHTMLAttrName:
-			slog.Debug("html attr name", "src", string(l.src()), "start", l.hatname.Start, "text", l.hatname.Text)
-			l.start = int(l.hatname.Start)
-			idx := strings.IndexRune(l.hatname.Text, '^')
+			slog.Debug("html attr name", "src", string(l.src()), "start", l.hattrCursor.name.Start, "text", l.hattrCursor.name.Text)
+			l.start = int(l.hattrCursor.name.Start)
+			idx := strings.IndexRune(l.hattrCursor.name.Text, '^')
 			// No transition
 			if idx == -1 {
-				l.pos = l.start + len(l.hatname.Text)
+				l.pos = l.start + len(l.hattrCursor.name.Text)
 				token := l.emit(HTML_ATTR_NAME_TEXT)
 				l.switchState(stateHTMLAttrValue)
-				l.pos = int(l.hatval.Start)
+				l.pos = int(l.hattrCursor.value.Start)
 				return token
 			} else if idx > 0 {
 				l.pos += idx
@@ -197,14 +188,14 @@ func (l *Lexer) next() Token {
 			continue
 
 		case stateHTMLAttrValue:
-			slog.Debug("html attr value", "src", string(l.src()), "start", l.hatval.Start, "text", l.hatval.Text)
-			l.start = int(l.hatval.Start)
-			idx := strings.IndexRune(l.hatval.Text, '^')
+			slog.Debug("html attr value", "src", string(l.src()), "start", l.hattrCursor.value.Start, "text", l.hattrCursor.value.Text)
+			l.start = int(l.hattrCursor.value.Start)
+			idx := strings.IndexRune(l.hattrCursor.value.Text, '^')
+			slog.Debug("attr value transition", "idx", idx)
 			// No transition
 			if idx == -1 {
-				l.pos = l.start + len(l.hatval.Text)
+				l.pos = l.start + len(l.hattrCursor.value.Text)
 				token := l.emit(HTML_ATTR_VALUE_TEXT)
-				l.hattrs = l.hattrs[1:]
 				l.switchState(stateHTMLAttr)
 				return token
 			} else if idx > 0 {
@@ -222,15 +213,14 @@ func (l *Lexer) next() Token {
 
 		case stateHTMLAttrNameGoExpr:
 			slog.Debug("attr name go expr", "l.pos", l.pos, "src", l.src())
-			l.pos = int(l.hatname.Start) + len(l.hatname.Text)
+			l.pos = int(l.hattrCursor.name.Start) + len(l.hattrCursor.name.Text)
 			l.switchState(stateHTMLAttrValue)
 			return l.emit(HTML_ATTR_NAME_GO)
 
 		case stateHTMLAttrValueGoExpr:
 			slog.Debug("attr value go expr", "l.pos", l.pos, "src", string(l.src()))
-			l.pos = int(l.hatval.Start) + len(l.hatval.Text)
+			l.pos = int(l.hattrCursor.value.Start) + len(l.hattrCursor.value.Text)
 			l.switchState(stateHTMLAttr)
-			l.hattrs = l.hattrs[1:]
 			return l.emit(HTML_ATTR_VALUE_GO)
 
 		case stateHTMLAfterLastAttr:
@@ -252,7 +242,7 @@ func (l *Lexer) next() Token {
 				l.switchState(stateHTML)
 				return l.emit(HTML_SELF_CLOSING_GT)
 			} else {
-				panic(fmt.Sprintf("expected '>' or '/>', found %q", l.hraw))
+				panic(fmt.Sprintf("expected '>' or '/>', found %q", src))
 			}
 
 		case stateGo:
@@ -308,6 +298,7 @@ func (l *Lexer) emit(tokType TokenType) Token {
 		loc:     source.Span{Start: l.start, Len: l.pos - l.start},
 	}
 	l.start = l.pos
+	slog.Debug("emitting token", "tokType", tokType, "literal", string(token.literal), "loc", token.loc)
 	return token
 }
 
@@ -385,4 +376,32 @@ func (s state) String() string {
 		str = "state(" + strconv.Itoa(int(s)) + ")"
 	}
 	return str
+}
+
+type attrCursor struct {
+	attrs       []*ast.Attr
+	current     int              // index into attrs
+	name, value source.StringPos // convenience accessors
+}
+
+func newAttrCursor(attrs []*ast.Attr) *attrCursor {
+	c := &attrCursor{
+		attrs:   attrs,
+		current: -1,
+	}
+	return c
+}
+
+func (c attrCursor) hasMore() bool {
+	return c.current < len(c.attrs)
+}
+
+func (c *attrCursor) advance() bool {
+	c.current++
+	if !c.hasMore() {
+		return false
+	}
+	c.name = c.attrs[c.current].Name
+	c.value = c.attrs[c.current].Value
+	return true
 }
