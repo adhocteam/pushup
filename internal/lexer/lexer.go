@@ -99,20 +99,31 @@ func (l *Lexer) next() Token {
 			case html.TextToken:
 				idx := bytes.IndexRune(l.hraw, '^')
 				slog.Debug("text", "idx", idx)
-				if idx == -1 {
-					l.pos += len(l.hraw)
-					return l.emit(HTML_TEXT)
+
+				// transition detected
+				if idx >= 0 {
+					l.pos += idx
+					token := l.emit(HTML_TEXT) // emit text preceding the transition
+					l.pos += 1                 // skip past '^'
+					l.start = l.pos
+					l.switchState(stateGo)
+					// don't emit an empty token
+					if idx > 0 {
+						return token
+					}
+					continue
 				}
-				l.pos += idx
-				token := l.emit(HTML_TEXT) // emit text preceding the transition
-				l.pos += 1                 // skip past '^'
-				l.start = l.pos
-				l.switchState(stateGo)
-				// don't emit an empty token
-				if idx > 0 {
+
+				if bracePos, ok := matchesBlockClose(l.hraw); ok {
+					slog.Debug("matchesBlockClose", "l.hraw", string(l.hraw), "bracePos", bracePos, "l.src()", string(l.src()))
+					l.pos += bracePos
+					token := l.emit(HTML_TEXT)
+					l.switchState(stateGoBlockClose)
 					return token
 				}
-				continue
+
+				l.pos += len(l.hraw)
+				return l.emit(HTML_TEXT)
 
 			case html.StartTagToken, html.SelfClosingTagToken:
 				tagName, hasAttrs := l.hz.TagName()
@@ -278,13 +289,20 @@ func (l *Lexer) next() Token {
 			l.start = l.pos
 			l.switchState(stateHTML)
 			return token
+
+		case stateGoBlockClose:
+			l.expectChar('}')
+			l.switchState(stateHTML)
+			return l.emit(GO_BLOCK_CLOSE)
 		}
 	}
 }
 
-func (l *Lexer) switchState(s state) {
-	slog.Debug("switch state", "exiting", l.state, "entering", s)
-	l.state = s
+func (l *Lexer) expectChar(ch byte) {
+	if current := l.src()[0]; current != ch {
+		panic(fmt.Sprintf("unexpected char: want %q, got %q", ch, current))
+	}
+	l.pos++
 }
 
 func (l *Lexer) backup() {
@@ -345,6 +363,11 @@ func isNewline(ch rune) bool {
 	return ch == '\n' || ch == '\r'
 }
 
+func (l *Lexer) switchState(s state) {
+	slog.Debug("switch state", "exiting", l.state, "entering", s)
+	l.state = s
+}
+
 type state int
 
 const (
@@ -357,6 +380,7 @@ const (
 	stateHTMLAfterLastAttr
 	stateGo
 	stateGoCondExpr
+	stateGoBlockClose
 )
 
 var states = [...]string{
@@ -369,6 +393,7 @@ var states = [...]string{
 	stateHTMLAfterLastAttr:   "stateHTMLAfterLastAttr",
 	stateGo:                  "stateGo",
 	stateGoCondExpr:          "stateGoCondExpr",
+	stateGoBlockClose:        "stateGoBlockClose",
 }
 
 func (s state) String() string {
@@ -410,6 +435,8 @@ func (c *attrCursor) advance() bool {
 	return true
 }
 
+// In a block of plain text (eg. HTML text token), matches whether a { is at
+// the end of a line, possibly preceded by whitespace.
 func matchesBlockOpen(text []byte) (bracePos int, ok bool) {
 	i := 0
 
@@ -433,6 +460,8 @@ func matchesBlockOpen(text []byte) (bracePos int, ok bool) {
 	return -1, false
 }
 
+// In a block of plain text (eg. HTML text token), matches whether a } is at
+// the start of a line, possibly preceded by whitespace.
 func matchesBlockClose(text []byte) (bracePos int, ok bool) {
 	i := 0
 
