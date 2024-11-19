@@ -285,10 +285,13 @@ func (l *Lexer) next() Token {
 			}
 			l.pos = int(pos)
 			token := l.emit(GO_EXPR)
-			l.pos++ // skip past the {
-			l.start = l.pos
-			l.switchState(stateHTML)
+			l.switchState(stateGoBlockOpen)
 			return token
+
+		case stateGoBlockOpen:
+			l.expectChar('{')
+			l.switchState(stateHTML)
+			return l.emit(GO_BLOCK_OPEN)
 
 		case stateGoBlockClose:
 			l.expectChar('}')
@@ -380,6 +383,7 @@ const (
 	stateHTMLAfterLastAttr
 	stateGo
 	stateGoCondExpr
+	stateGoBlockOpen
 	stateGoBlockClose
 )
 
@@ -393,6 +397,7 @@ var states = [...]string{
 	stateHTMLAfterLastAttr:   "stateHTMLAfterLastAttr",
 	stateGo:                  "stateGo",
 	stateGoCondExpr:          "stateGoCondExpr",
+	stateGoBlockOpen:         "stateGoBlockOpen",
 	stateGoBlockClose:        "stateGoBlockClose",
 }
 
