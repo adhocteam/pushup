@@ -101,32 +101,26 @@ func TestMatchesBlockClose(t *testing.T) {
 	tests := []struct {
 		in           []byte
 		wantBracePos int
-		wantOk       bool
 	}{
 		{
 			[]byte(""),
 			-1,
-			false,
 		},
 		{
 			[]byte("}"),
 			0,
-			true,
 		},
 		{
 			[]byte("\n}"),
 			1,
-			true,
 		},
 		{
 			[]byte(" } "),
 			1,
-			true,
 		},
 		{
 			[]byte("\n\t}"),
 			2,
-			true,
 		},
 	}
 
@@ -134,12 +128,9 @@ func TestMatchesBlockClose(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			t.Parallel()
 
-			gotBracePos, gotOk := matchesBlockClose(test.in)
+			gotBracePos := matchesBlockClose(test.in)
 			if test.wantBracePos != gotBracePos {
 				t.Errorf("want match len: %d, got: %d", test.wantBracePos, gotBracePos)
-			}
-			if test.wantOk != gotOk {
-				t.Errorf("want ok: %t, got: %t", test.wantOk, gotOk)
 			}
 		})
 	}

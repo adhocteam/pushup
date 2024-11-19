@@ -114,7 +114,7 @@ func (l *Lexer) next() Token {
 					continue
 				}
 
-				if bracePos, ok := matchesBlockClose(l.hraw); ok {
+				if bracePos := matchesBlockClose(l.hraw); bracePos != -1 {
 					slog.Debug("matchesBlockClose", "l.hraw", string(l.hraw), "bracePos", bracePos, "l.src()", string(l.src()))
 					l.pos += bracePos
 					token := l.emit(HTML_TEXT)
@@ -462,7 +462,7 @@ func matchesBlockOpen(text []byte) (bracePos int, ok bool) {
 
 // In a block of plain text (eg. HTML text token), matches whether a } is at
 // the start of a line, possibly preceded by whitespace.
-func matchesBlockClose(text []byte) (bracePos int, ok bool) {
+func matchesBlockClose(text []byte) (bracePos int) {
 	i := 0
 
 	for i < len(text) && isWhitespace(rune(text[i])) {
@@ -470,9 +470,9 @@ func matchesBlockClose(text []byte) (bracePos int, ok bool) {
 	}
 
 	if i >= len(text) || text[i] != '}' {
-		return -1, false
+		return -1
 	}
 	bracePos = i
 
-	return bracePos, true
+	return
 }
