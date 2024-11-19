@@ -48,32 +48,32 @@ func ExampleLexer() {
 func TestMatchesBlockOpen(t *testing.T) {
 	tests := []struct {
 		in           []byte
-		wantMatchLen int
+		wantBracePos int
 		wantOk       bool
 	}{
 		{
 			[]byte(""),
-			0,
+			-1,
 			false,
 		},
 		{
 			[]byte("{"),
-			0,
+			-1,
 			false,
 		},
 		{
 			[]byte("{\n"),
-			2,
+			0,
 			true,
 		},
 		{
 			[]byte("{ \n"),
-			3,
+			0,
 			true,
 		},
 		{
 			[]byte(" { \n"),
-			4,
+			1,
 			true,
 		},
 	}
@@ -82,9 +82,9 @@ func TestMatchesBlockOpen(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			t.Parallel()
 
-			gotMatchLen, gotOk := matchesBlockOpen(test.in)
-			if test.wantMatchLen != gotMatchLen {
-				t.Errorf("want match len: %d, got: %d", test.wantMatchLen, gotMatchLen)
+			gotBracePos, gotOk := matchesBlockOpen(test.in)
+			if test.wantBracePos != gotBracePos {
+				t.Errorf("want match len: %d, got: %d", test.wantBracePos, gotBracePos)
 			}
 			if test.wantOk != gotOk {
 				t.Errorf("want ok: %t, got: %t", test.wantOk, gotOk)

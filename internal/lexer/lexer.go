@@ -410,7 +410,7 @@ func (c *attrCursor) advance() bool {
 	return true
 }
 
-func matchesBlockOpen(text []byte) (matchLen int, ok bool) {
+func matchesBlockOpen(text []byte) (bracePos int, ok bool) {
 	i := 0
 
 	for i < len(text) && isWhitespace(rune(text[i])) && !isNewline(rune(text[i])) {
@@ -418,16 +418,17 @@ func matchesBlockOpen(text []byte) (matchLen int, ok bool) {
 	}
 
 	if i >= len(text) || text[i] != '{' {
-		return 0, false
+		return -1, false
 	}
+	bracePos = i
 	i++
 
 	for i < len(text) && isWhitespace(rune(text[i])) {
 		if isNewline(rune(text[i])) {
-			return i + 1, true
+			return bracePos, true
 		}
 		i++
 	}
 
-	return 0, false
+	return -1, false
 }
