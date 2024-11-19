@@ -132,12 +132,12 @@ func TestGoScanner(t *testing.T) {
 	tests := []struct {
 		name     string
 		in       string
-		sequence func(*goScanner) error
+		sequence func(*bufGoScanner) error
 	}{
 		{
 			"get consumes token",
 			"a = b",
-			func(s *goScanner) error {
+			func(s *bufGoScanner) error {
 				t1 := s.get()
 				t2 := s.get()
 				if t1 == t2 {
@@ -149,7 +149,7 @@ func TestGoScanner(t *testing.T) {
 		{
 			"unget after get",
 			"a = b",
-			func(s *goScanner) error {
+			func(s *bufGoScanner) error {
 				t1 := s.get()
 				s.unget()
 				t2 := s.get()
@@ -162,7 +162,7 @@ func TestGoScanner(t *testing.T) {
 		{
 			"double unget panics",
 			"a = b",
-			func(s *goScanner) (err error) {
+			func(s *bufGoScanner) (err error) {
 				defer func() {
 					if r := recover(); r == nil {
 						err = fmt.Errorf("unget() without get() did not panic")
@@ -180,7 +180,7 @@ func TestGoScanner(t *testing.T) {
 		{
 			"unget without get",
 			"a = b",
-			func(s *goScanner) (err error) {
+			func(s *bufGoScanner) (err error) {
 				defer func() {
 					if r := recover(); r == nil {
 						err = fmt.Errorf("unget() without get() did not panic")
@@ -203,7 +203,7 @@ func TestGoScanner(t *testing.T) {
 			file := fset.AddFile("", fset.Base(), len(test.in))
 			scan := new(scanner.Scanner)
 			scan.Init(file, []byte(test.in), nil, scanner.ScanComments)
-			gs := &goScanner{Scanner: scan}
+			gs := &bufGoScanner{scanner: scan}
 			if err := test.sequence(gs); err != nil {
 				t.Error(err)
 			}

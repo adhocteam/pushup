@@ -36,9 +36,7 @@ type Lexer struct {
 	hattrCursor *attrCursor
 
 	// go state
-	gfile    *token.File
-	gfset    *token.FileSet
-	gscanner *scanner.Scanner
+	gscanner *bufGoScanner
 }
 
 func New(source []byte) *Lexer {
@@ -103,6 +101,7 @@ func (l *Lexer) next() Token {
 					token := l.emit(HTML_TEXT) // emit text preceding the transition
 					l.pos += 1                 // skip past '^'
 					l.start = l.pos
+					l.syncGoScanner()
 					l.switchState(stateGo)
 					// don't emit an empty token
 					if idx > 0 {
@@ -115,6 +114,7 @@ func (l *Lexer) next() Token {
 					slog.Debug("matchesBlockClose", "raw", string(raw), "bracePos", bracePos, "l.src()", string(l.src()))
 					l.pos += bracePos
 					token := l.emit(HTML_TEXT)
+					l.syncGoScanner()
 					l.switchState(stateGoBlockClose)
 					return token
 				}
@@ -254,48 +254,67 @@ func (l *Lexer) next() Token {
 			}
 
 		case stateGo:
-			l.gscanner = new(scanner.Scanner)
-			l.gfset = token.NewFileSet()
-			src := l.src()
-			l.gfile = l.gfset.AddFile("", l.pos, len(src))
-			l.gscanner.Init(l.gfile, src, nil, scanner.ScanComments)
-			pos, tok, lit := l.gscanner.Scan()
-			slog.Debug("go scanner", "l.pos", l.pos, "pos", pos, "tok", tok, "lit", lit, "file.Offset(pos)", l.gfile.Offset(pos), "fset.Position(pos)", l.gfset.Position(pos))
-			l.pos = int(pos)
-			switch tok {
+			tok := l.gscanner.get()
+			l.pos = int(tok.pos)
+			switch tok.tok {
 			case token.EOF:
 				break
 			case token.IF:
 				l.pos += len("if")
 				l.switchState(stateGoCondExpr)
 				return l.emit(IF)
+			case token.FOR:
+				l.pos += len("for")
+				l.switchState(stateGoCondExpr)
+				return l.emit(FOR)
 			default:
 				panic(fmt.Sprintf("unhandled Go token: %v", tok))
 			}
 
 		case stateGoCondExpr:
-			pos, tok, lit := l.gscanner.Scan()
-			for tok != token.LBRACE {
-				l.pos = int(pos)
-				pos, tok, lit = l.gscanner.Scan()
-				slog.Debug("stateGoCondExpr", "pos", pos, "tok", tok, "lit", lit)
+			tok := l.gscanner.get()
+			for tok.tok != token.LBRACE {
+				l.pos = int(tok.pos)
+				tok = l.gscanner.get()
+				slog.Debug("stateGoCondExpr", "pos", tok.pos, "tok", tok.tok, "lit", tok.lit)
 			}
-			l.pos = int(pos)
+			l.gscanner.unget()
+			l.pos = int(tok.pos)
 			token := l.emit(GO_EXPR)
 			l.switchState(stateGoBlockOpen)
 			return token
 
 		case stateGoBlockOpen:
-			l.expectChar('{')
+			tok := l.gscanner.get()
+			if tok.tok != token.LBRACE {
+				panic(fmt.Sprintf("want LBRACE, got %v", tok.tok))
+			}
+			l.pos = int(tok.pos) + 1
 			l.switchState(stateHTML)
 			return l.emit(GO_BLOCK_OPEN)
 
 		case stateGoBlockClose:
-			l.expectChar('}')
+			tok := l.gscanner.get()
+			if tok.tok != token.RBRACE {
+				panic(fmt.Sprintf("want RBRACE, got %v", tok.tok))
+			}
+			l.pos = int(tok.pos) + 1
 			l.switchState(stateHTML)
 			return l.emit(GO_BLOCK_CLOSE)
 		}
 	}
+}
+
+// syncGoScanner synchronizes the current furthest read state of the Pushup
+// source with the Go tokenizer. It should be called each time there is a
+// transition from an HTML state to a Go state.
+func (l *Lexer) syncGoScanner() {
+	scan := new(scanner.Scanner)
+	fset := token.NewFileSet()
+	src := l.src()
+	file := fset.AddFile("", l.pos, len(src))
+	scan.Init(file, src, nil, scanner.ScanComments)
+	l.gscanner = newBufGoScanner(scan)
 }
 
 func (l *Lexer) expectChar(ch byte) {
@@ -485,20 +504,24 @@ type goToken struct {
 	lit string
 }
 
-type goScanner struct {
-	*scanner.Scanner
-	buf  *goToken
-	last *goToken
+type bufGoScanner struct {
+	scanner *scanner.Scanner
+	buf     *goToken
+	last    *goToken
 }
 
-func (s *goScanner) bufIsEmpty() bool {
+func newBufGoScanner(s *scanner.Scanner) *bufGoScanner {
+	return &bufGoScanner{scanner: s}
+}
+
+func (s *bufGoScanner) bufEmpty() bool {
 	return s.buf == nil
 }
 
-func (s *goScanner) get() goToken {
-	if s.bufIsEmpty() {
+func (s *bufGoScanner) get() goToken {
+	if s.bufEmpty() {
 		var tok goToken
-		tok.pos, tok.tok, tok.lit = s.Scan()
+		tok.pos, tok.tok, tok.lit = s.scanner.Scan()
 		s.last = &tok
 		s.buf = s.last
 	}
@@ -507,8 +530,8 @@ func (s *goScanner) get() goToken {
 	return tok
 }
 
-func (s *goScanner) unget() {
-	if s.bufIsEmpty() && s.last != nil {
+func (s *bufGoScanner) unget() {
+	if s.bufEmpty() && s.last != nil {
 		s.buf = s.last
 	} else {
 		panic("unget() before call to get()")
