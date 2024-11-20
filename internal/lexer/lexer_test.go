@@ -2,8 +2,6 @@ package lexer
 
 import (
 	"fmt"
-	"go/scanner"
-	"go/token"
 	"os"
 	"strconv"
 	"testing"
@@ -135,60 +133,60 @@ func TestGoScanner(t *testing.T) {
 		sequence func(*bufGoScanner) error
 	}{
 		{
-			"get consumes token",
+			"scan consumes token",
 			"a = b",
 			func(s *bufGoScanner) error {
-				t1 := s.get()
-				t2 := s.get()
-				if t1 == t2 {
-					return fmt.Errorf("successive get() return same token: %#v", t1)
+				p1, t1, _ := s.Scan()
+				p2, t2, _ := s.Scan()
+				if p1 == p2 && t1 == t2 {
+					return fmt.Errorf("successive scan() return same token: %#v", t1)
 				}
 				return nil
 			},
 		},
 		{
-			"unget after get",
+			"unscan after scan",
 			"a = b",
 			func(s *bufGoScanner) error {
-				t1 := s.get()
-				s.unget()
-				t2 := s.get()
-				if t1 != t2 {
-					return fmt.Errorf("token after unget() differs: %#v vs. %#v", t1, t2)
+				p1, t1, _ := s.Scan()
+				s.Unscan()
+				p2, t2, _ := s.Scan()
+				if p1 != p2 || t1 != t2 {
+					return fmt.Errorf("token after unscan() differs: %#v vs. %#v", t1, t2)
 				}
 				return nil
 			},
 		},
 		{
-			"double unget panics",
+			"double unscan panics",
 			"a = b",
 			func(s *bufGoScanner) (err error) {
 				defer func() {
 					if r := recover(); r == nil {
-						err = fmt.Errorf("unget() without get() did not panic")
+						err = fmt.Errorf("unscan() without scan() did not panic")
 					}
 				}()
 
-				s.get()
-				s.unget()
+				s.Scan()
+				s.Unscan()
 				// should panic
-				s.unget()
+				s.Unscan()
 
 				return
 			},
 		},
 		{
-			"unget without get",
+			"unscan without scan",
 			"a = b",
 			func(s *bufGoScanner) (err error) {
 				defer func() {
 					if r := recover(); r == nil {
-						err = fmt.Errorf("unget() without get() did not panic")
+						err = fmt.Errorf("unscan() without scan() did not panic")
 					}
 				}()
 
 				// should panic
-				s.unget()
+				s.Unscan()
 
 				return
 			},
@@ -199,12 +197,8 @@ func TestGoScanner(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			fset := token.NewFileSet()
-			file := fset.AddFile("", fset.Base(), len(test.in))
-			scan := new(scanner.Scanner)
-			scan.Init(file, []byte(test.in), nil, scanner.ScanComments)
-			gs := &bufGoScanner{scanner: scan}
-			if err := test.sequence(gs); err != nil {
+			bs := newBufGoScanner([]byte(test.in), 1)
+			if err := test.sequence(bs); err != nil {
 				t.Error(err)
 			}
 		})

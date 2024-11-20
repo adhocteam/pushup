@@ -240,9 +240,9 @@ func (l *Lexer) next() Token {
 			}
 
 		case stateGoStart:
-			tok := l.gscanner.get()
-			l.pos = int(tok.pos)
-			switch tok.tok {
+			pos, tok, _ := l.gscanner.Scan()
+			l.pos = int(pos)
+			switch tok {
 			case token.EOF:
 				break
 			case token.IF:
@@ -258,33 +258,33 @@ func (l *Lexer) next() Token {
 			}
 
 		case stateGoCondExpr:
-			tok := l.gscanner.get()
-			for tok.tok != token.LBRACE {
-				l.pos = int(tok.pos)
-				tok = l.gscanner.get()
-				slog.Debug("stateGoCondExpr", "pos", tok.pos, "tok", tok.tok, "lit", tok.lit)
+			pos, tok, lit := l.gscanner.Scan()
+			for tok != token.LBRACE {
+				l.pos = int(pos)
+				pos, tok, lit = l.gscanner.Scan()
+				slog.Debug("stateGoCondExpr", "pos", pos, "tok", tok, "lit", lit)
 			}
-			l.gscanner.unget()
-			l.pos = int(tok.pos)
+			l.gscanner.Unscan()
+			l.pos = int(pos)
 			token := l.emit(GO_EXPR)
 			l.switchState(stateGoBlockOpen)
 			return token
 
 		case stateGoBlockOpen:
-			tok := l.gscanner.get()
-			if tok.tok != token.LBRACE {
-				panic(fmt.Sprintf("want LBRACE, got %v", tok.tok))
+			pos, tok, _ := l.gscanner.Scan()
+			if tok != token.LBRACE {
+				panic(fmt.Sprintf("want LBRACE, got %v", tok))
 			}
-			l.pos = int(tok.pos) + 1
+			l.pos = int(pos) + 1
 			l.switchState(stateHTMLStart)
 			return l.emit(GO_BLOCK_OPEN)
 
 		case stateGoBlockClose:
-			tok := l.gscanner.get()
-			if tok.tok != token.RBRACE {
-				panic(fmt.Sprintf("want RBRACE, got %v", tok.tok))
+			pos, tok, _ := l.gscanner.Scan()
+			if tok != token.RBRACE {
+				panic(fmt.Sprintf("want RBRACE, got %v", tok))
 			}
-			l.pos = int(tok.pos) + 1
+			l.pos = int(pos) + 1
 			l.switchState(stateHTMLStart)
 			return l.emit(GO_BLOCK_CLOSE)
 		}
@@ -509,9 +509,9 @@ type goToken struct {
 }
 
 type bufGoScanner struct {
-	scanner *scanner.Scanner
-	buf     *goToken
-	last    *goToken
+	*scanner.Scanner
+	buf  *goToken
+	last *goToken
 }
 
 func newBufGoScanner(src []byte, baseOffset int) *bufGoScanner {
@@ -519,30 +519,33 @@ func newBufGoScanner(src []byte, baseOffset int) *bufGoScanner {
 	fset := token.NewFileSet()
 	file := fset.AddFile("", baseOffset, len(src))
 	scan.Init(file, src, nil, scanner.ScanComments)
-	return &bufGoScanner{scanner: scan}
+	return &bufGoScanner{Scanner: scan}
 }
 
-func (s *bufGoScanner) bufEmpty() bool {
+func (s *bufGoScanner) empty() bool {
 	return s.buf == nil
 }
 
-func (s *bufGoScanner) get() goToken {
-	if s.bufEmpty() {
-		var tok goToken
-		tok.pos, tok.tok, tok.lit = s.scanner.Scan()
-		s.last = &tok
-		s.buf = s.last
+func (s *bufGoScanner) Scan() (pos token.Pos, tok token.Token, lit string) {
+	var t goToken
+	if s.empty() {
+		t.pos, t.tok, t.lit = s.Scanner.Scan()
+		s.last = &t
+	} else {
+		t = *s.buf
+		s.buf = nil
 	}
-	tok := *s.buf
-	s.buf = nil
-	return tok
+	pos = t.pos
+	tok = t.tok
+	lit = t.lit
+	return
 }
 
-func (s *bufGoScanner) unget() {
-	if s.bufEmpty() && s.last != nil {
+func (s *bufGoScanner) Unscan() {
+	if s.empty() && s.last != nil {
 		s.buf = s.last
 	} else {
-		panic("unget() before call to get()")
+		panic("unscan() before call to scan()")
 	}
 }
 
@@ -567,24 +570,20 @@ func newBufHTMLTokenizer(src []byte) *bufHTMLTokenizer {
 	return bz
 }
 
-func (bz *bufHTMLTokenizer) get() htmlToken {
+func (bz *bufHTMLTokenizer) get() (tok htmlToken) {
 	if bz.bufEmpty() {
-		var tok htmlToken
-
 		tok.tok = bz.z.Next()
 		tok.raw = append([]byte(nil), bz.z.Raw()...) // need to copy to preserve value across calls to Next()
 		tok.err = bz.z.Err()
 		var tagName []byte
 		tagName, tok.hasAttrs = bz.z.TagName()
 		tok.tagName = append([]byte(nil), tagName...) // need to copy to preserve value across calls to Next()
-		slog.Debug("HTML token", "raw", string(tok.raw), "tagName", string(tok.tagName))
-
 		bz.last = &tok
-		bz.buf = bz.last
+	} else {
+		tok = *bz.buf
+		bz.buf = nil
 	}
-	tok := *bz.buf
-	bz.buf = nil
-	return tok
+	return
 }
 
 func (bz *bufHTMLTokenizer) bufEmpty() bool {
