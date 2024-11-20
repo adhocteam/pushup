@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"testing"
 	"text/tabwriter"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func ExampleLexer() {
@@ -126,7 +128,7 @@ func TestMatchesBlockClose(t *testing.T) {
 	}
 }
 
-func TestGoScanner(t *testing.T) {
+func TestBufGoScanner(t *testing.T) {
 	tests := []struct {
 		name     string
 		in       string
@@ -199,6 +201,81 @@ func TestGoScanner(t *testing.T) {
 
 			bs := newBufGoScanner([]byte(test.in), 1)
 			if err := test.sequence(bs); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
+func TestBufHTMLTokenizer(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		sequence func(*bufHTMLTokenizer) error
+	}{
+		{
+			"get consumes token",
+			"<p>Foo</p>",
+			func(z *bufHTMLTokenizer) error {
+				t1 := z.get()
+				t2 := z.get()
+				if diff := cmp.Diff(t1, t2, cmp.AllowUnexported(htmlToken{})); diff == "" {
+					return fmt.Errorf("successive get() return same token: %#v", t1)
+				}
+				return nil
+			},
+		},
+		{
+			"unget after get",
+			"<p>Foo</p>",
+			func(z *bufHTMLTokenizer) error {
+				t1 := z.get()
+				z.unget()
+				t2 := z.get()
+				if diff := cmp.Diff(t1, t2, cmp.AllowUnexported(htmlToken{})); diff != "" {
+					return fmt.Errorf("token after unget() differs: %s", diff)
+				}
+				return nil
+			},
+		},
+		{
+			"double unget panics",
+			"<p>Foo</p>",
+			func(z *bufHTMLTokenizer) (err error) {
+				defer func() {
+					if r := recover(); r == nil {
+						err = fmt.Errorf("unget() without get() did not panic")
+					}
+				}()
+				z.get()
+				z.unget()
+				// should panic
+				z.unget()
+				return
+			},
+		},
+		{
+			"unget without get",
+			"<p>Foo</p>",
+			func(z *bufHTMLTokenizer) (err error) {
+				defer func() {
+					if r := recover(); r == nil {
+						err = fmt.Errorf("unget() without get() did not panic")
+					}
+				}()
+				// should panic
+				z.unget()
+				return
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			bz := newBufHTMLTokenizer([]byte(test.in))
+			if err := test.sequence(bz); err != nil {
 				t.Error(err)
 			}
 		})

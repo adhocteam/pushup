@@ -25,17 +25,17 @@ func init() {
 
 type Lexer struct {
 	source []byte
-	mode   mode
-	state  state
+	mode   mode  // current mode: HTML or Go
+	state  state // current state: see states below
 
 	start int // starting offset of current in-progress token
 	pos   int // position of furthest read
 
-	// html tokenization
+	// HTML tokenization
 	htmlz       *bufHTMLTokenizer
 	hattrCursor *attrCursor
 
-	// go scanning
+	// Go scanning
 	gscanner *bufGoScanner
 }
 
@@ -49,10 +49,7 @@ func (l *Lexer) Scan() iter.Seq[Token] {
 	return func(yield func(Token) bool) {
 		for {
 			token := l.next()
-			if !yield(token) {
-				return
-			}
-			if token.tokType == EOF {
+			if !yield(token) || token.tokType == EOF {
 				return
 			}
 		}
@@ -71,9 +68,9 @@ func (l *Lexer) next() Token {
 		switch l.state {
 		case stateHTMLStart:
 			tok := l.htmlz.get()
-			slog.Debug("HTML token", "token", tok.tok, "raw", string(tok.raw))
+			slog.Debug("HTML token", "token", tok.tokType, "raw", string(tok.raw))
 
-			switch tok.tok {
+			switch tok.tokType {
 			case html.ErrorToken:
 				if errors.Is(tok.err, io.EOF) {
 					return l.emit(EOF)
@@ -550,7 +547,7 @@ func (s *bufGoScanner) Unscan() {
 }
 
 type htmlToken struct {
-	tok      html.TokenType // z.Next()
+	tokType  html.TokenType // z.Next()
 	raw      []byte         // z.Raw()
 	err      error          // z.Err()
 	tagName  []byte         // z.TagName()
@@ -571,8 +568,8 @@ func newBufHTMLTokenizer(src []byte) *bufHTMLTokenizer {
 }
 
 func (bz *bufHTMLTokenizer) get() (tok htmlToken) {
-	if bz.bufEmpty() {
-		tok.tok = bz.z.Next()
+	if bz.empty() {
+		tok.tokType = bz.z.Next()
 		tok.raw = append([]byte(nil), bz.z.Raw()...) // need to copy to preserve value across calls to Next()
 		tok.err = bz.z.Err()
 		var tagName []byte
@@ -586,12 +583,12 @@ func (bz *bufHTMLTokenizer) get() (tok htmlToken) {
 	return
 }
 
-func (bz *bufHTMLTokenizer) bufEmpty() bool {
+func (bz *bufHTMLTokenizer) empty() bool {
 	return bz.buf == nil
 }
 
 func (bz *bufHTMLTokenizer) unget() {
-	if bz.bufEmpty() && bz.last != nil {
+	if bz.empty() && bz.last != nil {
 		bz.buf = bz.last
 	} else {
 		panic("unget() before call to get()")
