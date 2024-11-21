@@ -237,19 +237,47 @@ func (l *Lexer) next() Token {
 			}
 
 		case stateGoStart:
-			pos, tok, _ := l.gscanner.Scan()
+			pos, tok, lit := l.gscanner.Scan()
+			_ = lit
 			l.pos = int(pos)
 			switch tok {
 			case token.EOF:
 				break
-			case token.IF:
-				l.pos += len("if")
-				l.switchState(stateGoCondExpr)
-				return l.emit(IF)
-			case token.FOR:
-				l.pos += len("for")
-				l.switchState(stateGoCondExpr)
-				return l.emit(FOR)
+			// case token.FOR:
+			// 	l.pos += len("for")
+			// 	l.switchState(stateGoUntilLBrace)
+			// 	return l.emit(FOR)
+			// case token.IF:
+			// 	l.pos += len("if")
+			// 	l.switchState(stateGoUntilLBrace)
+			// 	return l.emit(IF)
+			// case token.IMPORT:
+			// 	l.pos += len("import")
+			// 	l.switchState(stateGoUntilSemi)
+			// 	return l.emit(IMPORT)
+			// case token.IDENT:
+			// 	switch lit {
+			// 	case "param":
+			// 		l.pos += len("param")
+			// 		l.switchState(stateGoUntilSemi)
+			// 		return l.emit(PARAM)
+			// 	case "partial":
+			// 		l.pos += len("partial")
+			// 		l.switchState(stateGoUntilLBrace)
+			// 		return l.emit(PARTIAL)
+			// 	default:
+			// 		// Likely implicit expr
+			// 		l.switchState(stateGoImplicitExpr)
+			// 		continue
+			// 	}
+			// case token.LPAREN:
+			// 	l.pos += 1
+			// 	l.switchState(stateGo)
+			// 	continue
+			case token.LBRACE:
+				l.pos += 1
+				l.switchState(stateGoCodeBlock)
+				continue
 			default:
 				panic(fmt.Sprintf("unhandled Go token: %v", tok))
 			}
@@ -284,6 +312,9 @@ func (l *Lexer) next() Token {
 			l.pos = int(pos) + 1
 			l.switchState(stateHTMLStart)
 			return l.emit(GO_BLOCK_CLOSE)
+
+		default:
+			panic(fmt.Sprintf("unimplemented state %s", l.state))
 		}
 	}
 }
@@ -316,10 +347,6 @@ var keywords = map[string]TokenType{
 	"import":  IMPORT,
 	"param":   PARAM,
 	"partial": PARTIAL,
-}
-
-func (l *Lexer) matchesPrefix(b []byte) bool {
-	return bytes.HasPrefix(l.source[l.pos:], b)
 }
 
 func isWhitespace(ch rune) bool {
@@ -392,30 +419,44 @@ type state int
 
 const (
 	stateHTMLStart state = iota
+	stateHTMLAfterLastAttr
 	stateHTMLAttr
 	stateHTMLAttrName
 	stateHTMLAttrNameGoExpr
 	stateHTMLAttrValue
 	stateHTMLAttrValueGoExpr
-	stateHTMLAfterLastAttr
+
 	stateGoStart
-	stateGoCondExpr
-	stateGoBlockOpen
 	stateGoBlockClose
+	stateGoBlockOpen
+	stateGoCodeBlock
+	stateGoCondExpr
+	stateGoExplicitExpr
+	stateGoImplicitExpr
+	stateGoImportDecl
+	stateGoParam
+	stateGoPartialDecl
 )
 
 var states = [...]string{
 	stateHTMLStart:           "stateHTMLStart",
+	stateHTMLAfterLastAttr:   "stateHTMLAfterLastAttr",
 	stateHTMLAttr:            "stateHTMLAttr",
 	stateHTMLAttrName:        "stateHTMLAttrName",
 	stateHTMLAttrNameGoExpr:  "stateHTMLAttrNameGoExpr",
 	stateHTMLAttrValue:       "stateHTMLAttrValue",
 	stateHTMLAttrValueGoExpr: "stateHTMLAttrValueGoExpr",
-	stateHTMLAfterLastAttr:   "stateHTMLAfterLastAttr",
-	stateGoStart:             "stateGoStart",
-	stateGoCondExpr:          "stateGoCondExpr",
-	stateGoBlockOpen:         "stateGoBlockOpen",
-	stateGoBlockClose:        "stateGoBlockClose",
+
+	stateGoStart:        "stateGoStart",
+	stateGoBlockClose:   "stateGoBlockClose",
+	stateGoBlockOpen:    "stateGoBlockOpen",
+	stateGoCodeBlock:    "stateGoCodeBlock",
+	stateGoCondExpr:     "stateGoCondExpr",
+	stateGoExplicitExpr: "stateGoExplicitExpr",
+	stateGoImplicitExpr: "stateGoImplicitExpr",
+	stateGoImportDecl:   "stateGoImportDecl",
+	stateGoParam:        "stateGoParam",
+	stateGoPartialDecl:  "stateGoPartialDecl",
 }
 
 func (s state) String() string {

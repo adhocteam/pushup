@@ -2,6 +2,7 @@ package lexer
 
 import (
 	"fmt"
+	"go/token"
 	"os"
 	"strconv"
 	"testing"
@@ -48,6 +49,25 @@ func ExampleLexer() {
 	// GO_BLOCK_CLOSE........"}"......................75.....1
 	// HTML_TEXT............."\n".....................76.....1
 	// EOF..................."".......................77.....0
+}
+
+func TestKeywords(t *testing.T) {
+	bs := newBufGoScanner([]byte(`
+        ^for i := range 3 {
+            x := i * i
+            <p>^i</p>
+        }
+`), 1)
+	for {
+		pos, tok, lit := bs.Scan()
+		if lit == "" {
+			lit = tok.String()
+		}
+		fmt.Printf("%-2d %10s %10q\n", pos, tok, lit)
+		if tok == token.EOF {
+			break
+		}
+	}
 }
 
 func TestMatchesBlockOpen(t *testing.T) {

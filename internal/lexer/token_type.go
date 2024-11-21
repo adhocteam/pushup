@@ -30,9 +30,9 @@ const (
 
 	// Keywords
 	keywords_begin
-	IMPORT  // ^import
-	IF      // ^if
 	FOR     // ^for
+	IF      // ^if
+	IMPORT  // ^import
 	PARAM   // ^param
 	PARTIAL // ^partial
 	keywords_end
