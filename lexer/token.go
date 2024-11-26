@@ -22,6 +22,9 @@ const (
 	HTMLStartTag
 	HTMLSelfClosingTag
 	HTMLEndTag
+
+	HTMLTagOpen
+	HTMLTagClose
 )
 
 var htmlTypeMap = [...]HTMLTokenType{
@@ -66,6 +69,19 @@ func (t Transition) Pos() int {
 func IsTransition(t Token) bool {
 	_, ok := t.(Transition)
 	return ok
+}
+
+type AttrToken struct {
+	lit []byte
+	pos int
+}
+
+func (t AttrToken) Lit() []byte {
+	return t.lit
+}
+
+func (t AttrToken) Pos() int {
+	return t.pos
 }
 
 type HTMLToken struct {

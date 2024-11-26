@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/adhocteam/pushup/internal/ast"
 	"github.com/adhocteam/pushup/internal/source"
@@ -32,11 +33,17 @@ type Lexer struct {
 	current       any              // current token scanned, HTML or Go
 	goScanner     *scanner.Scanner // Go scanner as of last transition (needed because of consequtive tokens for state tracking)
 	htmlTokenizer *html.Tokenizer  // HTML tokenizer as of last transition
-	hattrCursor   *attrCursor
+	flag          flag
 
 	tmp     []Token // a temporary buffer of tokens before they get emitted or discarded
 	emitted []Token // a buffer of emitted tokens (see Next())
 }
+
+type flag int
+
+const (
+	flagSelfClosing flag = 1 << iota
+)
 
 type state int
 
@@ -45,10 +52,8 @@ const (
 	stateHTMLStartOrSelfCloseTag
 	stateHTMLAttr
 	stateHTMLAttrName
-	stateHTMLAttrNameLeadingText
 	stateHTMLAttrNameGoExpr
 	stateHTMLAttrValue
-	stateHTMLAttrValueLeadingText
 	stateHTMLAttrValueGoExpr
 	stateHTMLStartOrSelfCloseTagEnd
 	stateError
@@ -72,10 +77,8 @@ var states = [...]string{
 	stateHTMLStartOrSelfCloseTag:    "stateHTMLStartOrSelfCloseTag",
 	stateHTMLAttr:                   "stateHTMLAttr",
 	stateHTMLAttrName:               "stateHTMLAttrName",
-	stateHTMLAttrNameLeadingText:    "stateHTMLAttrNameLeadingText",
 	stateHTMLAttrNameGoExpr:         "stateHTMLAttrNameGoExpr",
 	stateHTMLAttrValue:              "stateHTMLAttrValue",
-	stateHTMLAttrValueLeadingText:   "stateHTMLAttrValueLeadingText",
 	stateHTMLAttrValueGoExpr:        "stateHTMLAttrValueGoExpr",
 	stateHTMLStartOrSelfCloseTagEnd: "stateHTMLStartOrSelfCloseTagEnd",
 	stateError:                      "stateError",
@@ -137,10 +140,8 @@ var stateModeMap = [...]mode{
 	stateHTMLStartOrSelfCloseTag:    modeHTML,
 	stateHTMLAttr:                   modeHTMLAttr,
 	stateHTMLAttrName:               modeHTMLAttr,
-	stateHTMLAttrNameLeadingText:    modeHTMLAttr,
 	stateHTMLAttrNameGoExpr:         modeGo,
 	stateHTMLAttrValue:              modeHTMLAttr,
-	stateHTMLAttrValueLeadingText:   modeHTMLAttr,
 	stateHTMLAttrValueGoExpr:        modeGo,
 	stateHTMLStartOrSelfCloseTagEnd: modeHTMLAttr,
 	stateGoStart:                    modeGo,
@@ -181,16 +182,16 @@ func (l *Lexer) sync() {
 	case modeHTML:
 		l.syncHTMLTokenizer()
 	case modeHTMLAttr:
-		t := l.current.(htmlToken)
-		if t.tok != html.StartTagToken && t.tok != html.SelfClosingTagToken {
-			panic(fmt.Sprintf("unexpected HTML token type %v", t.tok))
-		}
-		attrs, err := scanAttrs(string(t.raw), l.pos)
-		if err != nil {
-			// TODO: call error method on lexer
-			panic(fmt.Sprintf("scanning HTML attributes: %v", err))
-		}
-		l.hattrCursor = newAttrCursor(attrs)
+		// t := l.current.(htmlToken)
+		// if t.tok != html.StartTagToken && t.tok != html.SelfClosingTagToken {
+		// 	panic(fmt.Sprintf("unexpected HTML token type %v", t.tok))
+		// }
+		// attrs, err := scanAttrs(string(t.raw), l.pos)
+		// if err != nil {
+		// 	// TODO: call error method on lexer
+		// 	panic(fmt.Sprintf("scanning HTML attributes: %v", err))
+		// }
+		// l.hattrCursor = newAttrCursor(attrs)
 	case modeGo:
 		l.syncGoScanner()
 	}
@@ -282,6 +283,7 @@ func (l *Lexer) nextHtmlAttribute() *ast.Attr { // return type
 	if len(l.attrs) > 0 {
 		a := l.attrs[0]
 		l.attrs = l.attrs[1:]
+		l.current = a
 		return a
 	}
 	return nil
@@ -361,6 +363,7 @@ func (l *Lexer) run() {
 				slog.Error("tokenizing HTML", "error", t.err)
 				l.emit(EOF(l.start))
 				return
+
 			case html.TextToken:
 				idx := bytes.IndexRune(t.raw, '^')
 				// No transition
@@ -377,24 +380,98 @@ func (l *Lexer) run() {
 				} else {
 					l.switchState(stateGoStart)
 				}
-			case html.StartTagToken:
-				l.emit(l.makeHTMLToken())
+
+			case html.StartTagToken, html.SelfClosingTagToken:
+				lit := append([]byte("<"), t.tagName...)
+				result := HTMLToken{
+					Type: HTMLTagOpen,
+					lit:  lit,
+					pos:  l.start,
+				}
+				l.emit(result)
+				l.ignore()
+				if t.tok == html.SelfClosingTagToken {
+					l.flag |= flagSelfClosing
+				}
+				l.switchState(stateHTMLAttr)
 				return
+
 			case html.EndTagToken:
 				l.emit(l.makeHTMLToken())
 				return
-			case html.SelfClosingTagToken:
+
+			case html.CommentToken, html.DoctypeToken:
 				l.emit(l.makeHTMLToken())
 				return
-			case html.CommentToken:
-				l.emit(l.makeHTMLToken())
-				return
-			case html.DoctypeToken:
-				l.emit(l.makeHTMLToken())
-				return
+
 			default:
 				panic(fmt.Sprintf("unexpected HTML token type %v", t.tok))
 			}
+
+		case stateHTMLAttr:
+			attr := l.next().(*ast.Attr)
+			slog.Info("next attr", "attr", attr)
+			if attr == nil {
+				l.switchState(stateHTMLStartOrSelfCloseTagEnd)
+			} else {
+				l.switchState(stateHTMLAttrName)
+			}
+
+		case stateHTMLStartOrSelfCloseTagEnd:
+			lit := ">"
+			if l.flag&flagSelfClosing > 0 {
+				lit = "/>"
+			}
+			l.emit(HTMLToken{
+				Type: HTMLTagClose,
+				lit:  []byte(lit),
+			})
+			l.switchState(stateHTML)
+			return
+
+		case stateHTMLAttrName:
+			attr := l.current.(*ast.Attr)
+			name := attr.Name.Text
+			idx := strings.IndexRune(name, '^')
+			// No transition
+			if idx == -1 {
+				l.emit(l.makeAttrToken(name, int(attr.Name.Start)))
+				l.switchState(stateHTMLAttrValue)
+				return
+				// Transition but emit leading text first
+			} else if idx > 0 {
+				l.emit(l.makeAttrToken(name[:idx], int(attr.Name.Start)))
+				l.switchState(stateHTMLAttrNameGoExpr)
+				return
+				// Transition immediately
+			} else {
+				l.switchState(stateHTMLAttrNameGoExpr)
+			}
+
+		case stateHTMLAttrValue:
+			attr := l.current.(*ast.Attr)
+			value := attr.Value.Text
+			idx := strings.IndexRune(value, '^')
+			// No transition
+			if idx == -1 {
+				l.emit(l.makeAttrToken(value, int(attr.Value.Start)))
+				l.switchState(stateHTMLAttr)
+				return
+				// Transition but emit leading text first
+			} else if idx > 0 {
+				l.emit(l.makeAttrToken(value[:idx], int(attr.Value.Start)))
+				l.switchState(stateHTMLAttrValueGoExpr)
+				return
+				// Transition immediately
+			} else {
+				l.switchState(stateHTMLAttrValueGoExpr)
+			}
+
+		case stateHTMLAttrNameGoExpr:
+			panic("go expr in attr name")
+
+		case stateHTMLAttrValueGoExpr:
+			panic("go expr in attr value")
 
 		case stateGoStart:
 			t := l.next().(goToken)
@@ -519,6 +596,13 @@ func (l *Lexer) run() {
 		default:
 			panic(fmt.Sprintf("unexpected state %v", l.state))
 		}
+	}
+}
+
+func (l *Lexer) makeAttrToken(text string, pos int) AttrToken {
+	return AttrToken{
+		lit: []byte(text),
+		pos: pos,
 	}
 }
 
