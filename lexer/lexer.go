@@ -523,12 +523,9 @@ func (l *Lexer) run() {
 			panic("import")
 
 		case stateGoImplicitExpr:
-			// if the next char is whitespace, it's the end of the expression
-			if l.nextCharIsWhitespace() {
-				l.switchState(stateHTML)
-				return
-			}
-			panic("implicit")
+			l.parseImplicitExpr()
+			l.switchState(stateHTML)
+			return
 
 		case stateGoExplicitExpr:
 			panic("explicit")
@@ -597,6 +594,57 @@ func (l *Lexer) run() {
 			panic(fmt.Sprintf("unexpected state %v", l.state))
 		}
 	}
+}
+
+func (l *Lexer) parseImplicitExpr() {
+	if !l.acceptAndEmitGo(token.IDENT) {
+		panic("expected Go IDENT")
+	}
+
+	if l.nextCharIsWhitespace() {
+		l.emit(l.makeGoToken())
+		return
+	}
+
+	for {
+		t := l.next().(goToken)
+
+		switch t.tok {
+		case token.PERIOD:
+			t = l.next().(goToken)
+			if !l.acceptAndEmitGo(token.IDENT) {
+				panic("expected Go IDENT after dot")
+			}
+
+			if l.nextCharIsWhitespace() {
+				l.emit(l.makeGoToken())
+				return
+			}
+
+		case token.LPAREN:
+			for !l.acceptAndEmitGo(token.RPAREN) {
+			}
+			return
+
+		case token.LBRACK:
+			for !l.acceptAndEmitGo(token.RBRACK) {
+			}
+			return
+
+		default:
+			l.backupForTransition()
+			return
+		}
+	}
+}
+
+func (l *Lexer) acceptAndEmitGo(tt token.Token) bool {
+	if l.next().(goToken).tok == tt {
+		l.emit(l.makeGoToken())
+		return true
+	}
+	l.backup()
+	return false
 }
 
 func (l *Lexer) makeAttrToken(text string, pos int) AttrToken {
