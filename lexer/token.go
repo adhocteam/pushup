@@ -2,6 +2,7 @@ package lexer
 
 import (
 	"go/token"
+	"strings"
 
 	"golang.org/x/net/html"
 )
@@ -35,10 +36,10 @@ var htmlTypeMap = [...]HTMLTokenType{
 
 type EOF int
 
-var eof = []byte("EOF")
+var eofLit = []byte("EOF")
 
 func (_ EOF) Lit() []byte {
-	return eof
+	return eofLit
 }
 
 func (e EOF) Pos() int {
@@ -83,7 +84,7 @@ func newHTMLToken(tokType html.TokenType, lit []byte, pos int) HTMLToken {
 }
 
 func (t HTMLToken) String() string {
-	return string(t.lit)
+	return "HTMLToken(" + strings.ReplaceAll(string(t.lit), "\n", "\\n") + ")"
 }
 
 func (ht HTMLToken) Lit() []byte {
@@ -106,12 +107,16 @@ type GoToken struct {
 	pos  int
 }
 
-func (gt GoToken) Lit() []byte {
-	return gt.lit
+func (t GoToken) Lit() []byte {
+	if t.Type.IsLiteral() || t.Type.IsKeyword() || t.Type == token.SEMICOLON || t.Type == token.COMMENT || t.Type == token.ILLEGAL {
+		return t.lit
+	} else {
+		return []byte(t.Type.String())
+	}
 }
 
-func (gt GoToken) Pos() int {
-	return gt.pos
+func (t GoToken) Pos() int {
+	return t.pos
 }
 
 func IsGoToken(t Token) bool {
@@ -121,5 +126,5 @@ func IsGoToken(t Token) bool {
 }
 
 func (t GoToken) String() string {
-	return string(t.lit)
+	return string(t.Lit())
 }

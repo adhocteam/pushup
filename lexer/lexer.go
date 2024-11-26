@@ -9,35 +9,158 @@ import (
 	"io"
 	"iter"
 	"log/slog"
+	"os"
+	"strconv"
 
+	"github.com/adhocteam/pushup/internal/ast"
+	"github.com/adhocteam/pushup/internal/source"
+	"github.com/lmittmann/tint"
 	"golang.org/x/net/html"
 )
 
+func init() {
+	slog.SetDefault(slog.New(tint.NewHandler(os.Stderr, nil)))
+}
+
 type Lexer struct {
-	source []byte
-	start  int
-	pos    int
-	state  state
+	input         []byte
+	start         int // start of current token being scanned
+	pos           int // furthest position read
+	width         int // length of the last token
+	state         state
+	attrs         []*ast.Attr      // attributes of last tokenized HTML start/self-close tag
+	current       any              // current token scanned, HTML or Go
+	goScanner     *scanner.Scanner // Go scanner as of last transition (needed because of consequtive tokens for state tracking)
+	htmlTokenizer *html.Tokenizer  // HTML tokenizer as of last transition
+	hattrCursor   *attrCursor
 
-	tokenBuffer []Token
-
-	bgs *bufGoScanner
+	tmp     []Token // a temporary buffer of tokens before they get emitted or discarded
+	emitted []Token // a buffer of emitted tokens (see Next())
 }
 
 type state int
 
 const (
 	stateHTML state = iota
+	stateHTMLStartOrSelfCloseTag
+	stateHTMLAttr
+	stateHTMLAttrName
+	stateHTMLAttrNameLeadingText
+	stateHTMLAttrNameGoExpr
+	stateHTMLAttrValue
+	stateHTMLAttrValueLeadingText
+	stateHTMLAttrValueGoExpr
+	stateHTMLStartOrSelfCloseTagEnd
+	stateError
 	stateGoStart
+	stateGoIf
+	stateGoImport
+	stateGoFor
+	stateGoPartial
+	stateGoParam
+	stateGoImplicitExpr
+	stateGoExplicitExpr
 	stateGoAccumulate
 	stateGoAfterSemi
 	stateGoAfterLessThan
-	stateGoImplicitExpr
-	stateGoExplicitExpr
+	stateGoAfterQuotient
+	stateGoAfterIdent
 )
 
+var states = [...]string{
+	stateHTML:                       "stateHTML",
+	stateHTMLStartOrSelfCloseTag:    "stateHTMLStartOrSelfCloseTag",
+	stateHTMLAttr:                   "stateHTMLAttr",
+	stateHTMLAttrName:               "stateHTMLAttrName",
+	stateHTMLAttrNameLeadingText:    "stateHTMLAttrNameLeadingText",
+	stateHTMLAttrNameGoExpr:         "stateHTMLAttrNameGoExpr",
+	stateHTMLAttrValue:              "stateHTMLAttrValue",
+	stateHTMLAttrValueLeadingText:   "stateHTMLAttrValueLeadingText",
+	stateHTMLAttrValueGoExpr:        "stateHTMLAttrValueGoExpr",
+	stateHTMLStartOrSelfCloseTagEnd: "stateHTMLStartOrSelfCloseTagEnd",
+	stateError:                      "stateError",
+	stateGoStart:                    "stateGoStart",
+	stateGoIf:                       "stateGoIf",
+	stateGoImport:                   "stateGoImport",
+	stateGoFor:                      "stateGoFor",
+	stateGoPartial:                  "stateGoPartial",
+	stateGoParam:                    "stateGoParam",
+	stateGoImplicitExpr:             "stateGoImplicitExpr",
+	stateGoExplicitExpr:             "stateGoExplicitExpr",
+	stateGoAccumulate:               "stateGoAccumulate",
+	stateGoAfterSemi:                "stateGoAfterSemi",
+	stateGoAfterLessThan:            "stateGoAfterLessThan",
+	stateGoAfterQuotient:            "stateGoAfterQuotient",
+	stateGoAfterIdent:               "stateGoAfterIdent",
+}
+
+func (s state) String() string {
+	str := ""
+	if 0 <= s && s < state(len(states)) {
+		str = states[s]
+	}
+	if str == "" {
+		str = "state(" + strconv.Itoa(int(s)) + ")"
+	}
+	return str
+}
+
+// mode determines which underlying tokenizer (HTML, HTML attribute, or Go) to
+// get the next internal token from
+type mode int
+
+const (
+	modeHTML mode = iota
+	modeHTMLAttr
+	modeGo
+)
+
+var modes = [...]string{
+	modeHTML:     "modeHTML",
+	modeHTMLAttr: "modeHTMLAttr",
+	modeGo:       "modeGo",
+}
+
+func (m mode) String() string {
+	str := ""
+	if 0 <= m && m < mode(len(modes)) {
+		str = modes[m]
+	}
+	if str == "" {
+		str = "mode(" + strconv.Itoa(int(m)) + ")"
+	}
+	return str
+}
+
+var stateModeMap = [...]mode{
+	stateHTML:                       modeHTML,
+	stateHTMLStartOrSelfCloseTag:    modeHTML,
+	stateHTMLAttr:                   modeHTMLAttr,
+	stateHTMLAttrName:               modeHTMLAttr,
+	stateHTMLAttrNameLeadingText:    modeHTMLAttr,
+	stateHTMLAttrNameGoExpr:         modeGo,
+	stateHTMLAttrValue:              modeHTMLAttr,
+	stateHTMLAttrValueLeadingText:   modeHTMLAttr,
+	stateHTMLAttrValueGoExpr:        modeGo,
+	stateHTMLStartOrSelfCloseTagEnd: modeHTMLAttr,
+	stateGoStart:                    modeGo,
+	stateGoIf:                       modeGo,
+	stateGoFor:                      modeGo,
+	stateGoPartial:                  modeGo,
+	stateGoParam:                    modeGo,
+	stateGoImplicitExpr:             modeGo,
+	stateGoExplicitExpr:             modeGo,
+	stateGoAccumulate:               modeGo,
+	stateGoAfterSemi:                modeGo,
+	stateGoAfterLessThan:            modeGo,
+	stateGoAfterQuotient:            modeGo,
+	stateGoAfterIdent:               modeGo,
+}
+
 func New(source []byte) *Lexer {
-	return &Lexer{source: source, state: stateHTML}
+	l := &Lexer{input: source, state: stateHTML}
+	l.sync()
+	return l
 }
 
 func (l *Lexer) Tokens() iter.Seq[Token] {
@@ -51,167 +174,345 @@ func (l *Lexer) Tokens() iter.Seq[Token] {
 	}
 }
 
-func (l *Lexer) src() []byte {
-	return l.source[l.pos:]
+func (l *Lexer) sync() {
+	mode := stateModeMap[l.state]
+	slog.Info("sync", "mode", mode)
+	switch mode {
+	case modeHTML:
+		l.syncHTMLTokenizer()
+	case modeHTMLAttr:
+		t := l.current.(htmlToken)
+		if t.tok != html.StartTagToken && t.tok != html.SelfClosingTagToken {
+			panic(fmt.Sprintf("unexpected HTML token type %v", t.tok))
+		}
+		attrs, err := scanAttrs(string(t.raw), l.pos)
+		if err != nil {
+			// TODO: call error method on lexer
+			panic(fmt.Sprintf("scanning HTML attributes: %v", err))
+		}
+		l.hattrCursor = newAttrCursor(attrs)
+	case modeGo:
+		l.syncGoScanner()
+	}
 }
 
-func (l *Lexer) Next() Token {
-	if len(l.tokenBuffer) == 0 {
-		l.fillBuffer()
-	}
-	t := l.tokenBuffer[0]
-	l.tokenBuffer = l.tokenBuffer[1:]
-	return t
+func (l *Lexer) syncHTMLTokenizer() {
+	slog.Info("sync HTML tokenizer")
+	l.htmlTokenizer = html.NewTokenizer(bytes.NewReader(l.input[l.pos:]))
+}
+
+func (l *Lexer) syncGoScanner() {
+	slog.Info("sync go scanner")
+	fset := token.NewFileSet()
+	file := fset.AddFile("", l.pos, len(l.input[l.pos:]))
+	var scan scanner.Scanner
+	scan.Init(file, l.input[l.pos:], nil, scanner.ScanComments)
+	l.goScanner = &scan
 }
 
 func (l *Lexer) pushBuffer(t Token) {
-	slog.Debug("pushBuffer", "token", t)
-	l.tokenBuffer = append(l.tokenBuffer, t)
+	l.tmp = append(l.tmp, t)
+}
+
+func (l *Lexer) clearBuffer() {
+	l.tmp = l.tmp[:0]
+}
+
+func (l *Lexer) emitBuffer() {
+	l.emitted = append(l.emitted, l.tmp...)
+	l.clearBuffer()
+}
+
+func (l *Lexer) rewindToStartOfBuffer() {
+	l.pos = l.tmp[0].Pos()
+	l.ignore()
+}
+
+func (l *Lexer) Next() Token {
+	if len(l.emitted) == 0 {
+		l.run()
+	}
+	t := l.emitted[0]
+	l.emitted = l.emitted[1:]
+	return t
+}
+
+func (l *Lexer) emit(t Token) {
+	slog.Info("emit", "token", t)
+	l.emitted = append(l.emitted, t)
 }
 
 func (l *Lexer) switchState(new state) {
-	slog.Info("switch state", "current", l.state, "new", new)
+	mode := stateModeMap[l.state]
+	slog.Info("switch state", "mode", mode, "current", l.state, "new", new)
+	nextMode := stateModeMap[new]
 	l.state = new
+	if mode != nextMode {
+		slog.Info("switch mode", "new", nextMode)
+		l.sync()
+	}
 }
 
-func (l *Lexer) fillBuffer() {
+func (l *Lexer) nextHtmlToken() (t htmlToken) {
+	z := l.htmlTokenizer
+	t.tok = z.Next()
+	raw := z.Raw()
+	t.raw = make([]byte, len(raw))
+	copy(t.raw, raw)
+	l.width = len(raw)
+	t.err = z.Err()
+	if t.tok == html.StartTagToken || t.tok == html.SelfClosingTagToken {
+		t.tagName, t.hasAttrs = z.TagName()
+		if t.hasAttrs {
+			attrs, err := scanAttrs(string(t.raw), l.pos)
+			if err != nil {
+				panic(fmt.Sprintf("scanning HTML attributes: %v", err))
+			}
+			l.attrs = attrs
+		}
+	}
+	// This is the whole tag (if start/self-close), but position of attribute
+	// names and values will be carried by them along as they are consumed
+	l.pos += l.width
+	l.current = t
+	return
+}
+
+func (l *Lexer) nextHtmlAttribute() *ast.Attr { // return type
+	if len(l.attrs) > 0 {
+		a := l.attrs[0]
+		l.attrs = l.attrs[1:]
+		return a
+	}
+	return nil
+}
+
+func (l *Lexer) nextGoToken() (t goToken) {
+	var lit string
+	t.pos, t.tok, lit = l.goScanner.Scan()
+	if t.tok.IsLiteral() ||
+		t.tok.IsKeyword() ||
+		t.tok == token.SEMICOLON ||
+		t.tok == token.COMMENT ||
+		t.tok == token.ILLEGAL {
+		t.lit = lit
+	} else {
+		t.lit = t.tok.String()
+	}
+	l.width = len(t.lit)
+	l.start = int(t.pos)
+	l.pos = l.start + l.width
+	l.current = t
+	slog.Info("next go token", "token", t)
+	return
+}
+
+func (l *Lexer) next() any { // return type???
+	switch mode := stateModeMap[l.state]; mode {
+	case modeHTML:
+		return l.nextHtmlToken()
+	case modeHTMLAttr:
+		return l.nextHtmlAttribute()
+	case modeGo:
+		return l.nextGoToken()
+	default:
+		panic(fmt.Sprintf("unexpected mode: %v", mode))
+	}
+}
+
+func (l *Lexer) backup() {
+	l.pos -= l.width
+	switch mode := stateModeMap[l.state]; mode {
+	case modeGo:
+		l.syncGoScanner()
+	case modeHTML:
+		l.syncHTMLTokenizer()
+	}
+}
+
+func (l *Lexer) backupForTransition() {
+	l.pos -= l.width
+}
+
+func (l *Lexer) ignore() {
+	l.start = l.pos
+}
+
+func (l *Lexer) peek() any {
+	token := l.next()
+	l.backup()
+	return token
+}
+
+func (l *Lexer) run() {
 	for {
-		slog.Info("main switch", "l.state", l.state)
+		slog.Info("run", "current", l.state, "pos", l.pos, "window(5)", window(string(l.input), l.pos, 5))
 		switch l.state {
 		case stateHTML:
-			z := html.NewTokenizer(bytes.NewReader(l.src()))
-			tok := z.Next()
-			raw := z.Raw()
-			slog.Info("tokenize html", "tok", tok, "raw", string(raw))
-			switch tok {
+			// FIXME: runtime type assertion - use type-safe accessor?
+			t := l.next().(htmlToken)
+			slog.Info("tokenize html", "tok", t.tok, "raw", string(t.raw))
+			switch t.tok {
 			case html.ErrorToken:
-				err := z.Err()
-				if errors.Is(err, io.EOF) {
-					l.pushBuffer(EOF(l.pos))
+				if errors.Is(t.err, io.EOF) {
+					// TODO: wrap the emit EOF and emit Transition
+					l.emit(EOF(l.start))
 				}
-				slog.Error("tokenizing HTML", "error", err)
-				l.pushBuffer(EOF(l.pos))
+				slog.Error("tokenizing HTML", "error", t.err)
+				l.emit(EOF(l.start))
 				return
 			case html.TextToken:
-				idx := bytes.IndexRune(raw, '^')
+				idx := bytes.IndexRune(t.raw, '^')
+				// No transition
 				if idx == -1 {
-					l.pos += len(raw)
-					l.pushBuffer(l.makeHTMLToken(tok))
+					l.emit(l.makeHTMLToken())
 					return
+					// Transition but emit leading text first
 				} else if idx > 0 {
-					l.pos += idx
+					l.pos = l.start + idx
 					l.switchState(stateGoStart)
-					l.pushBuffer(l.makeHTMLToken(tok))
+					l.emit(l.makeHTMLToken())
 					return
+					// Transition immediately
 				} else {
 					l.switchState(stateGoStart)
 				}
 			case html.StartTagToken:
-				l.pos += len(raw)
-				l.pushBuffer(l.makeHTMLToken(tok))
+				l.emit(l.makeHTMLToken())
 				return
 			case html.EndTagToken:
-				l.pos += len(raw)
-				l.pushBuffer(l.makeHTMLToken(tok))
+				l.emit(l.makeHTMLToken())
 				return
 			case html.SelfClosingTagToken:
-				l.pos += len(raw)
-				l.pushBuffer(l.makeHTMLToken(tok))
+				l.emit(l.makeHTMLToken())
 				return
 			case html.CommentToken:
-				l.pos += len(raw)
-				l.pushBuffer(l.makeHTMLToken(tok))
+				l.emit(l.makeHTMLToken())
 				return
 			case html.DoctypeToken:
-				l.pos += len(raw)
-				l.pushBuffer(l.makeHTMLToken(tok))
+				l.emit(l.makeHTMLToken())
 				return
 			default:
-				panic(fmt.Sprintf("unexpected HTML token type %v", tok))
+				panic(fmt.Sprintf("unexpected HTML token type %v", t.tok))
 			}
 
 		case stateGoStart:
-			if ch := l.source[l.pos]; ch != '^' {
-				panic(fmt.Sprintf("expected '^', got %q", ch))
+			t := l.next().(goToken)
+			// FIXME: candidate for accept() method
+			if t.tok != token.XOR {
+				panic(fmt.Sprintf("expected '^', got %v", t.tok))
 			}
-			l.pos++
-			l.start = l.pos
-			// TODO move to switchState()
-			l.bgs = newBufGoScanner(l.src(), l.pos)
-			_, tok, _ := l.bgs.Scan()
-			l.bgs.Unscan()
-			switch tok {
+			l.emit(Transition(l.start))
+			l.ignore()
+
+			t = l.next().(goToken)
+
+			switch t.tok {
+			case token.FOR:
+				l.switchState(stateGoFor)
+			case token.IF:
+				l.switchState(stateGoIf)
+			case token.IMPORT:
+				l.switchState(stateGoImport)
 			case token.IDENT:
-				l.switchState(stateGoImplicitExpr)
+				switch t.lit {
+				case "param":
+					l.switchState(stateGoParam)
+				case "partial":
+					l.switchState(stateGoPartial)
+				default:
+					l.backup()
+					l.switchState(stateGoImplicitExpr)
+				}
 			case token.LPAREN:
+				l.ignore()
 				l.switchState(stateGoExplicitExpr)
 				// TODO: { for if keywords ...
-			default:
+			case token.LBRACE:
+				l.emit(l.makeGoToken())
 				l.switchState(stateGoAccumulate)
+				// TODO: { for if keywords ...
+			default:
+				panic(fmt.Sprintf("unexpected transition to Go token: %s %q", t.tok, t.lit))
 			}
 
+		case stateGoFor:
+			panic("for")
+
+		case stateGoIf:
+			panic("if")
+
+		case stateGoImport:
+			panic("import")
+
 		case stateGoImplicitExpr:
+			// if the next char is whitespace, it's the end of the expression
+			if l.nextCharIsWhitespace() {
+				l.switchState(stateHTML)
+				return
+			}
 			panic("implicit")
 
 		case stateGoExplicitExpr:
 			panic("explicit")
 
 		case stateGoAccumulate:
-			pos, tok, lit := l.bgs.Scan()
-			slog.Info("go token", "pos", pos, "tok", tok, "lit", lit)
+			t := l.next().(goToken)
 
-			l.pos = int(pos)
-
-			switch tok {
+			switch t.tok {
 			case token.EOF:
-				l.pushBuffer(EOF(l.pos))
+				l.emit(EOF(l.start))
 				return
 			case token.SEMICOLON:
-				l.pushBuffer(l.makeGoToken(tok))
+				l.emit(l.makeGoToken())
 				l.switchState(stateGoAfterSemi)
 			default:
-				l.pushBuffer(l.makeGoToken(tok))
+				l.emit(l.makeGoToken())
 			}
 
 		case stateGoAfterSemi:
-			pos, tok, lit := l.bgs.Scan()
-			slog.Info("go token", "pos", pos, "tok", tok, "lit", lit)
+			t := l.next().(goToken)
+			slog.Info("go token", "pos", t.pos, "tok", t.tok, "lit", t.lit)
 
-			l.pos = int(pos)
-
-			if tok == token.EOF {
-				l.pushBuffer(EOF(l.pos))
+			if t.tok == token.EOF {
+				l.emit(EOF(l.pos))
 				return
 			}
 
-			switch tok {
+			switch t.tok {
 			case token.EOF:
-				l.pushBuffer(EOF(l.pos))
+				l.emit(EOF(l.pos))
 				return
 			case token.LSS:
-				l.pushBuffer(l.makeGoToken(tok))
+				l.pushBuffer(l.makeGoToken())
 				l.switchState(stateGoAfterLessThan)
 			default:
-				l.pushBuffer(l.makeGoToken(tok))
+				l.emit(l.makeGoToken())
 				l.switchState(stateGoAccumulate)
 			}
 
 		case stateGoAfterLessThan:
-			pos, tok, lit := l.bgs.Scan()
-			slog.Info("go token", "pos", pos, "tok", tok, "lit", lit)
+			t := l.next().(goToken)
+			slog.Info("go token", "pos", t.pos, "tok", t.tok, "lit", t.lit)
 
-			l.pos = int(pos)
+			if t.tok == token.EOF {
+				l.emit(EOF(l.pos))
+				return
+			}
 
-			switch tok {
+			switch t.tok {
 			case token.EOF:
-				l.pushBuffer(EOF(l.pos))
+				l.emit(EOF(l.start))
 				return
 			case token.IDENT:
-				l.pos -= len("<" + lit)
-				l.start = l.pos
+				slog.Info("transition Go->HTML")
+				l.rewindToStartOfBuffer()
+				l.clearBuffer()
+				l.backupForTransition()
 				l.switchState(stateHTML)
 			default:
-				l.pushBuffer(l.makeGoToken(tok))
+				l.emitBuffer()
+				l.emit(l.makeGoToken())
 				l.switchState(stateGoAccumulate)
 			}
 
@@ -221,14 +522,19 @@ func (l *Lexer) fillBuffer() {
 	}
 }
 
-func (l *Lexer) makeHTMLToken(tokType html.TokenType) HTMLToken {
-	t := newHTMLToken(tokType, l.source[l.start:l.pos], l.pos)
+func (l *Lexer) nextCharIsWhitespace() bool {
+	ch := l.input[l.pos]
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
+}
+
+func (l *Lexer) makeHTMLToken() HTMLToken {
+	t := newHTMLToken(l.current.(htmlToken).tok, l.input[l.start:l.pos], l.pos)
 	l.start = l.pos
 	return t
 }
 
-func (l *Lexer) makeGoToken(tokType token.Token) GoToken {
-	t := GoToken{Type: tokType, lit: l.source[l.start:l.pos], pos: l.pos}
+func (l *Lexer) makeGoToken() GoToken {
+	t := GoToken{Type: l.current.(goToken).tok, lit: l.input[l.start:l.pos], pos: l.pos}
 	l.start = l.pos
 	return t
 }
@@ -239,43 +545,90 @@ type goToken struct {
 	lit string
 }
 
-type bufGoScanner struct {
-	*scanner.Scanner
-	buf  *goToken
-	last *goToken
+type htmlToken struct {
+	tok      html.TokenType // z.Next()
+	raw      []byte         // z.Raw()
+	err      error          // z.Err()
+	tagName  []byte         // z.TagName()
+	hasAttrs bool
+	pos      int
 }
 
-func newBufGoScanner(src []byte, baseOffset int) *bufGoScanner {
-	scan := new(scanner.Scanner)
-	fset := token.NewFileSet()
-	file := fset.AddFile("", baseOffset, len(src))
-	scan.Init(file, src, nil, scanner.ScanComments)
-	return &bufGoScanner{Scanner: scan}
+func (t htmlToken) Pos() int {
+	return t.pos
 }
 
-func (s *bufGoScanner) empty() bool {
-	return s.buf == nil
+func (t htmlToken) Lit() string {
+	return string(t.raw)
 }
 
-func (s *bufGoScanner) Scan() (pos token.Pos, tok token.Token, lit string) {
-	var t goToken
-	if s.empty() {
-		t.pos, t.tok, t.lit = s.Scanner.Scan()
-		s.last = &t
-	} else {
-		t = *s.buf
-		s.buf = nil
+type attrCursor struct {
+	attrs       []*ast.Attr
+	current     int              // index into attrs
+	name, value source.StringPos // convenience accessors
+}
+
+func newAttrCursor(attrs []*ast.Attr) *attrCursor {
+	c := &attrCursor{
+		attrs:   attrs,
+		current: -1,
 	}
-	pos = t.pos
-	tok = t.tok
-	lit = t.lit
-	return
+	return c
 }
 
-func (s *bufGoScanner) Unscan() {
-	if s.empty() && s.last != nil {
-		s.buf = s.last
-	} else {
-		panic("unscan() before call to scan()")
+func (c attrCursor) hasMore() bool {
+	return c.current < len(c.attrs)
+}
+
+func (c *attrCursor) advance() bool {
+	c.current++
+	if !c.hasMore() {
+		return false
 	}
+	c.name = c.attrs[c.current].Name
+	c.value = c.attrs[c.current].Value
+	return true
+}
+
+// window returns a window of n characters around the given position in the input string.
+// If the string is shorter than n, it returns the entire string.
+// For positions near the start or end, it returns the first or last n characters respectively.
+func window(input string, position int, n int) string {
+	// Handle invalid inputs
+	if n <= 0 {
+		return ""
+	}
+	if len(input) == 0 {
+		return ""
+	}
+	if position < 0 {
+		position = 0
+	}
+	if position >= len(input) {
+		position = len(input) - 1
+	}
+
+	// If string is shorter than window size, return entire string
+	if len(input) <= n {
+		return input
+	}
+
+	// Calculate window boundaries
+	halfWindow := n / 2
+	start := position - halfWindow
+	end := start + n
+
+	// Adjust for start of string
+	if start < 0 {
+		start = 0
+		end = n
+	}
+
+	// Adjust for end of string
+	if end > len(input) {
+		end = len(input)
+		start = end - n
+	}
+
+	return input[start:end]
 }
