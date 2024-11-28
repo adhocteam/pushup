@@ -24,16 +24,19 @@ func init() {
 }
 
 type Lexer struct {
-	input         []byte
-	start         int // start of current token being scanned
-	pos           int // furthest position read
-	width         int // length of the last token
-	state         state
-	attrs         []*ast.Attr      // attributes of last tokenized HTML start/self-close tag
-	current       any              // current token scanned, HTML or Go
-	goScanner     *scanner.Scanner // Go scanner as of last transition (needed because of consequtive tokens for state tracking)
-	htmlTokenizer *html.Tokenizer  // HTML tokenizer as of last transition
-	flag          flag
+	input            []byte
+	start            int // start of current token being scanned
+	pos              int // furthest position read
+	width            int // length of the last token
+	state            state
+	attrs            []*ast.Attr // attributes of last tokenized HTML start/self-close tag
+	current          any         // current token scanned, HTML or Go
+	currentHtmlToken htmlToken
+	currentGoToken   goToken
+	currentAttr      *ast.Attr
+	goScanner        *scanner.Scanner // Go scanner as of last transition (needed because of consequtive tokens for state tracking)
+	htmlTokenizer    *html.Tokenizer  // HTML tokenizer as of last transition
+	flag             flag
 
 	tmp     []Token // a temporary buffer of tokens before they get emitted or discarded
 	emitted []Token // a buffer of emitted tokens (see Next())
@@ -143,7 +146,7 @@ var stateModeMap = [...]mode{
 	stateHTMLAttrNameGoExpr:         modeGo,
 	stateHTMLAttrValue:              modeHTMLAttr,
 	stateHTMLAttrValueGoExpr:        modeGo,
-	stateHTMLStartOrSelfCloseTagEnd: modeHTMLAttr,
+	stateHTMLStartOrSelfCloseTagEnd: modeHTML,
 	stateGoStart:                    modeGo,
 	stateGoIf:                       modeGo,
 	stateGoFor:                      modeGo,
@@ -198,7 +201,7 @@ func (l *Lexer) sync() {
 }
 
 func (l *Lexer) syncHTMLTokenizer() {
-	slog.Info("sync HTML tokenizer")
+	slog.Info("sync HTML tokenizer", "src", window(string(l.input), l.pos, 5))
 	l.htmlTokenizer = html.NewTokenizer(bytes.NewReader(l.input[l.pos:]))
 }
 
@@ -226,7 +229,6 @@ func (l *Lexer) emitBuffer() {
 
 func (l *Lexer) rewindToStartOfBuffer() {
 	l.pos = l.tmp[0].Pos()
-	l.ignore()
 }
 
 func (l *Lexer) Next() Token {
@@ -272,10 +274,12 @@ func (l *Lexer) nextHtmlToken() (t htmlToken) {
 			l.attrs = attrs
 		}
 	}
+	t.pos = l.pos
 	// This is the whole tag (if start/self-close), but position of attribute
 	// names and values will be carried by them along as they are consumed
 	l.pos += l.width
 	l.current = t
+	l.currentHtmlToken = t
 	return
 }
 
@@ -284,6 +288,7 @@ func (l *Lexer) nextHtmlAttribute() *ast.Attr { // return type
 		a := l.attrs[0]
 		l.attrs = l.attrs[1:]
 		l.current = a
+		l.currentAttr = a
 		return a
 	}
 	return nil
@@ -302,9 +307,9 @@ func (l *Lexer) nextGoToken() (t goToken) {
 		t.lit = t.tok.String()
 	}
 	l.width = len(t.lit)
-	l.start = int(t.pos)
-	l.pos = l.start + l.width
+	l.pos = int(t.pos) + l.width
 	l.current = t
+	l.currentGoToken = t
 	slog.Info("next go token", "token", t)
 	return
 }
@@ -348,7 +353,7 @@ func (l *Lexer) peek() any {
 
 func (l *Lexer) run() {
 	for {
-		slog.Info("run", "current", l.state, "pos", l.pos, "window(5)", window(string(l.input), l.pos, 5))
+		slog.Info("run", "current", l.state, "start", l.start, "pos", l.pos, "window(5)", window(string(l.input), l.pos, 5))
 		switch l.state {
 		case stateHTML:
 			// FIXME: runtime type assertion - use type-safe accessor?
@@ -420,12 +425,20 @@ func (l *Lexer) run() {
 		case stateHTMLStartOrSelfCloseTagEnd:
 			lit := ">"
 			if l.flag&flagSelfClosing > 0 {
+				l.flag &^= flagSelfClosing
 				lit = "/>"
 			}
 			l.emit(HTMLToken{
 				Type: HTMLTagClose,
 				lit:  []byte(lit),
 			})
+			curr := l.currentHtmlToken
+			// TODO: synchronizing the state of the HTML tokenizer after
+			// attribute processing should probably live in the state
+			// transition function
+			l.pos = curr.pos + len(curr.raw)
+			l.ignore()
+			l.syncHTMLTokenizer()
 			l.switchState(stateHTML)
 			return
 
@@ -450,28 +463,38 @@ func (l *Lexer) run() {
 
 		case stateHTMLAttrValue:
 			attr := l.current.(*ast.Attr)
-			value := attr.Value.Text
-			idx := strings.IndexRune(value, '^')
+			value := attr.Value
+			text := value.Text
+			start := int(value.Start)
+			idx := strings.IndexRune(text, '^')
 			// No transition
 			if idx == -1 {
-				l.emit(l.makeAttrToken(value, int(attr.Value.Start)))
+				l.emit(l.makeAttrToken(text, start))
 				l.switchState(stateHTMLAttr)
 				return
 				// Transition but emit leading text first
 			} else if idx > 0 {
-				l.emit(l.makeAttrToken(value[:idx], int(attr.Value.Start)))
+				l.emit(l.makeAttrToken(text[:idx], start))
+				l.pos = start + idx + 1
 				l.switchState(stateHTMLAttrValueGoExpr)
 				return
 				// Transition immediately
 			} else {
+				l.pos = start + 1
 				l.switchState(stateHTMLAttrValueGoExpr)
 			}
 
 		case stateHTMLAttrNameGoExpr:
-			panic("go expr in attr name")
+			// TODO: allow explicit expression - peek next token for ( or ident
+			l.parseImplicitExpr()
+			l.switchState(stateHTMLAttrValue)
+			return
 
 		case stateHTMLAttrValueGoExpr:
-			panic("go expr in attr value")
+			// TODO: allow explicit expression - peek next token for ( or ident
+			l.parseImplicitExpr()
+			l.switchState(stateHTMLAttr)
+			return
 
 		case stateGoStart:
 			t := l.next().(goToken)
@@ -479,14 +502,16 @@ func (l *Lexer) run() {
 			if t.tok != token.XOR {
 				panic(fmt.Sprintf("expected '^', got %v", t.tok))
 			}
-			l.emit(Transition(l.start))
-			l.ignore()
+			l.emit(l.makeTransitionToken())
 
+			// TODO: peek instead
 			t = l.next().(goToken)
 
 			switch t.tok {
 			case token.FOR:
+				l.emit(l.makeGoToken())
 				l.switchState(stateGoFor)
+				return
 			case token.IF:
 				l.switchState(stateGoIf)
 			case token.IMPORT:
@@ -502,7 +527,7 @@ func (l *Lexer) run() {
 					l.switchState(stateGoImplicitExpr)
 				}
 			case token.LPAREN:
-				l.ignore()
+				l.backup()
 				l.switchState(stateGoExplicitExpr)
 				// TODO: { for if keywords ...
 			case token.LBRACE:
@@ -514,7 +539,8 @@ func (l *Lexer) run() {
 			}
 
 		case stateGoFor:
-			panic("for")
+			// TODO: consume the for token here
+			l.switchState(stateGoAccumulate)
 
 		case stateGoIf:
 			panic("if")
@@ -528,15 +554,21 @@ func (l *Lexer) run() {
 			return
 
 		case stateGoExplicitExpr:
-			panic("explicit")
+			l.parseExplicitExpr()
+			l.switchState(stateHTML)
+			return
 
 		case stateGoAccumulate:
 			t := l.next().(goToken)
+			slog.Info("go token", "pos", t.pos, "tok", t.tok, "lit", t.lit)
 
 			switch t.tok {
 			case token.EOF:
 				l.emit(EOF(l.start))
 				return
+			case token.LBRACE:
+				l.emit(l.makeGoToken())
+				l.switchState(stateGoAfterSemi)
 			case token.SEMICOLON:
 				l.emit(l.makeGoToken())
 				l.switchState(stateGoAfterSemi)
@@ -547,11 +579,6 @@ func (l *Lexer) run() {
 		case stateGoAfterSemi:
 			t := l.next().(goToken)
 			slog.Info("go token", "pos", t.pos, "tok", t.tok, "lit", t.lit)
-
-			if t.tok == token.EOF {
-				l.emit(EOF(l.pos))
-				return
-			}
 
 			switch t.tok {
 			case token.EOF:
@@ -582,7 +609,7 @@ func (l *Lexer) run() {
 				slog.Info("transition Go->HTML")
 				l.rewindToStartOfBuffer()
 				l.clearBuffer()
-				l.backupForTransition()
+				l.ignore()
 				l.switchState(stateHTML)
 			default:
 				l.emitBuffer()
@@ -638,6 +665,34 @@ func (l *Lexer) parseImplicitExpr() {
 	}
 }
 
+func (l *Lexer) parseExplicitExpr() {
+	if !l.acceptAndEmitGo(token.LPAREN) {
+		panic("expected Go LPAREN")
+	}
+
+	nested := 1
+
+	for {
+		t := l.next().(goToken)
+
+		switch t.tok {
+		case token.LPAREN:
+			nested++
+
+		case token.RPAREN:
+			nested--
+
+		case token.EOF:
+			return
+		}
+		l.emit(l.makeGoToken())
+		if nested == 0 {
+			l.backupForTransition()
+			return
+		}
+	}
+}
+
 func (l *Lexer) acceptAndEmitGo(tt token.Token) bool {
 	if l.next().(goToken).tok == tt {
 		l.emit(l.makeGoToken())
@@ -666,13 +721,20 @@ func (l *Lexer) makeHTMLToken() HTMLToken {
 }
 
 func (l *Lexer) makeGoToken() GoToken {
-	t := GoToken{Type: l.current.(goToken).tok, lit: l.input[l.start:l.pos], pos: l.pos}
+	gt := l.current.(goToken)
+	t := GoToken{Type: gt.tok, lit: []byte(gt.lit), pos: l.start}
+	l.start = l.pos
+	return t
+}
+
+func (l *Lexer) makeTransitionToken() Transition {
+	t := Transition(l.start)
 	l.start = l.pos
 	return t
 }
 
 type goToken struct {
-	pos token.Pos
+	pos token.Pos // starting character position of the Go token
 	tok token.Token
 	lit string
 }

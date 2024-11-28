@@ -2,6 +2,7 @@ package lexer
 
 import (
 	"go/token"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -71,6 +72,10 @@ func IsTransition(t Token) bool {
 	return ok
 }
 
+func (t Transition) String() string {
+	return "^(" + strconv.Itoa(int(t)) + ")"
+}
+
 type AttrToken struct {
 	lit []byte
 	pos int
@@ -82,6 +87,10 @@ func (t AttrToken) Lit() []byte {
 
 func (t AttrToken) Pos() int {
 	return t.pos
+}
+
+func (t AttrToken) String() string {
+	return "AttrToken(" + string(t.lit) + ")"
 }
 
 type HTMLToken struct {
@@ -142,5 +151,5 @@ func IsGoToken(t Token) bool {
 }
 
 func (t GoToken) String() string {
-	return string(t.Lit())
+	return "GoToken(" + strings.ReplaceAll(string(t.Lit()), "\n", "\\n") + ")"
 }
