@@ -1,12 +1,38 @@
 package lexer
 
 import (
-	"bytes"
+	"fmt"
 	"go/token"
 	"testing"
 )
 
-func TestPushupLexer(t *testing.T) {
+// ExpectedToken represents a token we expect the lexer to produce
+type ExpectedToken struct {
+	Type     string // "HTML", "GoToken", "AttrToken", "Transition", "EOF"
+	Position int
+	Literal  string        // The literal content of the token
+	HTMLType HTMLTokenType // Used only for HTML tokens
+	GoType   token.Token   // Used only for Go tokens
+}
+
+func (et ExpectedToken) String() string {
+	switch et.Type {
+	case "HTML":
+		return fmt.Sprintf("HTML(%s, %d, %q)", et.HTMLType, et.Position, et.Literal)
+	case "GoToken":
+		return fmt.Sprintf("Go(%s, %d, %q)", et.GoType, et.Position, et.Literal)
+	case "AttrToken":
+		return fmt.Sprintf("Attr(%d, %q)", et.Position, et.Literal)
+	case "Transition":
+		return fmt.Sprintf("Transition(%d)", et.Position)
+	case "EOF":
+		return fmt.Sprintf("EOF(%d)", et.Position)
+	default:
+		return fmt.Sprintf("Unknown(%s, %d, %q)", et.Type, et.Position, et.Literal)
+	}
+}
+
+func TestLexer(t *testing.T) {
 	source := `<!DOCTYPE html>
 <title>Pushup</title>
 ^{
@@ -21,309 +47,170 @@ func TestPushupLexer(t *testing.T) {
 }
 </ul>
 `
-	// Define key token sequences we expect to find
-	keySequences := []struct {
-		name  string
-		check func(t *testing.T, tokens []Token) bool
-	}{
-		{
-			name: "DOCTYPE declaration",
-			check: func(t *testing.T, tokens []Token) bool {
-				if len(tokens) == 0 {
-					return false
-				}
-				if ht, ok := tokens[0].(HTMLToken); ok {
-					if ht.Type == HTMLDoctype {
-						t.Logf("Found DOCTYPE at position %d", ht.Pos())
-						return true
-					}
-				}
-				return false
-			},
-		},
-		{
-			name: "Go block with variable declaration",
-			check: func(t *testing.T, tokens []Token) bool {
-				// Look for: ^{ name := "world" }
-				for i := 0; i < len(tokens)-5; i++ {
-					if !IsTransition(tokens[i]) {
-						continue
-					}
+	// Define expected tokens in order
+	expectedTokens := []ExpectedToken{
+		// DOCTYPE declaration
+		{Type: "HTML", Position: 15, Literal: "<!DOCTYPE html>", HTMLType: HTMLDoctype},
+		{Type: "HTML", Position: 16, Literal: "\n", HTMLType: HTMLText},
 
-					// Check for { token
-					gt1, ok1 := tokens[i+1].(GoToken)
-					if !ok1 || gt1.Type != token.LBRACE {
-						continue
-					}
+		// title tag
+		{Type: "HTML", Position: 16, Literal: "<title", HTMLType: HTMLTagOpen},
+		{Type: "HTML", Position: 0, Literal: ">", HTMLType: HTMLTagClose},
+		{Type: "HTML", Position: 29, Literal: "Pushup", HTMLType: HTMLText},
+		{Type: "HTML", Position: 37, Literal: "</title>", HTMLType: HTMLEndTag},
+		{Type: "HTML", Position: 38, Literal: "\n", HTMLType: HTMLText},
 
-					// Check for name token
-					gt2, ok2 := tokens[i+2].(GoToken)
-					if !ok2 || gt2.Type != token.IDENT || string(gt2.Lit()) != "name" {
-						continue
-					}
+		// Go code block
+		{Type: "Transition", Position: 38, Literal: "^"},
+		{Type: "GoToken", Position: 39, Literal: "{", GoType: token.LBRACE},
+		{Type: "GoToken", Position: 40, Literal: "name", GoType: token.IDENT},
+		{Type: "GoToken", Position: 49, Literal: ":=", GoType: token.DEFINE},
+		{Type: "GoToken", Position: 52, Literal: "\"world\"", GoType: token.STRING},
+		{Type: "GoToken", Position: 60, Literal: "\n", GoType: token.SEMICOLON},
+		{Type: "GoToken", Position: 61, Literal: "}", GoType: token.RBRACE},
+		{Type: "GoToken", Position: 62, Literal: "\n", GoType: token.SEMICOLON},
 
-					// Check for := token
-					gt3, ok3 := tokens[i+3].(GoToken)
-					if !ok3 || string(gt3.Lit()) != ":=" {
-						continue
-					}
+		// p tag with class attribute
+		{Type: "HTML", Position: 63, Literal: "<p", HTMLType: HTMLTagOpen},
+		{Type: "AttrToken", Position: 66, Literal: "class"},
+		{Type: "AttrToken", Position: 73, Literal: "greeting"},
+		{Type: "HTML", Position: 0, Literal: ">", HTMLType: HTMLTagClose},
+		{Type: "HTML", Position: 90, Literal: "Hello, ", HTMLType: HTMLText},
 
-					// Check for "world" token
-					gt4, ok4 := tokens[i+4].(GoToken)
-					if !ok4 || gt4.Type != token.STRING {
-						continue
-					}
+		// Variable reference
+		{Type: "Transition", Position: 90, Literal: "^"},
+		{Type: "GoToken", Position: 91, Literal: "name", GoType: token.IDENT},
+		{Type: "HTML", Position: 96, Literal: "!", HTMLType: HTMLText},
+		{Type: "HTML", Position: 100, Literal: "</p>", HTMLType: HTMLEndTag},
+		{Type: "HTML", Position: 101, Literal: "\n", HTMLType: HTMLText},
 
-					t.Logf("Found Go block with variable declaration at positions: %d, %d, %d, %d, %d",
-						tokens[i].Pos(), gt1.Pos(), gt2.Pos(), gt3.Pos(), gt4.Pos())
-					return true
-				}
-				return false
-			},
-		},
-		{
-			name: "HTML element with class attribute",
-			check: func(t *testing.T, tokens []Token) bool {
-				// Look for: <p class="greeting">
-				var pTag, closeTag HTMLToken
-				var classAttr, greetingAttr AttrToken
+		// ul tag
+		{Type: "HTML", Position: 101, Literal: "<ul", HTMLType: HTMLTagOpen},
+		{Type: "HTML", Position: 0, Literal: ">", HTMLType: HTMLTagClose},
+		{Type: "HTML", Position: 106, Literal: "\n", HTMLType: HTMLText},
 
-				for i := 0; i < len(tokens); i++ {
-					ht, ok := tokens[i].(HTMLToken)
-					if ok && ht.Type == HTMLTagOpen && bytes.Contains(ht.Lit(), []byte("<p")) {
-						pTag = ht
+		// For loop
+		{Type: "Transition", Position: 106, Literal: "^"},
+		{Type: "GoToken", Position: 107, Literal: "for", GoType: token.FOR},
+		{Type: "GoToken", Position: 110, Literal: "i", GoType: token.IDENT},
+		{Type: "GoToken", Position: 112, Literal: ":=", GoType: token.DEFINE},
+		{Type: "GoToken", Position: 115, Literal: "range", GoType: token.RANGE},
+		{Type: "GoToken", Position: 121, Literal: "3", GoType: token.INT},
+		{Type: "GoToken", Position: 123, Literal: "{", GoType: token.LBRACE},
+		{Type: "HTML", Position: 130, Literal: "\n    ", HTMLType: HTMLText},
 
-						// Look ahead for class and greeting attributes (might not be consecutive)
-						for j := i + 1; j < len(tokens) && j < i+5; j++ {
-							at, ok := tokens[j].(AttrToken)
-							if ok {
-								if string(at.Lit()) == "class" {
-									classAttr = at
-								} else if string(at.Lit()) == "greeting" {
-									greetingAttr = at
-								}
-							}
+		// li tag with dynamic id
+		{Type: "HTML", Position: 130, Literal: "<li", HTMLType: HTMLTagOpen},
+		{Type: "AttrToken", Position: 134, Literal: "id"},
+		{Type: "AttrToken", Position: 138, Literal: "item-"},
+		{Type: "GoToken", Position: 147, Literal: "i", GoType: token.IDENT},
+		{Type: "HTML", Position: 0, Literal: ">", HTMLType: HTMLTagClose},
+		{Type: "HTML", Position: 156, Literal: "\n        ", HTMLType: HTMLText},
 
-							// Check for closing tag
-							ht2, ok := tokens[j].(HTMLToken)
-							if ok && ht2.Type == HTMLTagClose {
-								closeTag = ht2
-								break
-							}
-						}
+		// Expression (i * i)
+		{Type: "Transition", Position: 156, Literal: "^"},
+		{Type: "GoToken", Position: 157, Literal: "(", GoType: token.LPAREN},
+		{Type: "GoToken", Position: 158, Literal: "i", GoType: token.IDENT},
+		{Type: "GoToken", Position: 159, Literal: "*", GoType: token.MUL},
+		{Type: "GoToken", Position: 161, Literal: "i", GoType: token.IDENT},
+		{Type: "GoToken", Position: 163, Literal: ")", GoType: token.RPAREN},
+		{Type: "HTML", Position: 169, Literal: "\n    ", HTMLType: HTMLText},
+		{Type: "HTML", Position: 174, Literal: "</li>", HTMLType: HTMLEndTag},
 
-						// If we found all the required tokens
-						if classAttr.Pos() > 0 && greetingAttr.Pos() > 0 && closeTag.Type == HTMLTagClose {
-							t.Logf("Found p element with class attribute at positions: %d, %d, %d, %d",
-								pTag.Pos(), classAttr.Pos(), greetingAttr.Pos(), closeTag.Pos())
-							return true
-						}
-					}
-				}
-				return false
-			},
-		},
-		{
-			name: "Go variable reference",
-			check: func(t *testing.T, tokens []Token) bool {
-				// Look for: ^name
-				for i := 0; i < len(tokens)-1; i++ {
-					if !IsTransition(tokens[i]) {
-						continue
-					}
-
-					// Check for name token
-					gt, ok := tokens[i+1].(GoToken)
-					if !ok || gt.Type != token.IDENT || string(gt.Lit()) != "name" {
-						continue
-					}
-
-					t.Logf("Found Go variable reference at positions: %d, %d",
-						tokens[i].Pos(), gt.Pos())
-					return true
-				}
-				return false
-			},
-		},
-		{
-			name: "For loop statement",
-			check: func(t *testing.T, tokens []Token) bool {
-				// Look for: ^for i := range 3 {
-				for i := 0; i < len(tokens)-6; i++ {
-					if !IsTransition(tokens[i]) {
-						continue
-					}
-
-					// Check for for token
-					gt1, ok := tokens[i+1].(GoToken)
-					if !ok || gt1.Type != token.FOR {
-						continue
-					}
-
-					// Check for i token
-					gt2, ok2 := tokens[i+2].(GoToken)
-					if !ok2 || gt2.Type != token.IDENT || string(gt2.Lit()) != "i" {
-						continue
-					}
-
-					// Check for := token
-					gt3, ok3 := tokens[i+3].(GoToken)
-					if !ok3 || string(gt3.Lit()) != ":=" {
-						continue
-					}
-
-					// Check for range token
-					gt4, ok4 := tokens[i+4].(GoToken)
-					if !ok4 || gt4.Type != token.RANGE {
-						continue
-					}
-
-					// Check for 3 token
-					gt5, ok5 := tokens[i+5].(GoToken)
-					if !ok5 || gt5.Type != token.INT || string(gt5.Lit()) != "3" {
-						continue
-					}
-
-					t.Logf("Found for loop at positions: %d, %d, %d, %d, %d, %d",
-						tokens[i].Pos(), gt1.Pos(), gt2.Pos(), gt3.Pos(), gt4.Pos(), gt5.Pos())
-					return true
-				}
-				return false
-			},
-		},
-		{
-			name: "Go variable in attribute",
-			check: func(t *testing.T, tokens []Token) bool {
-				// Look for attribute with item- prefix followed by a GoToken with value 'i'
-				var itemAttr AttrToken
-				var iToken GoToken
-
-				for i := 0; i < len(tokens)-2; i++ {
-					// Find the 'item-' attribute token
-					at, ok := tokens[i].(AttrToken)
-					if ok && bytes.Contains(at.Lit(), []byte("item-")) {
-						itemAttr = at
-
-						// Look ahead for the i token (may not be immediately after)
-						for j := i + 1; j < len(tokens) && j < i+4; j++ {
-							gt, ok := tokens[j].(GoToken)
-							if ok && gt.Type == token.IDENT && string(gt.Lit()) == "i" {
-								iToken = gt
-								t.Logf("Found Go variable in attribute at positions: %d, %d",
-									itemAttr.Pos(), iToken.Pos())
-								return true
-							}
-						}
-					}
-				}
-				return false
-			},
-		},
-		{
-			name: "Explicit Go expression",
-			check: func(t *testing.T, tokens []Token) bool {
-				// Look for: ^(i * i)
-				for i := 0; i < len(tokens)-5; i++ {
-					if !IsTransition(tokens[i]) {
-						continue
-					}
-
-					// Check for ( token
-					gt1, ok1 := tokens[i+1].(GoToken)
-					if !ok1 || gt1.Type != token.LPAREN {
-						continue
-					}
-
-					// Check for i token
-					gt2, ok2 := tokens[i+2].(GoToken)
-					if !ok2 || gt2.Type != token.IDENT || string(gt2.Lit()) != "i" {
-						continue
-					}
-
-					// Check for * token
-					gt3, ok3 := tokens[i+3].(GoToken)
-					if !ok3 || gt3.Type != token.MUL {
-						continue
-					}
-
-					// Check for i token
-					gt4, ok4 := tokens[i+4].(GoToken)
-					if !ok4 || gt4.Type != token.IDENT || string(gt4.Lit()) != "i" {
-						continue
-					}
-
-					// Check for ) token
-					gt5, ok5 := tokens[i+5].(GoToken)
-					if !ok5 || gt5.Type != token.RPAREN {
-						continue
-					}
-
-					t.Logf("Found explicit Go expression at positions: %d, %d, %d, %d, %d, %d",
-						tokens[i].Pos(), gt1.Pos(), gt2.Pos(), gt3.Pos(), gt4.Pos(), gt5.Pos())
-					return true
-				}
-				return false
-			},
-		},
+		// Closing tags
+		{Type: "HTML", Position: 177, Literal: "\n}\n", HTMLType: HTMLText},
+		{Type: "HTML", Position: 182, Literal: "</ul>", HTMLType: HTMLEndTag},
+		{Type: "HTML", Position: 183, Literal: "\n", HTMLType: HTMLText},
+		{Type: "EOF", Position: 183, Literal: "EOF"},
 	}
 
-	// Run the lexer and collect tokens
+	// Run the lexer
 	l := New([]byte(source))
 	var tokens []Token
 
-	// Debug token collection
-	t.Log("All tokens produced by lexer:")
+	// Collect all tokens
 	for token := range l.Tokens() {
 		tokens = append(tokens, token)
-		t.Logf("%d: %T %q", token.Pos(), token, string(token.Lit()))
 		if IsEOF(token) {
 			break
 		}
 	}
 
-	// Verify we have enough tokens
-	if len(tokens) < 40 {
-		t.Errorf("Expected at least 40 tokens, got %d", len(tokens))
-	}
-
-	// Verify the key sequences
-	for _, seq := range keySequences {
-		if found := seq.check(t, tokens); !found {
-			t.Errorf("Token sequence '%s' not found", seq.name)
+	// Check if we got the expected number of tokens
+	if len(tokens) != len(expectedTokens) {
+		t.Errorf("Expected %d tokens, got %d tokens", len(expectedTokens), len(tokens))
+		// Print the actual tokens for debugging
+		for i, token := range tokens {
+			t.Logf("Actual token %d: %T at position %d with value %q",
+				i, token, token.Pos(), string(token.Lit()))
 		}
 	}
 
-	// Verify token positions are monotonically increasing (with exceptions for transitions)
-	var prevPos int = -1
-	for i, token := range tokens {
-		pos := token.Pos()
+	// Compare each token
+	maxTokens := len(tokens)
+	if len(expectedTokens) < maxTokens {
+		maxTokens = len(expectedTokens)
+	}
 
-		// Simple check for monotonicity in token positions
-		if pos < prevPos {
-			// Check for special cases - some transition tokens might start at same position
-			if !(IsTransition(token) || isPositionExempt(token)) {
-				t.Errorf("Token position regression at index %d: position %d is less than previous position %d",
-					i, pos, prevPos)
+	for i := 0; i < maxTokens; i++ {
+		actual := tokens[i]
+		expected := expectedTokens[i]
+
+		// Check token position
+		if actual.Pos() != expected.Position &&
+			// Special case: HTML tag close tokens sometimes have position 0
+			!(expected.Type == "HTML" && expected.HTMLType == HTMLTagClose && actual.Pos() == 0) {
+			t.Errorf("Token %d: Position mismatch - expected %d, got %d",
+				i, expected.Position, actual.Pos())
+		}
+
+		// Check token literal
+		if string(actual.Lit()) != expected.Literal {
+			t.Errorf("Token %d: Literal mismatch - expected %q, got %q",
+				i, expected.Literal, string(actual.Lit()))
+		}
+
+		// Check token type
+		switch expected.Type {
+		case "HTML":
+			ht, ok := actual.(HTMLToken)
+			if !ok {
+				t.Errorf("Token %d: Type mismatch - expected HTMLToken, got %T", i, actual)
+				continue
+			}
+			if ht.Type != expected.HTMLType {
+				t.Errorf("Token %d: HTML type mismatch - expected %v, got %v",
+					i, expected.HTMLType, ht.Type)
+			}
+
+		case "GoToken":
+			gt, ok := actual.(GoToken)
+			if !ok {
+				t.Errorf("Token %d: Type mismatch - expected GoToken, got %T", i, actual)
+				continue
+			}
+			if gt.Type != expected.GoType {
+				t.Errorf("Token %d: Go type mismatch - expected %v, got %v",
+					i, expected.GoType, gt.Type)
+			}
+
+		case "AttrToken":
+			_, ok := actual.(AttrToken)
+			if !ok {
+				t.Errorf("Token %d: Type mismatch - expected AttrToken, got %T", i, actual)
+			}
+
+		case "Transition":
+			if !IsTransition(actual) {
+				t.Errorf("Token %d: Type mismatch - expected Transition, got %T", i, actual)
+			}
+
+		case "EOF":
+			if !IsEOF(actual) {
+				t.Errorf("Token %d: Type mismatch - expected EOF, got %T", i, actual)
 			}
 		}
-
-		prevPos = pos
 	}
-
-	// Verify the final token is EOF
-	lastToken := tokens[len(tokens)-1]
-	if !IsEOF(lastToken) {
-		t.Errorf("Expected final token to be EOF, got %T", lastToken)
-	}
-}
-
-// Some tokens might be exempt from the strict monotonicity check
-func isPositionExempt(token Token) bool {
-	// HTML tag close tokens sometimes have position 0
-	if ht, ok := token.(HTMLToken); ok && ht.Type == HTMLTagClose && ht.Pos() == 0 {
-		return true
-	}
-	return false
 }
 
 func TestWindow(t *testing.T) {

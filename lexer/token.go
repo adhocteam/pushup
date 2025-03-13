@@ -1,6 +1,7 @@
 package lexer
 
 import (
+	"fmt"
 	"go/token"
 	"strconv"
 	"strings"
@@ -36,6 +37,31 @@ var htmlTypeMap = [...]HTMLTokenType{
 	html.StartTagToken:       HTMLStartTag,
 	html.SelfClosingTagToken: HTMLSelfClosingTag,
 	html.EndTagToken:         HTMLEndTag,
+}
+
+func (t HTMLTokenType) String() string {
+	switch t {
+	case HTMLError:
+		return "Error"
+	case HTMLDoctype:
+		return "Doctype"
+	case HTMLComment:
+		return "Comment"
+	case HTMLText:
+		return "Text"
+	case HTMLStartTag:
+		return "StartTag"
+	case HTMLSelfClosingTag:
+		return "SelfClosingTag"
+	case HTMLEndTag:
+		return "EndTag"
+	case HTMLTagOpen:
+		return "TagOpen"
+	case HTMLTagClose:
+		return "TagClose"
+	default:
+		return fmt.Sprintf("HTMLTokenType(%d)", int(t))
+	}
 }
 
 type EOF int
