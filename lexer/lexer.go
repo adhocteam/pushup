@@ -383,6 +383,7 @@ func (l *Lexer) run() {
 					return
 					// Transition immediately
 				} else {
+					l.backupForTransition() // reset position to start of text token
 					l.switchState(stateGoStart)
 				}
 
