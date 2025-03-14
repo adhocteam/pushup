@@ -3,7 +3,7 @@ package parser
 import (
 	"fmt"
 
-	"github.com/adhocteam/pushup/lexer"
+	"github.com/adhocteam/pushup/internal/exp/lexer"
 )
 
 type Parser struct {
