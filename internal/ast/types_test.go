@@ -10,6 +10,9 @@ import (
 	"text/template"
 )
 
+// This test is slightly unusual in that it generates code for the Node types.
+// If you need to add an AST node type, add it to the nodespecs slice below,
+// and then run the test to modify types.go.
 func TestCodeGenAST(t *testing.T) {
 	type fieldspec struct {
 		Name string

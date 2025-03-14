@@ -5,6 +5,10 @@ import (
 	"html"
 )
 
+// NOTE: Consider separate StartTag and EndTag types since attributes are only
+// applicable to start tags.
+
+// A Tag represents an HTML start or end tag name and attributes.
 type Tag struct {
 	Name  string
 	Attrs []*Attr

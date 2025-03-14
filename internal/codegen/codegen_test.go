@@ -115,7 +115,7 @@ func TestGatherOutputOpsForGoStrExpr(t *testing.T) {
 	// Test direct expression output without fmt.Sprint wrapping
 	expr := &ast.NodeGoStrExpr{
 		Expr: "myVar",
-		Span: source.Span{Start: 0, End: 5},
+		Span: source.Span{Start: 0, Len: 5},
 	}
 
 	gen.gatherOutputOps(expr, collector)

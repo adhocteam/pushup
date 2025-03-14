@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/adhocteam/pushup/internal/ast"
+	"github.com/adhocteam/pushup/internal/lexer"
 	"github.com/adhocteam/pushup/internal/source"
 
 	"golang.org/x/net/html"
@@ -163,7 +164,7 @@ func (p *htmlParser) advance() {
 	var hasAttr bool
 	p.tagname, hasAttr = tokenizer.TagName()
 	if hasAttr && p.err == nil {
-		p.attrs, p.err = scanAttrs(p.raw)
+		p.attrs, p.err = lexer.ScanAttrs(p.raw, p.parser.offset)
 	}
 	p.start = p.parser.offset
 	p.parser.advanceOffset(len(p.raw))
@@ -185,7 +186,7 @@ func (p *htmlParser) skipWhitespace() []*ast.NodeLiteral {
 	// note that we must test p.raw for whitespace each time through the loop
 	// because p.advance() changes p.raw
 	for p.toktyp == html.TextToken && isAllWhitespace(p.raw) {
-		n := ast.NodeLiteral{Text: p.raw, Span: source.Span{Start: p.start, End: p.parser.offset}}
+		n := ast.NodeLiteral{Text: p.raw, Span: source.Span{Start: p.start, Len: p.parser.offset - p.start}}
 		result = append(result, &n)
 		p.advance()
 	}
@@ -238,7 +239,7 @@ func (p *htmlParser) emitLiteralFromRange(start, end int) ast.Node {
 	e := new(ast.NodeLiteral)
 	e.Text = p.raw[start:end]
 	e.Span.Start = p.start + start
-	e.Span.End = p.start + end
+	e.Span.Len = end - start
 	return e
 }
 
@@ -296,7 +297,7 @@ func (p *htmlParser) parseStartTag() *ast.NodeList {
 func (p *htmlParser) emitLiteral() ast.Node {
 	e := new(ast.NodeLiteral)
 	e.Span.Start = p.start
-	e.Span.End = p.parser.offset
+	e.Span.Len = len(p.raw)
 	e.Text = p.raw
 	return e
 }
@@ -313,13 +314,13 @@ func (p *htmlParser) parseTextToken() []ast.Node {
 			// emit the leading text before the doubled escape
 			e := new(ast.NodeLiteral)
 			e.Span.Start = p.start
-			e.Span.End = p.start + escaped
+			e.Span.Len = escaped
 			e.Text = p.raw[:escaped]
 			nodes = append(nodes, e)
 		}
 		e := new(ast.NodeLiteral)
 		e.Span.Start = p.start + escaped
-		e.Span.End = p.start + escaped + 2
+		e.Span.Len = 2
 		e.Text = transSymStr
 		nodes = append(nodes, e)
 		p.parser.offset = p.start + escaped + 2
@@ -334,7 +335,7 @@ func (p *htmlParser) parseTextToken() []ast.Node {
 	if idx > 0 {
 		e := new(ast.NodeLiteral)
 		e.Span.Start = p.start
-		e.Span.End = p.start + len(leading)
+		e.Span.Len = len(leading)
 		e.Text = leading
 		nodes = append(nodes, e)
 	}
@@ -412,7 +413,7 @@ func (p *htmlParser) parseElementNode(toktyp html.TokenType) *ast.NodeElement {
 	elem := new(ast.NodeElement)
 	elem.Tag = ast.NewTag(p.tagname, p.attrs)
 	elem.Span.Start = p.parser.offset - len(p.raw)
-	elem.Span.End = p.parser.offset
+	elem.Span.Len = len(p.raw)
 	elem.StartTagNodes = p.parseStartTag()
 	elem.Children = ast.NewNodeList()
 
@@ -504,7 +505,7 @@ loop:
 					if idx > 0 {
 						var htmlNode ast.NodeLiteral
 						htmlNode.Span.Start = p.start
-						htmlNode.Span.End = p.start + len(leading)
+						htmlNode.Span.Len = len(leading)
 						htmlNode.Text = leading
 						result.Append(&htmlNode)
 					}
@@ -775,7 +776,7 @@ loop:
 	offset := p.baseOffset + p.file.Offset(start)
 	stmt.Cond = new(ast.NodeGoStrExpr)
 	stmt.Cond.Span.Start = offset
-	stmt.Cond.Span.End = offset + n
+	stmt.Cond.Span.Len = n
 	stmt.Cond.Expr = p.sourceFrom(start)[:n]
 	if _, err := goparser.ParseExpr(stmt.Cond.Expr); err != nil {
 		p.errorf("parsing Go expression in IF conditional: %w", err)
@@ -820,7 +821,7 @@ loop:
 	offset := p.baseOffset + p.file.Offset(start)
 	stmt.Clause = new(ast.NodeGoCode)
 	stmt.Clause.Span.Start = offset
-	stmt.Clause.Span.End = offset + n
+	stmt.Clause.Span.Len = n
 	stmt.Clause.Code = p.sourceFrom(start)[:n]
 	stmt.Block = p.parseStmtBlock()
 	return &stmt
@@ -869,7 +870,7 @@ func (p *codeParser) parsePartialKeyword() *ast.NodePartial {
 	result := &ast.NodePartial{Name: p.peek().lit}
 	result.Span.Start = p.parser.offset
 	p.advance()
-	result.Span.End = p.parser.offset
+	result.Span.Len = p.parser.offset - result.Span.Start
 	result.Block = p.parseStmtBlock()
 	return result
 }
@@ -917,7 +918,7 @@ func (p *codeParser) parseParamKeyword() *ast.NodeParam {
 	default:
 		p.errorf("expected identifier or open paren, got %s", p.peek().lit)
 	}
-	result.Span.End = p.parser.offset
+	result.Span.Len = p.parser.offset - result.Span.Start
 	return result
 }
 
@@ -962,7 +963,7 @@ loop:
 	}
 	p.advance()
 	result.Code = p.sourceFrom(start)[:n]
-	result.Span.End = result.Span.Start + n
+	result.Span.Len = n
 	return result
 }
 
@@ -1034,7 +1035,7 @@ loop:
 	}
 	_ = p.sync()
 	result.Expr = p.sourceFrom(start)[:n]
-	result.Span.End = result.Span.Start + n
+	result.Span.Len = n
 	if _, err := goparser.ParseExpr(result.Expr); err != nil {
 		p.errorf("illegal Go expression: %w", err)
 	}
@@ -1132,7 +1133,7 @@ func (p *codeParser) parseImplicitExpression() *ast.NodeGoStrExpr {
 		}
 	}
 	result.Expr = p.sourceRange(result.Span.Start, end)
-	result.Span.End = end
+	result.Span.Len = end - result.Span.Start
 	if _, err := goparser.ParseExpr(result.Expr); err != nil {
 		p.errorf("illegal Go expression %q: %w", result.Expr, err)
 	}

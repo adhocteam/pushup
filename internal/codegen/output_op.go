@@ -44,7 +44,7 @@ func (c *outputCollector) optimize() []outputOp {
 
 		if current.kind == opStatic && next.kind == opStatic {
 			current.content += next.content
-			current.span.End = next.span.End
+			current.span.Len = next.span.Start + next.span.Len - current.span.Start
 		} else {
 			result = append(result, current)
 			current = next

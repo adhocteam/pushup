@@ -11,6 +11,9 @@ import (
 	"github.com/adhocteam/pushup/internal/up"
 )
 
+// Analyzer is the interface for analyzing Pushup syntax trees. Its purpose is
+// to augment the CompileUnit with additional information that is derived from
+// the syntax tree.
 type Analyzer interface {
 	Analyze(doc *ast.Document, unit *up.CompileUnit) error
 }
@@ -199,9 +202,11 @@ func deriveTypeName(file *up.File) string {
 // routeForPage produces the URL path route from the name of the Pushup page.
 // path is the path to the Pushup page file.
 func routeForPage(path string) string {
-	path, err := filepath.Rel("pages", path)
+	// TODO: "pages" is hardcoded here, but it should be a configuration option
+	const pagesDirName = "pages"
+	path, err := filepath.Rel(pagesDirName, path)
 	if err != nil {
-		panic(fmt.Sprintf("path to page is not relative to '%s' directory", "pages"))
+		panic(fmt.Sprintf("path to page is not relative to '%s' directory", pagesDirName))
 	}
 
 	var dirs []string

@@ -75,6 +75,6 @@ func Find(root string, ext Ext) iter.Seq[string] {
 
 func IsPage(file string) bool {
 	// TODO: the value that "pages" is currently hard-coded to represent may be
-	// set by configuration
+	// set by configuration - see routeForPage in analyzer/analyzer.go
 	return strings.HasPrefix(file, "pages"+string(os.PathSeparator))
 }

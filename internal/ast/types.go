@@ -8,6 +8,9 @@ import (
 	"github.com/adhocteam/pushup/internal/source"
 )
 
+// NOTE: Important - in general you should not edit this file directly - see
+// types_test.go.
+
 // ImportDecl represents a Go import declaration.
 type ImportDecl struct {
 	PkgName string

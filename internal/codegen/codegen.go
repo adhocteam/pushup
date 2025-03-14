@@ -49,7 +49,8 @@ func New() *generator {
 }
 
 const (
-	writerVarName    = "__pushup_w"
+	// TODO: figure out where best to set these constants and how to pass them
+	// to the generator
 	pushupApi        = "github.com/adhocteam/pushup"
 	pushupModulePath = "github.com/adhocteam/pushup"
 )

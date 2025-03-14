@@ -26,6 +26,10 @@ import (
 //
 // https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
 
+func ScanAttrs(openTag string, baseOffset int) (attrs []*ast.Attr, err error) {
+	return scanAttrs(openTag, baseOffset)
+}
+
 func scanAttrs(openTag string, baseOffset int) (attrs []*ast.Attr, err error) {
 	// maintain some invariants, we are not a general-purpose HTML
 	// tokenizer/parser, we are just parsing open tags.
