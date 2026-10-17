@@ -41,6 +41,14 @@ func TestRegexPatFromRoute(t *testing.T) {
 			"/:foo/bar/:quux",
 			routePat{"/([^/]+)/bar/([^/]+)", []string{"foo", "quux"}},
 		},
+		{
+			"/.well-known/openid-configuration",
+			routePat{"/\\.well-known/openid-configuration", nil},
+		},
+		{
+			"/.well-known",
+			routePat{"/\\.well-known", nil},
+		},
 	}
 
 	for _, test := range tests {
@@ -204,5 +212,24 @@ func TestMatchURLPathSegmentPrefix(t *testing.T) {
 				t.Errorf("want %t, got %t", test.want, got)
 			}
 		})
+	}
+}
+
+func TestRoutePeriodSegment(t *testing.T) {
+	savedRoutes := routes
+	defer func() { routes = savedRoutes }()
+
+	routes = routeList{}
+	dummy := new(dummyPage)
+	routes.add("/.well-known/openid-configuration", dummy, routePage)
+
+	m1 := getRouteFromPath("/.well-known/openid-configuration")
+	if m1.response != routeFound {
+		t.Errorf("expected routeFound for /.well-known/openid-configuration, got %v", m1.response)
+	}
+
+	m2 := getRouteFromPath("/xwell-known/openid-configuration")
+	if m2.response != routeNotFound {
+		t.Errorf("expected routeNotFound for /xwell-known/openid-configuration, got %v", m2.response)
 	}
 }

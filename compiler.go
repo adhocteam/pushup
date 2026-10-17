@@ -164,17 +164,36 @@ func compiledOutputPath(pfile projectFile, ftype upFileType) string {
 	if err != nil {
 		panic("internal error: relative path from project files subdir to .up file: " + err.Error())
 	}
-	// a .go file with a leading '$' in the name is invalid to the go tool
-	if rel[0] == '$' {
-		rel = "0x24" + rel[1:]
-	}
 	var dirs []string
 	dir := filepath.Dir(rel)
 	if dir != "." {
 		dirs = strings.Split(dir, string([]rune{os.PathSeparator}))
 	}
 	file := filepath.Base(rel)
-	base := strings.TrimSuffix(file, filepath.Ext(file))
+	ext := filepath.Ext(file)
+	base := file
+	if ext != "" && ext != file {
+		base = strings.TrimSuffix(file, ext)
+	}
+
+	mangle := func(s string) string {
+		if strings.HasPrefix(s, "$") {
+			return "0x24" + s[1:]
+		}
+		if strings.HasPrefix(s, ".") {
+			return "0x2e" + s[1:]
+		}
+		if strings.HasPrefix(s, "_") {
+			return "0x5f" + s[1:]
+		}
+		return s
+	}
+
+	for i := range dirs {
+		dirs[i] = mangle(dirs[i])
+	}
+	base = mangle(base)
+
 	suffix := upFileExt
 	if ftype == upFileLayout {
 		suffix = ".layout.up"

@@ -38,6 +38,21 @@ func TestCompiledOutputPath(t *testing.T) {
 			"0x24foo.up.go",
 			upFilePage,
 		},
+		{
+			projectFile{path: "app/pages/.well-known/openid-configuration.up", projectFilesSubdir: "app/pages"},
+			"0x2ewell-known__openid-configuration.up.go",
+			upFilePage,
+		},
+		{
+			projectFile{path: "app/pages/.well-known.up", projectFilesSubdir: "app/pages"},
+			"0x2ewell-known.up.go",
+			upFilePage,
+		},
+		{
+			projectFile{path: "app/pages/sub/.well-known/openid-configuration.up", projectFilesSubdir: "app/pages"},
+			"sub__0x2ewell-known__openid-configuration.up.go",
+			upFilePage,
+		},
 	}
 
 	for _, test := range tests {

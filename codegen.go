@@ -681,7 +681,11 @@ func routeForPage(relpath string) string {
 		dirs = strings.Split(dir, string([]rune{os.PathSeparator}))
 	}
 	file := filepath.Base(relpath)
-	base := strings.TrimSuffix(file, filepath.Ext(file))
+	ext := filepath.Ext(file)
+	base := file
+	if ext != "" && ext != file {
+		base = strings.TrimSuffix(file, ext)
+	}
 	var route string
 	if base != "index" {
 		dirs = append(dirs, base)
@@ -700,7 +704,11 @@ func routeForPage(relpath string) string {
 }
 
 func routeForPartial(relpath string, partialUrlpath string) string {
-	prefix := strings.TrimSuffix(relpath, filepath.Ext(relpath))
+	ext := filepath.Ext(relpath)
+	prefix := relpath
+	if ext != "" && ext != relpath && ext != filepath.Base(relpath) {
+		prefix = strings.TrimSuffix(relpath, ext)
+	}
 	if filepath.Base(prefix) == "index" {
 		prefix = filepath.Dir(prefix)
 	}
@@ -951,7 +959,9 @@ func genCodePage(g *pageCodeGen) ([]byte, error) {
 func generatedTypename(pfile projectFile, ftype upFileType) string {
 	relpath := pfile.relpath()
 	ext := filepath.Ext(relpath)
-	relpath = relpath[:len(relpath)-len(ext)]
+	if ext != "" && ext != relpath && ext != filepath.Base(relpath) {
+		relpath = relpath[:len(relpath)-len(ext)]
+	}
 	typename := typenameFromPath(relpath)
 	var suffix string
 	switch ftype {
@@ -969,7 +979,9 @@ func generatedTypename(pfile projectFile, ftype upFileType) string {
 func generatedTypenamePartial(partial *partial, pfile projectFile) string {
 	relpath := pfile.relpath()
 	ext := filepath.Ext(relpath)
-	relpath = relpath[:len(relpath)-len(ext)]
+	if ext != "" && ext != relpath && ext != filepath.Base(relpath) {
+		relpath = relpath[:len(relpath)-len(ext)]
+	}
 	typename := typenameFromPath(strings.Join([]string{relpath, partial.urlpath()}, "/"))
 	result := typename + "Partial"
 	return result
