@@ -78,7 +78,7 @@ func regexPatFromRoute(route string) routePat {
 			out = append(out, match)
 			slugs = append(slugs, sub[1:])
 		} else {
-			out = append(out, sub)
+			out = append(out, regexp.QuoteMeta(sub))
 		}
 	}
 	return routePat{strings.Join(out, "/"), slugs}

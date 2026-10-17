@@ -82,6 +82,22 @@ func TestRouteForPage(t *testing.T) {
 			"blah/index.up",
 			"/blah/",
 		},
+		{
+			".well-known/openid-configuration.up",
+			"/.well-known/openid-configuration",
+		},
+		{
+			".well-known",
+			"/.well-known",
+		},
+		{
+			".well-known.up",
+			"/.well-known",
+		},
+		{
+			".well-known/index.up",
+			"/.well-known/",
+		},
 	}
 
 	for _, test := range tests {
@@ -104,6 +120,8 @@ func TestGeneratedTypename(t *testing.T) {
 		{projectFile{path: "foo_bar.up", projectFilesSubdir: "."}, upFilePage, "FooBarPage"},
 		{projectFile{path: "a/b/c.up", projectFilesSubdir: "."}, upFilePage, "ABCPage"},
 		{projectFile{path: "a/b/$c.up", projectFilesSubdir: "."}, upFilePage, "ABDollarSignCPage"},
+		{projectFile{path: ".well-known/openid-configuration.up", projectFilesSubdir: "."}, upFilePage, "WellKnownOpenidConfigurationPage"},
+		{projectFile{path: ".well-known.up", projectFilesSubdir: "."}, upFilePage, "WellKnownPage"},
 	}
 
 	for _, test := range tests {
